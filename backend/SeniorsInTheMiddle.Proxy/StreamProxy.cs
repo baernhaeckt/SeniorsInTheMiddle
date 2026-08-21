@@ -1,5 +1,4 @@
 using System.IO.Pipelines;
-using System.Text;
 
 public class StreamProxy : IStreamProxy
 {
@@ -21,9 +20,18 @@ public class StreamProxy : IStreamProxy
         using CancellationTokenSource tunnelCancellation =
             CancellationTokenSource.CreateLinkedTokenSource(connectionClosed);
 
+        Task clientToDestination = CopyChunksAsync(
+            clientInput,
+            _remote,
+            "Client -> remote",
+            tunnelCancellation.Token);
 
-        Task clientToDestination = clientInput.CopyToAsync(_remote, tunnelCancellation.Token);
-        Task destinationToClient = _remote.CopyToAsync(clientOutput, tunnelCancellation.Token);
+        Task destinationToClient = CopyChunksAsync(
+            _remote,
+            clientOutput,
+            "Remote -> client",
+            tunnelCancellation.Token);
+
         await Task.WhenAny(clientToDestination, destinationToClient);
         tunnelCancellation.Cancel();
 
@@ -36,31 +44,32 @@ public class StreamProxy : IStreamProxy
         }
     }
 
-    public async Task<MemoryStream> ReadCompletedChunkAsync(Stream stream, CancellationToken cancellationToken)
+    private async Task CopyChunksAsync(
+        Stream source,
+        Stream destination,
+        string direction,
+        CancellationToken cancellationToken)
     {
-        MemoryStream memoryStream = new();
         byte[] buffer = new byte[8192];
-        int bytesRead;
 
         while (true)
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+            int bytesRead = await source.ReadAsync(buffer.AsMemory(), cancellationToken);
+            if (bytesRead == 0)
+                return;
 
-            try
-            {
-                bytesRead = await stream.ReadAsync(buffer.AsMemory(), cts.Token);
+            using MemoryStream chunk = new(bytesRead);
+            await chunk.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+            chunk.Position = 0;
 
-                if (bytesRead == 0)
-                    break;
+            _logger.LogInformation(
+                "{Direction} ({ByteCount} bytes, Base64): {Data}",
+                direction,
+                bytesRead,
+                Convert.ToBase64String(buffer, 0, bytesRead));
 
-                await memoryStream.WriteAsync(buffer.AsMemory(0, bytesRead), cts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
+            await chunk.CopyToAsync(destination, cancellationToken);
+            await destination.FlushAsync(cancellationToken);
         }
-        memoryStream.Position = 0;
-        return memoryStream;
     }
 }

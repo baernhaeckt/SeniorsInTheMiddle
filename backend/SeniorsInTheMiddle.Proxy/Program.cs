@@ -14,10 +14,14 @@ builder.WebHost.ConfigureKestrel(options =>
 builder.Services
     .AddHttpForwarder()
     .AddSingleton<IForwardProxy, ForwardProxy>()
+    .AddSingleton<MitmCertificateProvider>()
     .AddSingleton<IStreamProxyFactory, StreamProxyFactory>()
     .AddSingleton<ConnectProxyMiddleware>();
 
 WebApplication app = builder.Build();
+
+// Create the MITM CA before accepting requests so its public certificate is available to clients.
+app.Services.GetRequiredService<MitmCertificateProvider>();
 
 app.MapMethods(
     "/{**path}", 

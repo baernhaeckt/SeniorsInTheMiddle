@@ -1,16 +1,25 @@
 using System.Buffers;
 using System.IO.Pipelines;
 using System.Net.Sockets;
+using System.Net.Security;
+using System.Security.Authentication;
 using System.Text;
 using Microsoft.AspNetCore.Connections;
 
 sealed class ConnectProxyMiddleware
 {
     private readonly IStreamProxyFactory streamProxyFactory;
+    private readonly MitmCertificateProvider certificateProvider;
+    private readonly ILogger<ConnectProxyMiddleware> logger;
 
-    public ConnectProxyMiddleware(IStreamProxyFactory streamProxyFactory)
+    public ConnectProxyMiddleware(
+        IStreamProxyFactory streamProxyFactory,
+        MitmCertificateProvider certificateProvider,
+        ILogger<ConnectProxyMiddleware> logger)
     {
         this.streamProxyFactory = streamProxyFactory;
+        this.certificateProvider = certificateProvider;
+        this.logger = logger;
     }
 
     public async Task InvokeAsync(ConnectionContext connection, ConnectionDelegate next)
@@ -64,9 +73,37 @@ sealed class ConnectProxyMiddleware
             input.AdvanceTo(headerEnd.Value, headerEnd.Value);
             await output.WriteAsync(Encoding.ASCII.GetBytes("HTTP/1.1 200 Connection Established\r\n\r\n"));
 
-            await streamProxyFactory
-                .Create(connection.Transport, tcpClient.GetStream())
-                .ProxyAsync(connection.ConnectionClosed);
+            try
+            {
+                await using Stream clientStream = connection.Transport.Input.AsStream(leaveOpen: true);
+                await using Stream clientOutputStream = connection.Transport.Output.AsStream(leaveOpen: true);
+                using SslStream clientTls = new(
+                    new DuplexStream(clientStream, clientOutputStream),
+                    leaveInnerStreamOpen: true);
+                using System.Security.Cryptography.X509Certificates.X509Certificate2 serverCertificate =
+                    certificateProvider.CreateServerCertificate(host);
+                await clientTls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
+                {
+                    ServerCertificate = serverCertificate,
+                    EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
+                    ClientCertificateRequired = false
+                }, connection.ConnectionClosed);
+
+                using SslStream upstreamTls = new(tcpClient.GetStream(), leaveInnerStreamOpen: false);
+                await upstreamTls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
+                {
+                    TargetHost = host,
+                    EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13
+                }, connection.ConnectionClosed);
+
+                await streamProxyFactory
+                    .Create(new StreamDuplexPipe(clientTls), upstreamTls)
+                    .ProxyAsync(connection.ConnectionClosed);
+            }
+            catch (Exception ex) when (ex is AuthenticationException or IOException or OperationCanceledException)
+            {
+                logger.LogDebug(ex, "HTTPS interception ended for {Host}:{Port}", host, port);
+            }
         }
     }
 
