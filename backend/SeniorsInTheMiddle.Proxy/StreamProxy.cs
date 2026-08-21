@@ -1,4 +1,5 @@
 using System.IO.Pipelines;
+using System.Text;
 
 public class StreamProxy : IStreamProxy
 {
@@ -63,13 +64,26 @@ public class StreamProxy : IStreamProxy
             chunk.Position = 0;
 
             _logger.LogInformation(
-                "{Direction} ({ByteCount} bytes, Base64): {Data}",
+                "{Direction} ({ByteCount} bytes): {Data}",
                 direction,
                 bytesRead,
-                Convert.ToBase64String(buffer, 0, bytesRead));
+                GetLogText(buffer, bytesRead));
 
             await chunk.CopyToAsync(destination, cancellationToken);
             await destination.FlushAsync(cancellationToken);
+        }
+    }
+
+    private static string GetLogText(byte[] buffer, int count)
+    {
+        try
+        {
+            return new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true)
+                .GetString(buffer, 0, count);
+        }
+        catch (DecoderFallbackException)
+        {
+            return $"[binary data, Base64: {Convert.ToBase64String(buffer, 0, count)}]";
         }
     }
 }
