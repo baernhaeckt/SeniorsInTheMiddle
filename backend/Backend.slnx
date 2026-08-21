@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/shared/">
+    <File Path=".dockerignore" />
+    <File Path=".editorconfig" />
+    <File Path=".gitignore" />
+    <File Path="Dockerfile" />
+    <File Path="global.json" />
+  </Folder>
+  <Project Path="src/Backend.Web/Backend.Web.csproj" />
+  <Project Path="test/Backend.Tests/Backend.Tests.csproj" />
+</Solution>
