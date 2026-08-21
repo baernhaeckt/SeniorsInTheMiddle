@@ -164,3 +164,10 @@ checkpoint/
 notebooks/*.h5
 
 **/.DS_Store
+
+node_modules
+dist
+.env
+.env.local
+*.local
+tsconfig.tsbuildinfo
