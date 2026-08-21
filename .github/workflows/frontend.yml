@@ -1,0 +1,77 @@
+name: build-deploy-frontend
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend.yml"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    env:
+      COMPONENT: "frontend"
+
+    steps:
+      - name: Compute names
+        run: |
+          owner_lc=${GITHUB_REPOSITORY_OWNER,,}
+          repo=${GITHUB_REPOSITORY#*/}
+          repo_lc=${repo,,}
+          comp_lc=${COMPONENT,,}
+          echo "OWNER_LC=$owner_lc" >> $GITHUB_ENV
+          echo "REPO_LC=$repo_lc"   >> $GITHUB_ENV
+          echo "COMP_LC=$comp_lc"   >> $GITHUB_ENV
+          echo "IMAGE_REPO=ghcr.io/$owner_lc/$repo_lc-$comp_lc" >> $GITHUB_ENV
+
+      - name: Checkout (sparse)
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            .github/workflows
+            frontend
+          sparse-checkout-cone: true
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: true
+          tags: |
+            ${{ env.IMAGE_REPO }}:${{ github.sha }}
+            ${{ env.IMAGE_REPO }}:latest
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to Azure Container Apps
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          resourceGroup: ${{ vars.AZURE_RG }}                    # will be created if missing
+          containerAppName: ${{ env.REPO_LC }}-${{ env.COMP_LC }} # will be created/updated
+          containerAppEnvironment: ${{ vars.AZURE_CONTAINERAPPS_ENV }} # will be created if missing
+          location: ${{ vars.AZURE_LOCATION }}                   # region for created resources
+          imageToDeploy: ${{ env.IMAGE_REPO }}:${{ github.sha }}
+          registryUrl: ghcr.io
+          registryUsername: ${{ secrets.GHCR_USERNAME }}
+          registryPassword: ${{ secrets.GHCR_PAT }}
+          ingress: external
+          targetPort: 8080
+          # Add more environment variables here if needed, space separated
+          # e.g. ASPNETCORE_ENVIRONMENT=Production ANOTHER_VAR=Value 
+          environmentVariables: MY_ENV_VARIABLE=${{ vars.MY_ENV_VARIABLE }}
