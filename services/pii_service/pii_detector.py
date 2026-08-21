@@ -1,5 +1,6 @@
 from services.pii_service.models.detection_result import DetectionResultItem, DetectionResult
 from services.pii_service.pii_types import PiiTypes
+from services.pii_service.utils.pii_risk_mappings import get_pii_risk_mapping
 
 
 class PiiDetector:
@@ -23,6 +24,9 @@ class PiiDetector:
         except ImportError as e:
             raise Exception(f"Missing dependencies. {e}")
 
+    def analyze_detection_result(self, detection_result: DetectionResult) -> dict:
+        pass
+
     def analyze_text(self, text: str, detection_entities: list[str], language_code: str = DEFAULT_LANGUAGE_CODE) -> DetectionResult:
         """
         Analyzes the given text for PII entities.
@@ -40,12 +44,17 @@ class PiiDetector:
 
             detection_entities = list()
             for detection in detections:
+                risk_assessment = get_pii_risk_mapping(detection.entity_type)
+
                 detection_entities.append(
                     DetectionResultItem(
+                        information_type=risk_assessment.information_type,
                         entity_type=PiiTypes(detection.entity_type).name,
                         score=detection.score,
                         start_position=detection.start,
-                        end_position=detection.end
+                        end_position=detection.end,
+                        risk_level=risk_assessment.risk_level.value,
+                        hipaa_category=risk_assessment.hipaa_category.value
                     )
                 )
 
