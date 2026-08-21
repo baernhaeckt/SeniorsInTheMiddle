@@ -6,6 +6,6 @@
     <File Path="Dockerfile" />
     <File Path="global.json" />
   </Folder>
-  <Project Path="src/Backend.Web/Backend.Web.csproj" />
+  <Project Path="src/SeniorsInTheMiddle.Proxy/SeniorsInTheMiddle.Proxy.csproj" />
   <Project Path="test/Backend.Tests/Backend.Tests.csproj" />
 </Solution>

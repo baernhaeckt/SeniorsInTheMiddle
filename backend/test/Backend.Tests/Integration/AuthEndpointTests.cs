@@ -1,4 +1,4 @@
-﻿using Backend.Web.Auth.Api;
+﻿using SeniorsInTheMiddle.Proxy.Auth.Api;
 
 using System.Net;
 using System.Net.Http.Headers;

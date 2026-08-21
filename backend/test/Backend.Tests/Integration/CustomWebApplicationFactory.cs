@@ -1,4 +1,4 @@
-﻿using Backend.Web.Auth.Storage;
+﻿using SeniorsInTheMiddle.Proxy.Auth.Storage;
 
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;

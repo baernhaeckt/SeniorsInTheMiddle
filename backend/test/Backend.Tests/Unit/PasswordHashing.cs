@@ -1,4 +1,4 @@
-﻿using Backend.Web.Auth.Security;
+﻿using SeniorsInTheMiddle.Proxy.Auth.Security;
 
 using System.Security.Cryptography;
 using System.Text;

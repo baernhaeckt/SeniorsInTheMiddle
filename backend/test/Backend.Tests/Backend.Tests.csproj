@@ -13,7 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Backend.Web\Backend.Web.csproj" />
+    <ProjectReference Include="..\..\src\SeniorsInTheMiddle.Proxy\SeniorsInTheMiddle.Proxy.csproj" />
   </ItemGroup>
 
   <ItemGroup>
