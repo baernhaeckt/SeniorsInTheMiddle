@@ -74,4 +74,4 @@ jobs:
           targetPort: 8080
           # Add more environment variables here if needed, space separated
           # e.g. ASPNETCORE_ENVIRONMENT=Production ANOTHER_VAR=Value 
-          environmentVariables: MY_ENV_VARIABLE=${{ vars.MY_ENV_VARIABLE }}
+          environmentVariables: MY_ENV_VARIABLE=${{ vars.MY_ENV_VARIABLE }} Jwt__Key=secretref:jwtkey
