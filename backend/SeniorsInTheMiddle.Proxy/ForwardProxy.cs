@@ -1,9 +1,8 @@
 using System.Net;
-using System.Net.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Yarp.ReverseProxy.Forwarder;
 
-sealed class ForwardProxy : IDisposable
+sealed class ForwardProxy : IDisposable, IForwardProxy
 {
     private readonly IHttpForwarder forwarder;
 
@@ -51,19 +50,19 @@ sealed class ForwardProxy : IDisposable
         }
     }
 
-    public void Dispose() => httpClient.Dispose();
+    public void Dispose()
+        => httpClient.Dispose();
 
     private static Uri? GetDestinationUri(HttpContext context)
     {
         var rawTarget = context.Features.Get<IHttpRequestFeature>()?.RawTarget;
-        if (Uri.TryCreate(rawTarget, UriKind.Absolute, out var absoluteUri) &&
+        if (Uri.TryCreate(rawTarget, UriKind.Absolute, out Uri? absoluteUri) &&
             (absoluteUri.Scheme == Uri.UriSchemeHttp || absoluteUri.Scheme == Uri.UriSchemeHttps))
         {
             return absoluteUri;
         }
 
-        if (!Uri.TryCreate($"{context.Request.Scheme}://{context.Request.Host}{context.Request.Path}{context.Request.QueryString}",
-                UriKind.Absolute, out var requestUri) ||
+        if (!Uri.TryCreate($"{context.Request.Scheme}://{context.Request.Host}{context.Request.Path}{context.Request.QueryString}", UriKind.Absolute, out Uri? requestUri) ||
             (requestUri.Scheme != Uri.UriSchemeHttp && requestUri.Scheme != Uri.UriSchemeHttps))
         {
             return null;
