@@ -11,6 +11,7 @@ class DetectionResultItem:
     start_position: int = 0
     end_position: int = 0
 
+@dataclass(frozen=True)
 class DetectionResult:
     """
     PII detection result.
