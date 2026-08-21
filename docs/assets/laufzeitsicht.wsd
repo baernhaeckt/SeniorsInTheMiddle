@@ -1,0 +1,50 @@
+@startuml laufzeitsicht
+
+hide footbox
+
+skinparam sequence {
+    ArrowColor Black
+    ActorBorderColor Black
+    LifeLineBorderColor Black
+    ParticipantBorderColor Black
+    ParticipantBackgroundColor Gray
+    ParticipantFontName Arial
+    ParticipantFontSize 17
+    CollectionsBorderColor Black
+    ActorBackgroundColor LightGray
+    ActorFontColor Black
+    ActorFontSize 17
+    ActorFontName Arial
+}
+
+actor C as "Container Platform"
+participant S as "Software Service"
+participant P as "Persistence"
+participant D as "Downstream Software Service"
+
+activate C
+loop Until '204' or 3x '500'
+    C -> S: HTTP Get 'healthz/ready'
+    activate S
+    S -> S: Execute HealthCheckService
+    activate S
+    S -> P: EstablishConnection(userName, password)
+    P -->> S: ok/nok
+    S -> D: EstablishConnection(ApiToken)
+    D -->> S: ok/nok
+    deactivate S
+    alt all checks successful
+        S -->> C: HTTP 204
+    else at least one check not successful
+        S -->> C: HTTP 500
+    end
+    deactivate S
+end
+
+alt 500
+    C -> C: Remove from Load Balancer
+end
+
+deactivate C
+
+@enduml

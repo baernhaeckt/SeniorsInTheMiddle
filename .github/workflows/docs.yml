@@ -1,0 +1,43 @@
+name: build-documentation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "docs/**"
+      - ".github/workflows/docs.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+    
+      - name: Install Arial (mscorefonts)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ttf-mscorefonts-installer \
+            fontconfig
+          fc-cache -f -v
+
+      - name: Install Typst
+        uses: typst-community/setup-typst@v4
+
+      - name: Compile
+        run: typst compile main.typ docs.pdf
+
+      - name: Upload PDF file
+        uses: actions/upload-artifact@v6
+        with:
+          name: PDF
+          path: "**/*.pdf"
+          if-no-files-found: error
