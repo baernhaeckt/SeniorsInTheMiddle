@@ -29,43 +29,47 @@ npm run dev     # http://localhost:5173
 npm run build   # static bundle into dist/
 ```
 
-## Attaching the backend
+## Configuration
 
-Set the endpoint and the dashboard uses it for everything:
+Nothing is baked in at build time, so the same bundle points at any proxy. On
+first run the app opens a setup screen and asks for:
 
-```bash
-VITE_PROXY_WS_URL=ws://localhost:5080/stream npm run dev
-```
+| Field | Meaning |
+| --- | --- |
+| Telemetry stream | live proxy, or the built-in demo feed |
+| WebSocket URL | where to read events from, when the source is the live proxy |
+| Host and port | what the setup guide tells people to type into a device |
+| Wi-Fi name | the network that already routes through the proxy, if there is one |
+| Certificate and PAC URL | optional, derived from host and port when left empty |
 
-The socket reconnects on its own with backoff, and the header badge reports the
-real state (`live`, `reattaching`, `detached`) with the endpoint spelled out. The
-dashboard drops any frame that does not parse as a protocol event instead of
-guessing what it meant.
+The values are saved in `localStorage` under `sitm.config.v1` and belong to that
+browser. Reconfigure in the header reopens the form with the current values, and
+Cancel goes back without changing anything. Saving resets the dashboard so
+traffic from the old source does not sit there looking live.
 
-With no endpoint configured the app falls back to a built-in demo feed that
-replays canned events in the same protocol, so you can show the visualization
-before the backend exists. The header labels it `demo feed · no backend`, so
-nobody mistakes it for real traffic. To force either source, add `?source=demo`
-or `?source=ws` to the URL.
+A saved config that fails validation counts as absent, which sends you back to
+the setup screen rather than half-configured into the dashboard.
+
+### The demo feed
+
+Pick Demo feed to run without a backend. It replays canned events in the same
+protocol, and the header labels it `demo feed · no backend` so nobody mistakes
+it for real traffic.
+
+### The live proxy
+
+Pick Live proxy and give it a `ws://` or `wss://` URL. The socket reconnects on
+its own with backoff, and the header badge reports the real state (`live`,
+`reattaching`, `detached`) with the endpoint spelled out. The dashboard drops any
+frame that does not parse as a protocol event instead of guessing what it meant.
 
 ## The setup guide
 
-The header has a button that opens a guide for putting a device behind the
-proxy: join the network, trust the certificate, then check the traffic list.
-The address it shows comes from `.env`, so change it there rather than in the
-code.
-
-```bash
-VITE_PROXY_HOST=proxy.sitm.local
-VITE_PROXY_PORT=8888
-VITE_PROXY_NETWORK=SITM-Guest    # the Wi-Fi that already routes through the proxy
-VITE_PROXY_CA_URL=               # optional, defaults to http://HOST:PORT/ca.crt
-VITE_PROXY_PAC_URL=              # optional, defaults to http://HOST:PORT/proxy.pac
-```
-
-The guide has install steps for iPhone, Android, Windows and macOS, and a copy
-button on every address. Leave `VITE_PROXY_CA_URL` and `VITE_PROXY_PAC_URL`
-empty unless the proxy serves those files from somewhere else.
+The header has a button showing the proxy address. It opens a guide for putting
+a device behind the proxy: join the network, trust the certificate, then check
+the traffic list. There are install steps for iPhone, Android, Windows and
+macOS, and a copy button on every address. All of it reads from what you entered
+on the setup screen.
 
 ## The protocol
 
@@ -141,12 +145,14 @@ table is the one place the real data still exists.
 ## Deployment
 
 The Dockerfile builds the bundle and serves it from nginx on port 8080, which is
-what `.github/workflows/frontend.yml` deploys to Azure Container Apps. To bake in
-the backend endpoint at build time:
+what `.github/workflows/frontend.yml` deploys to Azure Container Apps.
 
 ```bash
-docker build --build-arg VITE_PROXY_WS_URL=wss://proxy.example.ch/stream -t sitm-frontend .
+docker build -t sitm-frontend .
 ```
+
+There are no build arguments. Whoever opens the dashboard configures it in the
+browser.
 
 ## Notes for the demo
 

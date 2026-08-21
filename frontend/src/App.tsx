@@ -1,41 +1,32 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
-import { FlowBand } from './components/FlowBand'
-import { Header } from './components/Header'
-import { Inspector } from './components/Inspector'
-import { SetupGuide } from './components/SetupGuide'
-import { Traffic } from './components/Traffic'
-import { Vault } from './components/Vault'
+import { useState } from 'react'
+import { Dashboard } from './components/Dashboard'
+import { SetupScreen } from './components/SetupScreen'
+import { loadConfig, saveConfig, type RuntimeConfig } from './config'
 import { store } from './engine/store'
-import { createTransport } from './transport'
 
+/**
+ * Two screens: setup, then the dashboard. The saved config decides which one
+ * opens, and reconfiguring comes back here rather than reloading the page.
+ */
 export default function App() {
-  const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
-  const [setupOpen, setSetupOpen] = useState(false)
+  const [config, setConfig] = useState<RuntimeConfig | null>(() => loadConfig())
+  const [editing, setEditing] = useState(false)
 
-  useEffect(() => {
-    const transport = createTransport()
-    const offEvent = transport.onEvent((event) => store.apply(event))
-    const offStatus = transport.onStatus((status) => store.setLink(status))
-    transport.start()
+  if (!config || editing) {
+    return (
+      <SetupScreen
+        initial={config}
+        onCancel={config ? () => setEditing(false) : undefined}
+        onSave={(next) => {
+          saveConfig(next)
+          // Traffic from the previous source would otherwise sit there looking live.
+          store.reset()
+          setConfig(next)
+          setEditing(false)
+        }}
+      />
+    )
+  }
 
-    return () => {
-      offEvent()
-      offStatus()
-      transport.stop()
-    }
-  }, [])
-
-  return (
-    <div className="shell">
-      <Header state={state} onOpenSetup={() => setSetupOpen(true)} />
-      <FlowBand state={state} />
-      <div className="floor">
-        <Traffic state={state} />
-        <Inspector state={state} />
-        <Vault state={state} />
-      </div>
-
-      {setupOpen && <SetupGuide onClose={() => setSetupOpen(false)} />}
-    </div>
-  )
+  return <Dashboard config={config} onReconfigure={() => setEditing(true)} />
 }

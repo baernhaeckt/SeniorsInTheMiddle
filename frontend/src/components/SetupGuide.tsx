@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { caUrl, networkName, pacUrl, proxyAddress, proxyHost, proxyPort } from '../config'
+import { caUrlOf, hasProxyAddress, pacUrlOf, proxyAddressOf, type RuntimeConfig } from '../config'
 
 /**
  * How to put a device behind the proxy. Three steps in the order someone
@@ -46,8 +46,17 @@ const PLATFORMS: Platform[] = [
   },
 ]
 
-export function SetupGuide({ onClose }: { onClose: () => void }) {
+interface SetupGuideProps {
+  config: RuntimeConfig
+  onClose: () => void
+}
+
+export function SetupGuide({ config, onClose }: SetupGuideProps) {
   const [platform, setPlatform] = useState(PLATFORMS[0].key)
+  const configured = hasProxyAddress(config)
+  const proxyAddress = proxyAddressOf(config)
+  const caUrl = caUrlOf(config)
+  const pacUrl = pacUrlOf(config)
   const closeButton = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
@@ -84,17 +93,34 @@ export function SetupGuide({ onClose }: { onClose: () => void }) {
           </button>
         </header>
 
+        {!configured ? (
+          <div className="sheet__empty">
+            <p className="step__body">
+              No proxy address is configured, so there is nothing to type into a device yet.
+            </p>
+            <p className="step__body">
+              Use <b>Reconfigure</b> in the header to add a host and port. This guide then shows
+              the address, the certificate to trust, and how to install it on each platform.
+            </p>
+          </div>
+        ) : (
         <ol className="steps">
           <li className="step">
             <span className="step__n u-display">1</span>
             <h3 className="step__title">Join the network</h3>
-            <p className="step__body">
-              Connect the device to <b>{networkName}</b>. Everything it sends then goes through
-              the proxy, with nothing to configure.
-            </p>
-            <p className="step__body">On another network, set the proxy by hand instead:</p>
-            <Field label="Host" value={proxyHost} />
-            <Field label="Port" value={proxyPort} />
+            {config.networkName ? (
+              <>
+                <p className="step__body">
+                  Connect the device to <b>{config.networkName}</b>. Everything it sends then goes
+                  through the proxy, with nothing to configure.
+                </p>
+                <p className="step__body">On another network, set the proxy by hand instead:</p>
+              </>
+            ) : (
+              <p className="step__body">Set the proxy on the device by hand:</p>
+            )}
+            <Field label="Host" value={config.proxyHost} />
+            <Field label="Port" value={config.proxyPort} />
             <p className="step__aside">
               Devices that prefer auto-configuration can use the PAC file at{' '}
               <Copyable value={pacUrl} />
@@ -163,10 +189,17 @@ export function SetupGuide({ onClose }: { onClose: () => void }) {
             </p>
           </li>
         </ol>
+        )}
 
         <footer className="sheet__foot">
-          Proxy at <b>{proxyAddress}</b>. Change it with VITE_PROXY_HOST and VITE_PROXY_PORT in
-          your .env file.
+          {configured ? (
+            <>
+              Proxy at <b>{proxyAddress}</b>. Use Reconfigure in the header to point somewhere
+              else.
+            </>
+          ) : (
+            'No proxy address configured.'
+          )}
         </footer>
       </div>
     </div>

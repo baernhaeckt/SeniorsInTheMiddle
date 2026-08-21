@@ -7,8 +7,7 @@ COPY package.json package-lock.json .npmrc ./
 RUN npm ci --no-audit --no-fund
 
 COPY . .
-ARG VITE_PROXY_WS_URL=""
-ENV VITE_PROXY_WS_URL=$VITE_PROXY_WS_URL
+# No build-time configuration: the app asks for the proxy address on first run.
 RUN npm run build
 
 # Serve it. Azure Container Apps ingress points at 8080.

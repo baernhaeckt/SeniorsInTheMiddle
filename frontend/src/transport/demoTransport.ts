@@ -9,9 +9,9 @@ const ENDPOINT = 'demo feed · no backend'
  * Stand-in for the proxy until the backend ships its stream.
  *
  * It speaks the exact protocol in `src/protocol/types.ts` and nothing else, so
- * pointing VITE_PROXY_WS_URL at the real proxy swaps this out with no change
- * to the view. Assets stream through constantly; a request worth treating turns
- * up every few seconds, the way it would on a real line.
+ * choosing the live proxy on the setup screen swaps this out with no change to
+ * the view. Assets stream through constantly; a request worth treating turns up
+ * every few seconds, the way it would on a real line.
  */
 export function createDemoTransport(): Transport {
   const events = createEmitter<ServerEvent>()

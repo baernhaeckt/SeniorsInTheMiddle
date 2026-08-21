@@ -1,4 +1,4 @@
-import { proxyAddress } from '../config'
+import { hasProxyAddress, proxyAddressOf, type RuntimeConfig } from '../config'
 import { median, type AppState } from '../engine/store'
 
 const LINK_COPY: Record<string, string> = {
@@ -9,9 +9,17 @@ const LINK_COPY: Record<string, string> = {
   closed: 'detached',
 }
 
-export function Header({ state, onOpenSetup }: { state: AppState; onOpenSetup: () => void }) {
+interface HeaderProps {
+  state: AppState
+  config: RuntimeConfig
+  onOpenGuide: () => void
+  onReconfigure: () => void
+}
+
+export function Header({ state, config, onOpenGuide, onReconfigure }: HeaderProps) {
   const { metrics, link } = state
   const p50 = median(metrics.latencies)
+  const configured = hasProxyAddress(config)
 
   return (
     <header className="head">
@@ -34,9 +42,9 @@ export function Header({ state, onOpenSetup }: { state: AppState; onOpenSetup: (
         </div>
       </div>
 
-      <button type="button" className="setupcta" onClick={onOpenSetup}>
+      <button type="button" className="setupcta" data-unset={!configured} onClick={onOpenGuide}>
         <span className="setupcta__label">Proxy address</span>
-        <span className="setupcta__addr">{proxyAddress}</span>
+        <span className="setupcta__addr">{configured ? proxyAddressOf(config) : 'not set'}</span>
         <span className="setupcta__go" aria-hidden="true">
           &rarr;
         </span>
@@ -57,6 +65,10 @@ export function Header({ state, onOpenSetup }: { state: AppState; onOpenSetup: (
             {LINK_COPY[link.state] ?? link.state} · {link.endpoint}
           </span>
         </div>
+
+        <button type="button" className="reconf" onClick={onReconfigure}>
+          Reconfigure
+        </button>
       </div>
     </header>
   )
