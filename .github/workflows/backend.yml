@@ -53,12 +53,19 @@ jobs:
           tags: |
             ${{ env.IMAGE_REPO }}:${{ github.sha }}
             ${{ env.IMAGE_REPO }}:latest
+          # Keeps the NuGet restore layer warm between runs.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Azure login
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      # Serves /api/v1, the telemetry stream and the forward proxy on the same port.
+      #
+      # A forward proxy needs CONNECT to reach it, which HTTP ingress terminates --
+      # revisit the ingress mode (TCP vs HTTP) once the Azure tenant is available.
       - name: Deploy to Azure Container Apps
         uses: azure/container-apps-deploy-action@v2
         with:
@@ -73,5 +80,9 @@ jobs:
           ingress: external
           targetPort: 8080
           # Add more environment variables here if needed, space separated
-          # e.g. ASPNETCORE_ENVIRONMENT=Production ANOTHER_VAR=Value 
+          # e.g. ASPNETCORE_ENVIRONMENT=Production ANOTHER_VAR=Value
+          # The SPA origin is baked into appsettings.json. To point at a different
+          # frontend URL, append Cors__AllowedOrigins__0=https://<host> below --
+          # but only with a real value: an empty one blanks the entry and CORS
+          # then blocks every origin.
           environmentVariables: MY_ENV_VARIABLE=${{ vars.MY_ENV_VARIABLE }} Jwt__Key=secretref:jwtkey
