@@ -1,4 +1,5 @@
 using System.IO.Pipelines;
+using System.Text;
 
 public class StreamProxy : IStreamProxy
 {
@@ -22,11 +23,7 @@ public class StreamProxy : IStreamProxy
 
 
         Task clientToDestination = clientInput.CopyToAsync(_remote, tunnelCancellation.Token);
-
-        _logger.LogInformation("Waiting for the first chunk of data from the remote server...");
-        MemoryStream response = await ReadCompletedChunkAsync(_remote, tunnelCancellation.Token);
-
-        Task destinationToClient = response.CopyToAsync(clientOutput, tunnelCancellation.Token);
+        Task destinationToClient = _remote.CopyToAsync(clientOutput, tunnelCancellation.Token);
         await Task.WhenAny(clientToDestination, destinationToClient);
         tunnelCancellation.Cancel();
 
