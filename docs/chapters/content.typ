@@ -2,22 +2,19 @@
 
 == Source Code
 
-- #link("https://github.com/baernhaeckt/menumingles")
-  - /menu-backend : : Enthält das Backend der Applikation.
-  - /menu-frontend : Enthält das Frontend der Applikation.
-  - /menu-recommender : Enthält Komponente zum generieren von Menüs und deren Bilder
-  - /menu-minglers : Enthält Komponente Multiagent Persona Simulation
+- #link("https://github.com/baernhaeckt/SeniorsInTheMiddle")
+  - /backend : Enthält das Backend der Applikation.
+  - /frontend : Enthält das Frontend der Applikation.
+  - /Worker1 : TODO
   - /docs : Enthält die Dokumentation für die Jury
   - /pitch : Enthält die Slides für den Pitch sowie den Screencast
 
 == Deployment
 
-- Frontend: #link("https://menu-mingles-frontend-cccnfba0ezc2dhbc.northeurope-01.azurewebsites.net/")
-- Backend: #link("https://menu-mingles-backend.azurewebsites.net/swagger")
-- Recommender: #link("https://menu-mingles-recommender-dacue6bacweac5es.northeurope-01.azurewebsites.net/docs")
-- Minglers: #link("https://menu-mingles-minglers-brcebbdfb5cefdh8.northeurope-01.azurewebsites.net/docs")
-- CI/CD Pipelines: #link("https://github.com/baernhaeckt/menumingles/actions")
-- Deployments: #link("https://github.com/baernhaeckt/menumingles/deployments")
+- Frontend: #link("https://seniorsinthemiddle-frontend.greensea-158b1300.northeurope.azurecontainerapps.io/")
+- Backend: #link("https://seniorsinthemiddle-backend.greensea-158b1300.northeurope.azurecontainerapps.io/swagger")
+- CI/CD Pipelines: #link("https://github.com/baernhaeckt/SeniorsInTheMiddle/actions")
+- Deployments: #link("https://github.com/orgs/baernhaeckt/packages?repo_name=SeniorsInTheMiddle")
 
 = Ausgangslage
 
