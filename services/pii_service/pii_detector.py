@@ -4,7 +4,7 @@ import statistics
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 
 from services.pii_service.models.analyze_result import AnalyzeResult
-from services.pii_service.models.detection_result import DetectionResultItem, DetectionResult
+from services.pii_service.models.detection_result import DetectionResultItem, DetectionResult, to_dict
 from services.pii_service.pii_types import PiiTypes
 from services.pii_service.utils.pii_risk_mappings import get_pii_risk_mapping
 
@@ -85,6 +85,7 @@ class PiiDetector:
             detection_entities = list()
             for detection in detections:
                 risk_assessment = get_pii_risk_mapping(detection.entity_type)
+                detected_text = text[detection.start:detection.end]
 
                 detection_entities.append(
                     DetectionResultItem(
@@ -93,6 +94,7 @@ class PiiDetector:
                         score=detection.score,
                         start_position=detection.start,
                         end_position=detection.end,
+                        detected_text=detected_text,
                         risk_level=risk_assessment.risk_level.value,
                         hipaa_category=risk_assessment.hipaa_category.value
                     )
@@ -105,6 +107,6 @@ class PiiDetector:
             logger.info(f"Starting analysis of detection results for {len(detection_entities)} entities.")
             pii_analysis_result = self._analyze_detection_result(DetectionResult(detection_results=detection_entities))
 
-            return pii_analysis_result.__dict__
+            return to_dict(pii_analysis_result)
         except Exception as e:
                 raise Exception(f"Error analyzing text: {e}")
