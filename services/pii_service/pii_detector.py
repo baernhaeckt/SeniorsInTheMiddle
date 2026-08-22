@@ -1,4 +1,4 @@
-import json
+import logging
 import statistics
 from dataclasses import asdict
 
@@ -9,12 +9,12 @@ from services.pii_service.models.detection_result import DetectionResultItem, De
 from services.pii_service.pii_types import PiiTypes
 from services.pii_service.utils.pii_risk_mappings import get_pii_risk_mapping
 
+logger = logging.getLogger(__name__)
 
 class PiiDetector:
-    DEFAULT_LANGUAGE_CODE = "de"
     SUPPORTED_LANGUAGES = ["de", "en"]
 
-    def __init__(self, language_code: str = DEFAULT_LANGUAGE_CODE):
+    def __init__(self, language_code: str = "de"):
         """
         Initializes the PiiDetector class.
         """
@@ -23,6 +23,7 @@ class PiiDetector:
             from presidio_analyzer import AnalyzerEngine
 
             spacy_package_name = "de_core_news_lg" if language_code == "de" else "en_core_web_lg"
+            logger.info(f"Loading spacy package '{spacy_package_name}'")
 
             if not spacy.util.is_package(spacy_package_name):
                 # Install the model if it is not already installed
@@ -32,12 +33,14 @@ class PiiDetector:
             configuration = {
                 "nlp_engine_name": "spacy",
                 "models": [
-                    {"lang_code": "de", "model_name": "de_core_news_lg"},
-                    {"lang_code": "en", "model_name": "en_core_web_lg"}
+                    {"lang_code": f"{language_code}", "model_name": f"{spacy_package_name}"},
                 ],
             }
+            logger.info(f"Loading spacy configuration '{configuration['nlp_engine_name']}'")
+
             provider = NlpEngineProvider(nlp_configuration=configuration)
             self.analyzer = AnalyzerEngine(nlp_engine=provider.create_engine(), supported_languages=self.SUPPORTED_LANGUAGES)
+            self.language_code = language_code
 
         except ImportError as e:
             raise Exception(f"Missing dependencies. {e}")
@@ -64,20 +67,21 @@ class PiiDetector:
             detected_pii_type_frequencies=detected_pii_type_frequencies
         )
 
-    def analyze_text(self, text: str, detection_entities: list[str], language_code: str = DEFAULT_LANGUAGE_CODE) -> str:
+    def analyze_text(self, text: str, detection_entities: list[str]) -> dict:
         """
         Analyzes the given text for PII entities.
         Args:
             text (str): The text to analyze.
             detection_entities (list[str]): List of PII entity types to detect.
-            language_code (str): The language code for the analysis. Defaults to 'en'.
         Returns:
             DetectionResult: The result of the PII detection.
         """
         try:
+            logger.info(f"Analyzing text in language '{self.language_code}' for entities: {detection_entities}")
             detections = self.analyzer.analyze(
-                text=text, entities=detection_entities, language=language_code
+                text=text, entities=detection_entities, language=self.language_code
             )
+            logger.info(f"Found {len(detections)} potential PII entities.")
 
             detection_entities = list()
             for detection in detections:
@@ -95,7 +99,9 @@ class PiiDetector:
                     )
                 )
 
+            logger.info(f"Starting analysis of detection results for {len(detection_entities)} entities.")
+
             pii_analysis_result = self._analyze_detection_result(DetectionResult(detection_results=detection_entities))
-            return json.dumps(asdict(pii_analysis_result))  # Return the analysis result as a JSON string
+            return asdict(pii_analysis_result)
         except Exception as e:
                 raise Exception(f"Error analyzing text: {e}")
