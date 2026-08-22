@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 
 namespace SeniorsInTheMiddle.Proxy.Telemetry;
 
@@ -80,7 +80,7 @@ public sealed record DetectionCompleted(
 /// </summary>
 public sealed record DetectedEntity(
     string Id,
-    EntityKind Kind,
+    string Kind,
     string Value,
     string Token,
     int Start,

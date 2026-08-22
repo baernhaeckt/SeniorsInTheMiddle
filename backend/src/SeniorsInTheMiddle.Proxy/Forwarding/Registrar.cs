@@ -1,6 +1,7 @@
 ﻿using System.Security.Cryptography.X509Certificates;
 
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using SeniorsInTheMiddle.Proxy.Forwarding.Tokenizer;
 
 namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
@@ -20,6 +21,9 @@ public static class Registrar
             .AddHttpForwarder()
             .AddSingleton(provider => ProxyPorts.From(provider.GetRequiredService<IConfiguration>()))
             .AddSingleton(provider => BodyLimits.From(provider.GetRequiredService<IConfiguration>()))
+            .AddSingleton<TokenDetectionService>()
+            .AddSingleton<TokenAnonymizerService>()
+            .AddSingleton<IBodyMutationFactory, ReplacerService>()
             .AddSingleton<SelfHostNames>()
             .AddSingleton<UpstreamHttpClient>()
             .AddSingleton<IForwardProxy, ForwardProxy>()
