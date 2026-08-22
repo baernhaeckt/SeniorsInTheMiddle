@@ -44,8 +44,13 @@ services:
       # Added to the dashboard certificate and used by ForwardProxyMiddleware to spot an
       # absolute-form request that points back at this app.
       Proxy__HostNames__0: proxy
-      # Only relevant with the dashboard profile below, but harmless otherwise.
+      # Where a dashboard may be served from. This is not only CORS: the telemetry hub
+      # checks the Origin of its WebSocket handshake against the same list, because a
+      # browser applies neither CORS nor a preflight to that handshake. An origin missing
+      # here gets a 403 and the dashboard header stays on "reattaching".
+      # :8081 is the dashboard profile below, :5173 is `npm run dev` in ../frontend.
       Cors__AllowedOrigins__0: http://localhost:8081
+      Cors__AllowedOrigins__1: http://localhost:5173
       # The receiver's certificate is signed by the harness CA, and ConnectProxyMiddleware
       # validates upstream certificates normally. This bundle is the image's own trust
       # store plus that CA -- .NET on Linux resolves trust through OpenSSL, which honours
@@ -117,9 +122,8 @@ services:
     networks: [harness]
 
   # ------------------------------------------------------- optional, off by default
-  # The dashboard SPA. It stays on its demo feed until the proxy grows a telemetry
-  # stream; it is here so the setup screen and the CA download can be walked through
-  # against a running proxy.
+  # The dashboard SPA. Its defaults already point at the proxy on localhost:8080, so it
+  # attaches to the telemetry hub without anything being typed in.
   dashboard:
     profiles: [dashboard]
     build:
