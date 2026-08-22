@@ -24,6 +24,7 @@ namespace SeniorsInTheMiddle.Proxy.Forwarding;
 sealed class InspectionScope
 {
     private readonly List<(HostPattern Host, string[] Paths)> scoped = [];
+    private readonly Dictionary<string, string[]> configured = new(StringComparer.OrdinalIgnoreCase);
 
     public InspectionScope(IConfiguration configuration, ILogger<InspectionScope> logger)
     {
@@ -35,6 +36,7 @@ sealed class InspectionScope
                 continue;
 
             scoped.Add((new HostPattern([host.Key]), paths));
+            configured[host.Key] = paths;
 
             logger.LogInformation(
                 "On {Host} only {Paths} are inspected; every other path is forwarded untouched.",
@@ -42,6 +44,9 @@ sealed class InspectionScope
                 string.Join(", ", paths));
         }
     }
+
+    /// <summary>The entries as configured, host to paths, for the dashboard's hello.</summary>
+    public IReadOnlyDictionary<string, string[]> Scoped => configured;
 
     /// <summary>
     /// Whether the body of an exchange with <paramref name="destination"/> may be rewritten.

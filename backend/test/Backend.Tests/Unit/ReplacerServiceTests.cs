@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 
 using SeniorsInTheMiddle.Proxy.Forwarding;
 using SeniorsInTheMiddle.Proxy.Forwarding.Tokenizer;
@@ -194,6 +194,83 @@ public class ReplacerServiceTests
         Assert.AreEqual("hans@example.ch", body[email.Start..email.End]);
         Assert.AreNotEqual(person.Id, email.Id);
         Assert.IsTrue(observer.ScannedMs >= 0);
+
+        Assert.IsNotNull(observer.Stats);
+        Assert.AreEqual(1, observer.Stats.Suppressed, "The nested name counts as suppressed.");
+        Assert.AreEqual(0, observer.Stats.NearMisses.Count);
+    }
+
+    [TestMethod]
+    public async Task The_Detectors_Facts_About_A_Kind_Travel_With_The_Entity()
+    {
+        const string body = "Grüezi Hans Meier";
+        Observer observer = new();
+        StubPiiService client = new([
+            Finding(body, "Hans Meier", "PERSON") with
+            {
+                InformationType = "Full Name",
+                RiskLevel = 3,
+                HipaaCategory = "Not Protected Health Information",
+            },
+        ]);
+
+        await Exchange(Replacer(client, []), observer).MutateRequestAsync(
+            Encoding.UTF8.GetBytes(body),
+            new BodyDescriptor("text/plain", Encoding.UTF8),
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.IsNotNull(observer.Entities);
+        DetectedEntity person = observer.Entities.Single();
+        Assert.AreEqual("Full Name", person.InformationType);
+        Assert.AreEqual(3, person.RiskLevel);
+        Assert.AreEqual("Not Protected Health Information", person.HipaaCategory);
+    }
+
+    /// <summary>
+    /// A finding under the threshold is told to the dashboard and nothing else: not replaced,
+    /// not given a stand-in, not in the vault.
+    /// </summary>
+    [TestMethod]
+    public async Task A_Near_Miss_Is_Reported_And_Not_Replaced()
+    {
+        const string body = "Grüezi Hans Meier aus Bern";
+        Observer observer = new();
+        StubPiiService client = new(
+            [Finding(body, "Hans Meier", "PERSON")],
+            ignored: [Finding(body, "Bern", "LOCATION") with { Score = 0.4 }]);
+
+        byte[]? mutated = await Exchange(Replacer(client, []), observer).MutateRequestAsync(
+            Encoding.UTF8.GetBytes(body),
+            new BodyDescriptor("text/plain", Encoding.UTF8),
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.IsNotNull(mutated);
+        Assert.AreEqual("Grüezi <PERSON> aus Bern", Encoding.UTF8.GetString(mutated));
+
+        Assert.IsNotNull(observer.Stats);
+        NearMiss miss = observer.Stats.NearMisses.Single();
+        Assert.AreEqual("LOCATION", miss.Kind);
+        Assert.AreEqual("Bern", miss.Value);
+        Assert.AreEqual(0.4, miss.Confidence);
+    }
+
+    [TestMethod]
+    public async Task A_Clean_Body_Still_Reports_Its_Near_Misses()
+    {
+        const string body = "Grüezi aus Bern";
+        Observer observer = new();
+        StubPiiService client = new([], ignored: [Finding(body, "Bern", "LOCATION") with { Score = 0.4 }]);
+
+        byte[]? mutated = await Exchange(Replacer(client, []), observer).MutateRequestAsync(
+            Encoding.UTF8.GetBytes(body),
+            new BodyDescriptor("text/plain", Encoding.UTF8),
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.IsNull(mutated);
+        Assert.IsNotNull(observer.Entities);
+        Assert.AreEqual(0, observer.Entities.Count);
+        Assert.IsNotNull(observer.Stats);
+        Assert.AreEqual(1, observer.Stats.NearMisses.Count);
     }
 
     [TestMethod]
@@ -459,7 +536,10 @@ public class ReplacerServiceTests
     /// <summary>The analyzer, reduced to the findings a test hands it. The guard against empty
     /// text is the real client's, and is here so that a caller that stops respecting it fails
     /// a test rather than a request.</summary>
-    private sealed class StubPiiService(IReadOnlyList<PiiDetection> detections, string? replacement = null) : IPiiServiceClient
+    private sealed class StubPiiService(
+        IReadOnlyList<PiiDetection> detections,
+        string? replacement = null,
+        IReadOnlyList<PiiDetection>? ignored = null) : IPiiServiceClient
     {
         public int AnalyzeCalls { get; private set; }
 
@@ -477,6 +557,7 @@ public class ReplacerServiceTests
             {
                 DetectionResults = detections,
                 DetectionCount = detections.Count,
+                IgnoredResults = ignored ?? [],
             });
         }
 
@@ -497,17 +578,22 @@ public class ReplacerServiceTests
 
         public double ScannedMs { get; private set; }
 
+        public DetectionStats? Stats { get; private set; }
+
         public string? RestoredBody { get; private set; }
 
         public int RestoredCount { get; private set; }
 
         public void Passthrough(string reason) => PassthroughReason = reason;
 
-        public void Detected(IReadOnlyList<DetectedEntity> entities, double scannedMs)
+        public void Detected(IReadOnlyList<DetectedEntity> entities, DetectionStats stats)
         {
             Entities = entities;
-            ScannedMs = scannedMs;
+            ScannedMs = stats.ScannedMs;
+            Stats = stats;
         }
+
+        public void ResponseBuffered() { }
 
         public void Restored(string responseBody, int restored)
         {

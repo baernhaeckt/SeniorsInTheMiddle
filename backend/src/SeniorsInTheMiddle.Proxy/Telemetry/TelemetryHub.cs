@@ -24,7 +24,7 @@ sealed class TelemetryHub : Hub
 
     public override async Task OnConnectedAsync()
     {
-        await Clients.Caller.SendAsync("event", TelemetryJson.Serialize(descriptor.Hello));
+        await Clients.Caller.SendAsync("event", TelemetryJson.Serialize(await descriptor.HelloAsync(Context.ConnectionAborted)));
         await base.OnConnectedAsync();
     }
 }

@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography.X509Certificates;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 
 using Microsoft.AspNetCore.Server.Kestrel.Core;
@@ -13,18 +13,17 @@ public static class Registrar
 
     public static IServiceCollection AddForwardProxyServices(this IServiceCollection services)
     {
-        // The rewrite applied to every proxied body, request and response, plaintext and
-        // intercepted HTTPS alike. Replacing this one registration is the whole of "start
-        // redacting" -- see IBodyMutationFactory.
-        services.AddSingleton<IBodyMutationFactory, PassthroughMutationFactory>();
-
         services
             .AddHttpForwarder()
             .AddSingleton(provider => ProxyPorts.From(provider.GetRequiredService<IConfiguration>()))
             .AddSingleton(provider => BodyLimits.From(provider.GetRequiredService<IConfiguration>()))
             .AddSingleton<TokenDetectionService>()
             .AddSingleton<TokenAnonymizerService>()
+            // The rewrite applied to every proxied body, request and response, plaintext and
+            // intercepted HTTPS alike. PassthroughMutationFactory is the one that changes
+            // nothing, for a deployment that only watches -- see IBodyMutationFactory.
             .AddSingleton<IBodyMutationFactory, ReplacerService>()
+            .AddSingleton<PrivacyAssessor>()
             .AddSingleton<SelfHostNames>()
             .AddSingleton<InterceptionBypass>()
             .AddSingleton<InspectionScope>()

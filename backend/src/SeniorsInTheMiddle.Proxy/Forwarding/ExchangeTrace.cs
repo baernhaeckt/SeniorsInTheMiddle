@@ -51,6 +51,7 @@ sealed class ExchangeTrace : IExchangeObserver
     private readonly ITelemetrySink sink;
     private readonly string requestId;
     private readonly RequestFacts facts;
+    private readonly PrivacyAssessor? privacy;
     private readonly long openedAtTimestamp = Stopwatch.GetTimestamp();
 
     // The announcement is published late but describes the moment the request was seen.
@@ -66,8 +67,9 @@ sealed class ExchangeTrace : IExchangeObserver
     private long bodyBufferedAt;
     private long detectionStartedAt;
     private IReadOnlyList<DetectedEntity> entities = [];
-    private double scannedMs;
+    private DetectionStats stats = DetectionStats.None;
     private long detectedAt;
+    private long detectedAtTimestamp;
 
     private long dispatchedAtTimestamp;
     private bool dispatched;
@@ -75,19 +77,24 @@ sealed class ExchangeTrace : IExchangeObserver
     private int? responseStatus;
     private string tokenizedResponseBody = string.Empty;
     private long respondedAt;
+    private long respondedAtTimestamp;
     private double upstreamMs;
     private bool responded;
+
+    private long responseBufferedAtTimestamp;
 
     private string? restoredBody;
     private int restoredCount;
     private long restoredAt;
+    private long restoredAtTimestamp;
     private bool restored;
 
-    public ExchangeTrace(ITelemetrySink sink, string requestId, RequestFacts facts)
+    public ExchangeTrace(ITelemetrySink sink, string requestId, RequestFacts facts, PrivacyAssessor? privacy = null)
     {
         this.sink = sink;
         this.requestId = requestId;
         this.facts = facts;
+        this.privacy = privacy;
     }
 
     public string RequestId => requestId;
@@ -116,14 +123,15 @@ sealed class ExchangeTrace : IExchangeObserver
         detectionStartedAt = Stopwatch.GetTimestamp();
     }
 
-    public void Detected(IReadOnlyList<DetectedEntity> entities, double scannedMs)
+    public void Detected(IReadOnlyList<DetectedEntity> entities, DetectionStats stats)
     {
         if (observed)
             return;
 
         this.entities = entities;
-        this.scannedMs = scannedMs;
+        this.stats = stats;
         detectedAt = TelemetryJson.Now();
+        detectedAtTimestamp = Stopwatch.GetTimestamp();
     }
 
     /// <summary>
@@ -166,12 +174,19 @@ sealed class ExchangeTrace : IExchangeObserver
             id,
             detectedAt == 0 ? now : detectedAt,
             entities,
-            scannedMs > 0 ? scannedMs : Stopwatch.GetElapsedTime(detectionStartedAt).TotalMilliseconds));
+            stats.ScannedMs > 0 ? stats.ScannedMs : Stopwatch.GetElapsedTime(detectionStartedAt).TotalMilliseconds,
+            entities.Average(entity => entity.Confidence),
+            entities.GroupBy(entity => entity.Kind).ToDictionary(group => group.Key, group => group.Count()),
+            stats.Suppressed,
+            stats.NearMisses));
 
-        sink.Publish(new RedactionCompleted(
-            id,
-            now,
-            Capped(descriptor.Encoding.GetString(mutated))));
+        string redacted = descriptor.Encoding.GetString(mutated);
+
+        sink.Publish(new RedactionCompleted(id, now, Capped(redacted)));
+
+        // Off the request path: the check takes seconds and the answer is for the dashboard,
+        // not for this response. The full text goes, not the capped one.
+        privacy?.Schedule(id, redacted, entities);
     }
 
     /// <summary>The mutation failed and the request is not being forwarded.</summary>
@@ -218,6 +233,7 @@ sealed class ExchangeTrace : IExchangeObserver
         if (responseStatus is null)
         {
             respondedAt = TelemetryJson.Now();
+            respondedAtTimestamp = Stopwatch.GetTimestamp();
             upstreamMs = dispatched
                 ? Stopwatch.GetElapsedTime(dispatchedAtTimestamp).TotalMilliseconds
                 : Stopwatch.GetElapsedTime(openedAtTimestamp).TotalMilliseconds;
@@ -229,6 +245,12 @@ sealed class ExchangeTrace : IExchangeObserver
             tokenizedResponseBody = tokenizedBody;
     }
 
+    public void ResponseBuffered()
+    {
+        if (responseBufferedAtTimestamp == 0)
+            responseBufferedAtTimestamp = Stopwatch.GetTimestamp();
+    }
+
     public void Restored(string responseBody, int restored)
     {
         if (this.restored)
@@ -237,6 +259,7 @@ sealed class ExchangeTrace : IExchangeObserver
         restoredBody = responseBody;
         restoredCount = restored;
         restoredAt = TelemetryJson.Now();
+        restoredAtTimestamp = Stopwatch.GetTimestamp();
 
         FlushResponded();
         FlushRestored();
@@ -262,10 +285,9 @@ sealed class ExchangeTrace : IExchangeObserver
             FlushResponded();
             FlushRestored();
 
-            sink.Publish(new ExchangeDelivered(
-                exchangeId,
-                TelemetryJson.Now(),
-                Stopwatch.GetElapsedTime(openedAtTimestamp).TotalMilliseconds));
+            double totalMs = Stopwatch.GetElapsedTime(openedAtTimestamp).TotalMilliseconds;
+
+            sink.Publish(new ExchangeDelivered(exchangeId, TelemetryJson.Now(), totalMs, Timing(totalMs)));
         }
 
         sink.Publish(new RequestCompleted(requestId, TelemetryJson.Now(), status, responseBytes, durationMs));
@@ -320,13 +342,39 @@ sealed class ExchangeTrace : IExchangeObserver
             restoredCount));
     }
 
+    /// <summary>
+    /// The round trip split by step, from the Stopwatch instants above. A step the exchange
+    /// never reached is 0, and the rest of the total -- response body on the wire, framing,
+    /// delivery to the client -- is the overhead.
+    /// </summary>
+    private ExchangeTiming Timing(double totalMs)
+    {
+        double bufferMs = Between(openedAtTimestamp, detectionStartedAt);
+        double detectMs = Between(detectionStartedAt, detectedAtTimestamp);
+        double rehydrateMs = Between(
+            responseBufferedAtTimestamp != 0 ? responseBufferedAtTimestamp : respondedAtTimestamp,
+            restoredAtTimestamp);
+        double overheadMs = Math.Max(0, totalMs - bufferMs - detectMs - upstreamMs - rehydrateMs);
+
+        return new ExchangeTiming(bufferMs, detectMs, upstreamMs, rehydrateMs, overheadMs);
+    }
+
+    private static double Between(long from, long to)
+        => from == 0 || to == 0 || to < from ? 0 : Stopwatch.GetElapsedTime(from, to).TotalMilliseconds;
+
     private string CleanReason()
     {
         string size = Size(requestBody is null ? facts.RequestBytes : Encoding.UTF8.GetByteCount(requestBody));
+        string misses = stats.NearMisses.Count switch
+        {
+            0 => string.Empty,
+            1 => " (1 near miss)",
+            int count => $" ({count} near misses)",
+        };
 
         return facts.ContentType is { Length: > 0 } contentType
-            ? $"nothing found in {size} of {MediaType(contentType)}"
-            : $"nothing found in {size}";
+            ? $"nothing found in {size} of {MediaType(contentType)}{misses}"
+            : $"nothing found in {size}{misses}";
     }
 
     private static string IdentifiersReason(int count)

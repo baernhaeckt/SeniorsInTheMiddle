@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 
 namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
@@ -43,10 +43,22 @@ interface IExchangeObserver
 
     /// <summary>What was found in the request body and replaced. Offsets are indices into the
     /// decoded body text. An empty list is a body that was scanned and found clean.</summary>
-    void Detected(IReadOnlyList<Telemetry.DetectedEntity> entities, double scannedMs);
+    void Detected(IReadOnlyList<Telemetry.DetectedEntity> entities, DetectionStats stats);
+
+    /// <summary>The response body is in hand and about to be offered to the mutation.</summary>
+    void ResponseBuffered();
 
     /// <summary>The response body with the proxy's stand-ins put back, and how many were.</summary>
     void Restored(string responseBody, int restored);
+}
+
+/// <summary>What a scan cost and what it left out, beside the entities it produced.</summary>
+/// <param name="ScannedMs">The detector's own time.</param>
+/// <param name="Suppressed">Findings reported but not replaced on their own.</param>
+/// <param name="NearMisses">Findings below the confidence threshold.</param>
+sealed record DetectionStats(double ScannedMs, int Suppressed, IReadOnlyList<Telemetry.NearMiss> NearMisses)
+{
+    public static readonly DetectionStats None = new(0, 0, []);
 }
 
 /// <summary>For a mutation that has nothing to report, and for tests.</summary>
@@ -56,7 +68,9 @@ sealed class NullExchangeObserver : IExchangeObserver
 
     public void Passthrough(string reason) { }
 
-    public void Detected(IReadOnlyList<Telemetry.DetectedEntity> entities, double scannedMs) { }
+    public void Detected(IReadOnlyList<Telemetry.DetectedEntity> entities, DetectionStats stats) { }
+
+    public void ResponseBuffered() { }
 
     public void Restored(string responseBody, int restored) { }
 }

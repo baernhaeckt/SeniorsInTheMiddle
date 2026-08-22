@@ -31,7 +31,9 @@ public class TelemetryHubTests
         string hello = await WaitForFrameAsync(frames, 0);
 
         StringAssert.Contains(hello, "\"type\":\"hello\"");
-        StringAssert.Contains(hello, "\"version\":2");
+        StringAssert.Contains(hello, "\"version\":3");
+        StringAssert.Contains(hello, "\"policy\":{\"rewrite\":true");
+        StringAssert.Contains(hello, "\"services\":{\"pii\":\"disabled\",\"privacyCheck\":\"disabled\"}");
     }
 
     [TestMethod]

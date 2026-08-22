@@ -125,6 +125,13 @@ ENV PII_SOCKET_PATH=/run/services/pii-service.sock \
     PRIVACY_CHECK_SOCKET_PATH=/run/services/privacy-check-service.sock \
     Services__PrivacyCheck__SocketPath=/run/services/privacy-check-service.sock
 
+# The confidence line the PII service draws. Read by the python side (findings below it are
+# reported as near misses) and by the proxy (so the dashboard can show it). One variable, on
+# purpose: two settings would drift.
+ENV PII_SCORE_THRESHOLD=0.6 \
+    PRIVACY_MCMC_DRAWS=500 \
+    PRIVACY_MCMC_TUNE=500
+
 COPY services/service_runtime        /srv/services/service_runtime
 COPY services/pii_service            /srv/services/pii_service
 COPY services/privacy_check_service  /srv/services/privacy_check_service

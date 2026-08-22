@@ -1,4 +1,4 @@
-﻿using System.Buffers.Binary;
+using System.Buffers.Binary;
 using System.Net.Sockets;
 using System.Text.Json;
 
@@ -62,6 +62,34 @@ public class PythonServicesTests
         Assert.AreEqual(11, detection.EndPosition);
         Assert.AreEqual("PHI", detection.HipaaCategory);
         Assert.AreEqual(1, result.DetectedPiiTypeFrequencies["PERSON"]);
+    }
+
+    [TestMethod]
+    public void Ignored_Results_Are_Read_Even_When_Nothing_Was_Detected()
+    {
+        const string json = """
+            {
+              "ignored_results": [
+                {
+                  "information_type": "Location",
+                  "entity_type": "LOCATION",
+                  "score": 0.4,
+                  "start_position": 0,
+                  "end_position": 4,
+                  "detected_text": "Bern",
+                  "risk_level": 2,
+                  "hipaa_category": "NON_PHI"
+                }
+              ]
+            }
+            """;
+
+        PiiAnalyzeResult result = JsonSerializer.Deserialize<PiiAnalyzeResult>(json, PiiJson.Options)!;
+
+        Assert.IsFalse(result.HasDetections);
+        PiiDetection ignored = result.IgnoredResults.Single();
+        Assert.AreEqual("LOCATION", ignored.EntityType);
+        Assert.AreEqual(0.4, ignored.Score, 0.0001);
     }
 
     [TestMethod]

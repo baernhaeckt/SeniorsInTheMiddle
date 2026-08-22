@@ -593,7 +593,7 @@ public class ResponseBodyRewriteTests
                 int start = text.IndexOf(RealName, StringComparison.Ordinal);
                 observer.Detected(
                     [new DetectedEntity("e1", "PERSON", RealName, Token, start, start + RealName.Length, 0.9)],
-                    scannedMs: 1);
+                    new DetectionStats(1, 0, []));
 
                 return ValueTask.FromResult<byte[]?>(
                     descriptor.Encoding.GetBytes(text.Replace(RealName, Token, StringComparison.Ordinal)));

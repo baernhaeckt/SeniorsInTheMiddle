@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using Microsoft.AspNetCore.Http.Features;
 using SeniorsInTheMiddle.Proxy.Telemetry;
 using Yarp.ReverseProxy.Forwarder;
@@ -14,6 +14,7 @@ sealed class ForwardProxy : IForwardProxy
     private readonly BodyLimits bodyLimits;
     private readonly InspectionScope scope;
     private readonly ILogger<ForwardProxyTransformer> transformerLogger;
+    private readonly PrivacyAssessor? privacy;
 
     private readonly UpstreamHttpClient upstream;
 
@@ -30,7 +31,8 @@ sealed class ForwardProxy : IForwardProxy
         BodyLimits bodyLimits,
         InspectionScope scope,
         UpstreamHttpClient upstream,
-        ILogger<ForwardProxyTransformer> transformerLogger)
+        ILogger<ForwardProxyTransformer> transformerLogger,
+        PrivacyAssessor? privacy = null)
     {
         this.forwarder = forwarder;
         this.telemetry = telemetry;
@@ -40,6 +42,7 @@ sealed class ForwardProxy : IForwardProxy
         this.scope = scope;
         this.upstream = upstream;
         this.transformerLogger = transformerLogger;
+        this.privacy = privacy;
     }
 
     public async Task HandleAsync(HttpContext context)
@@ -52,7 +55,7 @@ sealed class ForwardProxy : IForwardProxy
             return;
         }
 
-        ExchangeTrace trace = new(telemetry, CorrelationIds.NextRequest(), Facts(context, destination));
+        ExchangeTrace trace = new(telemetry, CorrelationIds.NextRequest(), Facts(context, destination), privacy);
         long startedAt = Stopwatch.GetTimestamp();
 
         // Counted on the way out rather than read from Content-Length, which a chunked

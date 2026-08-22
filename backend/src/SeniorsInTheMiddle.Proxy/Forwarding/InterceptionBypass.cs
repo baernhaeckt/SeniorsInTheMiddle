@@ -1,4 +1,4 @@
-﻿namespace SeniorsInTheMiddle.Proxy.Forwarding;
+namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
 /// <summary>
 /// Hosts whose TLS is left alone: no MITM certificate, no decryption, no rewrite. A CONNECT to
@@ -28,6 +28,7 @@ sealed class InterceptionBypass
         string[] configured = configuration.GetSection("Proxy:BypassHosts").Get<string[]>() ?? [];
 
         hosts = new HostPattern(configured);
+        Hosts = configured;
 
         if (!hosts.IsEmpty)
         {
@@ -36,6 +37,9 @@ sealed class InterceptionBypass
                 string.Join(", ", configured));
         }
     }
+
+    /// <summary>The entries as configured, for the dashboard's hello.</summary>
+    public IReadOnlyList<string> Hosts { get; }
 
     /// <summary>
     /// Whether <paramref name="host"/> is left unintercepted. An entry covers its subdomains --

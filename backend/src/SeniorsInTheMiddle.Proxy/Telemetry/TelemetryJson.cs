@@ -14,7 +14,7 @@ public static class TelemetryJson
     /// Must match PROTOCOL_VERSION in frontend/src/protocol/types.ts, or the dashboard
     /// header shows a mismatch banner.
     /// </summary>
-    public const int ProtocolVersion = 2;
+    public const int ProtocolVersion = 3;
 
     /// <summary>
     /// Nulls are omitted rather than written, because the optional fields in the protocol

@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 
 using SeniorsInTheMiddle.Proxy.Forwarding;
 using SeniorsInTheMiddle.Proxy.Telemetry;
@@ -58,7 +58,7 @@ public class ExchangeTraceTests
         (ExchangeTrace trace, List<TelemetryEvent> events) = Trace();
 
         trace.BodyBuffered("{\"note\":\"hello\"}"u8.ToArray(), Json);
-        trace.Detected([], 4);
+        trace.Detected([], new DetectionStats(4, 0, []));
         trace.RequestRewritten(null, Json);
         trace.Dispatched("https://api.example.ch", 16);
         trace.Responded(200, "{}");
@@ -74,6 +74,19 @@ public class ExchangeTraceTests
     }
 
     [TestMethod]
+    public void A_Clean_Request_Names_Its_Near_Misses_In_The_Reason()
+    {
+        (ExchangeTrace trace, List<TelemetryEvent> events) = Trace();
+
+        trace.BodyBuffered("{\"city\":\"Bern\"}"u8.ToArray(), Json);
+        trace.Detected([], new DetectionStats(2, 0, [new NearMiss("LOCATION", "Bern", 0.4)]));
+        trace.RequestRewritten(null, Json);
+        trace.Completed(200, 2, 3);
+
+        StringAssert.Contains(events.OfType<RequestObserved>().Single().Reason, "(1 near miss)");
+    }
+
+    [TestMethod]
     public void A_Treated_Request_Publishes_The_Whole_Lifecycle_In_Order()
     {
         (ExchangeTrace trace, List<TelemetryEvent> events) = Trace();
@@ -81,7 +94,7 @@ public class ExchangeTraceTests
         DetectedEntity entity = new("e1", "PERSON", "Hans Meier", "[PERSON_1]", 9, 19, 0.85);
 
         trace.BodyBuffered(Encoding.UTF8.GetBytes(body), Json);
-        trace.Detected([entity], 12.5);
+        trace.Detected([entity], new DetectionStats(12.5, 1, [new NearMiss("LOCATION", "Bern", 0.4)]));
         trace.RequestRewritten("{\"name\":\"[PERSON_1]\"}"u8.ToArray(), Json);
         trace.Dispatched("https://api.example.ch", 21);
         trace.Responded(201, string.Empty);
@@ -120,6 +133,10 @@ public class ExchangeTraceTests
         Assert.AreEqual(exchangeId, detection.ExchangeId);
         Assert.AreEqual(12.5, detection.ScannedMs);
         Assert.AreSame(entity, detection.Entities.Single());
+        Assert.AreEqual(0.85, detection.RiskScoreMean);
+        Assert.AreEqual(1, detection.TypeFrequencies["PERSON"]);
+        Assert.AreEqual(1, detection.Suppressed);
+        Assert.AreEqual("Bern", detection.NearMisses.Single().Value);
 
         Assert.AreEqual("{\"name\":\"[PERSON_1]\"}", events.OfType<RedactionCompleted>().Single().RedactedRequestBody);
 
@@ -136,7 +153,14 @@ public class ExchangeTraceTests
         Assert.AreEqual("{\"greeting\":\"Hallo Hans Meier\"}", rehydrated.ResponseBody);
         Assert.AreEqual(1, rehydrated.Restored);
 
-        Assert.IsTrue(events.OfType<ExchangeDelivered>().Single().TotalMs >= 0);
+        ExchangeDelivered delivered = events.OfType<ExchangeDelivered>().Single();
+        Assert.IsTrue(delivered.TotalMs >= 0);
+        ExchangeTiming timing = delivered.Timing;
+        Assert.IsTrue(timing.BufferMs >= 0 && timing.DetectMs >= 0 && timing.UpstreamMs >= 0 && timing.RehydrateMs >= 0);
+        Assert.IsTrue(timing.OverheadMs >= 0);
+        Assert.IsTrue(
+            timing.BufferMs + timing.DetectMs + timing.UpstreamMs + timing.RehydrateMs + timing.OverheadMs <= delivered.TotalMs + 0.001,
+            "The steps never add up to more than the whole.");
 
         long[] times = events.Select(At).ToArray();
         CollectionAssert.AreEqual(times.OrderBy(t => t).ToArray(), times, "Timestamps never go backwards.");
@@ -165,7 +189,7 @@ public class ExchangeTraceTests
         (ExchangeTrace trace, List<TelemetryEvent> events) = Trace();
 
         trace.BodyBuffered("Hans"u8.ToArray(), Json);
-        trace.Detected([new DetectedEntity("e1", "PERSON", "Hans", "[P]", 0, 4, 1)], 1);
+        trace.Detected([new DetectedEntity("e1", "PERSON", "Hans", "[P]", 0, 4, 1)], new DetectionStats(1, 0, []));
         trace.RequestRewritten("[P]"u8.ToArray(), Json);
         trace.Dispatched("https://api.example.ch", 3);
         trace.Responded(200, string.Empty);
@@ -220,7 +244,7 @@ public class ExchangeTraceTests
         string body = new('x', ExchangeTrace.MaxBodyChars + 100);
 
         trace.BodyBuffered(Encoding.UTF8.GetBytes(body), Json);
-        trace.Detected([new DetectedEntity("e1", "PERSON", "x", "[P]", 0, 1, 1)], 1);
+        trace.Detected([new DetectedEntity("e1", "PERSON", "x", "[P]", 0, 1, 1)], new DetectionStats(1, 0, []));
         trace.RequestRewritten(Encoding.UTF8.GetBytes(body), Json);
         trace.Completed(200, 0, 1);
 

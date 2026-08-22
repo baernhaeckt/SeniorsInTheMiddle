@@ -25,6 +25,9 @@ public sealed record PiiAnalyzeResult
 
     public IReadOnlyDictionary<string, int> DetectedPiiTypeFrequencies { get; init; } = new Dictionary<string, int>();
 
+    /// <summary>Findings below the python side's <c>PII_SCORE_THRESHOLD</c>. Reported, never replaced.</summary>
+    public IReadOnlyList<PiiDetection> IgnoredResults { get; init; } = [];
+
     [JsonIgnore]
     public bool HasDetections => DetectionCount > 0 || DetectionResults.Count > 0;
 }

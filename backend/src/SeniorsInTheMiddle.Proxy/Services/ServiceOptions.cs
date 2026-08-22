@@ -42,6 +42,10 @@ public sealed class ServiceEndpointOptions
     /// still be loading its model when the proxy comes up.</summary>
     public int ConnectTimeoutSeconds { get; set; } = 30;
 
+    /// <summary>How long one call may take once connected. The privacy check samples an MCMC
+    /// chain per call, so its default is generous; the PII service answers in milliseconds.</summary>
+    public int CallTimeoutSeconds { get; set; } = 120;
+
     /// <summary>Largest frame accepted from the service; matches SERVICE_MAX_FRAME_BYTES.</summary>
     public int MaxFrameBytes { get; set; } = 8 * 1024 * 1024;
 
