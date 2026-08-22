@@ -70,7 +70,7 @@
                        FontSize="11" FontWeight="Bold" Margin="0,0,0,10" />
 
             <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource Label}" Text="Scheme" />
-            <ComboBox Grid.Row="1" Grid.Column="1" x:Name="SchemeBox" HorizontalAlignment="Left" Width="120">
+            <ComboBox Grid.Row="1" Grid.Column="1" x:Name="SchemeBox" HorizontalAlignment="Left" Width="120" SelectionChanged="OnSchemeChanged">
                 <ComboBoxItem Content="http" />
                 <ComboBoxItem Content="https" />
             </ComboBox>

@@ -27,6 +27,28 @@ public partial class SettingsWindow : Window
         StartPageBox.Text = s.StartPage;
     }
 
+    /// <summary>
+    /// The proxy listens on 3128 (http) and 3127 (https). When the scheme changes and the port still holds the
+    /// other scheme's default, swap it so the user does not have to remember the pair.
+    /// </summary>
+    private void OnSchemeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded || !int.TryParse(PortBox.Text.Trim(), out var port))
+        {
+            return;
+        }
+
+        var https = SchemeBox.SelectedIndex == 1;
+        if (https && port == AppSettings.DefaultHttpProxyPort)
+        {
+            PortBox.Text = AppSettings.DefaultHttpsProxyPort.ToString();
+        }
+        else if (!https && port == AppSettings.DefaultHttpsProxyPort)
+        {
+            PortBox.Text = AppSettings.DefaultHttpProxyPort.ToString();
+        }
+    }
+
     /// <summary>Fills the form with the built-in defaults; nothing is written until Save is clicked.</summary>
     private void OnResetClick(object sender, RoutedEventArgs e) => Populate(new AppSettings());
 
@@ -48,9 +70,10 @@ public partial class SettingsWindow : Window
         }
 
         var caUrl = CaUrlBox.Text.Trim();
-        if (!Uri.TryCreate(caUrl, UriKind.Absolute, out var caUri) || caUri.Scheme != Uri.UriSchemeHttps)
+        if (!Uri.TryCreate(caUrl, UriKind.Absolute, out var caUri)
+            || (caUri.Scheme != Uri.UriSchemeHttps && caUri.Scheme != Uri.UriSchemeHttp))
         {
-            MessageBox.Show(this, "CA certificate URL must be an absolute https:// URL.", "Invalid settings", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, "CA certificate URL must be an absolute http:// or https:// URL.", "Invalid settings", MessageBoxButton.OK, MessageBoxImage.Warning);
             CaUrlBox.Focus();
             return;
         }

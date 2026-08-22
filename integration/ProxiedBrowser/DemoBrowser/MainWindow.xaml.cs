@@ -131,6 +131,15 @@ public partial class MainWindow : Window
         AddressBar.SelectAll();
     }
 
+    /// <summary>Lock icon: shows the certificate / connection details of the active tab.</summary>
+    private void OnSecurityInfoClick(object sender, RoutedEventArgs e)
+    {
+        var tab = _viewModel.ActiveTab;
+        var info = tab?.SecurityInfo ?? new Models.ConnectionSecurityInfo();
+        var dialog = new CertificateInfoWindow(info, tab?.Source ?? "") { Owner = this };
+        dialog.ShowDialog();
+    }
+
     private void OnSettingsClick(object sender, RoutedEventArgs e)
     {
         var dialog = new SettingsWindow(_settingsService) { Owner = this };

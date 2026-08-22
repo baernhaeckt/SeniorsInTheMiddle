@@ -57,9 +57,9 @@
         </Border.Effect>
         <Border.Background>
             <LinearGradientBrush x:Name="BgGradient" StartPoint="0,0" EndPoint="1,1">
-                <GradientStop Color="#FF10142A" Offset="0" />
-                <GradientStop Color="#FF1C2238" Offset="0.55" />
-                <GradientStop Color="#FF0F2E36" Offset="1" />
+                <GradientStop Color="#FF0D1216" Offset="0" />
+                <GradientStop Color="#FF0C2A2B" Offset="0.55" />
+                <GradientStop Color="#FF225851" Offset="1" />
             </LinearGradientBrush>
         </Border.Background>
 
@@ -76,7 +76,7 @@
                 <Ellipse x:Name="Glow" Width="140" Height="140" Opacity="0.5">
                     <Ellipse.Fill>
                         <RadialGradientBrush>
-                            <GradientStop Color="#663FB39C" Offset="0" />
+                            <GradientStop Color="#66288879" Offset="0" />
                             <GradientStop Color="#0038B5EE" Offset="1" />
                         </RadialGradientBrush>
                     </Ellipse.Fill>
@@ -86,7 +86,7 @@
                 <Ellipse Width="130" Height="130" StrokeThickness="1.5" StrokeDashArray="6 10" Opacity="0.7" RenderTransformOrigin="0.5,0.5">
                     <Ellipse.Stroke>
                         <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                            <GradientStop Color="#FF3FB39C" Offset="0" />
+                            <GradientStop Color="#FF288879" Offset="0" />
                             <GradientStop Color="#FF38B5EE" Offset="1" />
                         </LinearGradientBrush>
                     </Ellipse.Stroke>
@@ -94,7 +94,7 @@
                         <RotateTransform x:Name="HaloRotate" />
                     </Ellipse.RenderTransform>
                 </Ellipse>
-                <Ellipse Width="108" Height="108" StrokeThickness="1" StrokeDashArray="2 6" Opacity="0.45" Stroke="#FFD4708D" RenderTransformOrigin="0.5,0.5">
+                <Ellipse Width="108" Height="108" StrokeThickness="1" StrokeDashArray="2 6" Opacity="0.45" Stroke="#FF8A3D56" RenderTransformOrigin="0.5,0.5">
                     <Ellipse.RenderTransform>
                         <RotateTransform x:Name="HaloRotate2" />
                     </Ellipse.RenderTransform>
@@ -128,8 +128,8 @@
                 <Rectangle Width="160" HorizontalAlignment="Left" RadiusX="2" RadiusY="2">
                     <Rectangle.Fill>
                         <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                            <GradientStop Color="#003FB39C" Offset="0" />
-                            <GradientStop Color="#FF3FB39C" Offset="0.5" />
+                            <GradientStop Color="#00288879" Offset="0" />
+                            <GradientStop Color="#FF288879" Offset="0.5" />
                             <GradientStop Color="#FF38B5EE" Offset="0.8" />
                             <GradientStop Color="#0038B5EE" Offset="1" />
                         </LinearGradientBrush>

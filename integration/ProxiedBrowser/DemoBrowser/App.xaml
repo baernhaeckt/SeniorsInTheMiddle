@@ -3,25 +3,25 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
-        <!-- Palette: deep navy chrome with a violet→cyan accent -->
-        <Color x:Key="ChromeTopColor">#FF151A2B</Color>
-        <Color x:Key="ChromeBottomColor">#FF1C2238</Color>
-        <SolidColorBrush x:Key="ChromeBrush" Color="#FF1C2238" />
-        <SolidColorBrush x:Key="ToolbarBrush" Color="#FF232A44" />
-        <SolidColorBrush x:Key="SurfaceBrush" Color="#FF2B3350" />
-        <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#FF36406A" />
+        <!-- Palette (project-wide, huemint): #0D1216 ink · #0C2A2B deep teal · #225851 teal · #288879 bright teal · #38B5EE cyan · #8A3D56 wine · #A5AFB4 / #949DA0 greys · #FFFFFF -->
+        <Color x:Key="ChromeTopColor">#FF0D1216</Color>
+        <Color x:Key="ChromeBottomColor">#FF0C2A2B</Color>
+        <SolidColorBrush x:Key="ChromeBrush" Color="#FF0C2A2B" />
+        <SolidColorBrush x:Key="ToolbarBrush" Color="#FF123B3A" />
+        <SolidColorBrush x:Key="SurfaceBrush" Color="#FF225851" />
+        <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#FF288879" />
         <SolidColorBrush x:Key="BorderBrushSubtle" Color="#22FFFFFF" />
-        <SolidColorBrush x:Key="TextBrush" Color="#FFECEFF8" />
-        <SolidColorBrush x:Key="TextMutedBrush" Color="#FF9AA3C2" />
-        <SolidColorBrush x:Key="AccentBrush" Color="#FF3FB39C" />
-        <SolidColorBrush x:Key="DangerBrush" Color="#FFE5484D" />
+        <SolidColorBrush x:Key="TextBrush" Color="#FFFFFFFF" />
+        <SolidColorBrush x:Key="TextMutedBrush" Color="#FFA5AFB4" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#FF288879" />
+        <SolidColorBrush x:Key="DangerBrush" Color="#FF8A3D56" />
         <LinearGradientBrush x:Key="AccentGradient" StartPoint="0,0" EndPoint="1,0">
-            <GradientStop Color="#FF3FB39C" Offset="0" />
+            <GradientStop Color="#FF288879" Offset="0" />
             <GradientStop Color="#FF38B5EE" Offset="1" />
         </LinearGradientBrush>
         <LinearGradientBrush x:Key="ChromeGradient" StartPoint="0,0" EndPoint="0,1">
-            <GradientStop Color="#FF151A2B" Offset="0" />
-            <GradientStop Color="#FF1C2238" Offset="1" />
+            <GradientStop Color="#FF0D1216" Offset="0" />
+            <GradientStop Color="#FF0C2A2B" Offset="1" />
         </LinearGradientBrush>
 
         <!-- Shield geometry from the frontend's shield.svg -->

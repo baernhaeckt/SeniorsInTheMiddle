@@ -44,17 +44,17 @@ All state lives under `%LOCALAPPDATA%\DemoBrowser\`:
   "ProxyHost": "seniorsinthemiddle-backend.greensea-158b1300.northeurope.azurecontainerapps.io",
   "ProxyPort": 3128,
   "ProxyBypassList": "",
-  "CaCertUrl": "https://seniorsinthemiddle-backend.greensea-158b1300.northeurope.azurecontainerapps.io/ca.crt",
+  "CaCertUrl": "http://seniorsinthemiddle-backend.greensea-158b1300.northeurope.azurecontainerapps.io:3128/ca.cer",
   "StartPage": "https://example.com"
 }
 ```
 
 | Key | Meaning |
 |-----|---------|
-| `ProxyScheme` | `http` (plain HTTP CONNECT proxy, even when it listens on 443) or `https` (TLS-terminating proxy). |
+| `ProxyScheme` | `http` (plain HTTP CONNECT proxy, port 3128) or `https` (TLS-terminating proxy, port 3127). The settings dialog swaps the port automatically when you switch scheme. |
 | `ProxyHost`, `ProxyPort` | Proxy endpoint. Port must be 1–65535. |
 | `ProxyBypassList` | Chromium `--proxy-bypass-list` syntax, e.g. `localhost;*.corp.example.com`. Empty = nothing bypassed. |
-| `CaCertUrl` | **https** URL serving the proxy CA as PEM or DER. |
+| `CaCertUrl` | URL serving the proxy CA as PEM or DER. The proxy publishes it (and `proxy.pac`) on its plain-HTTP port: `http://<host>:3128/ca.cer`. An https URL is validated with full TLS. |
 | `StartPage` | URL opened for new tabs and when there is no session to restore. |
 
 The gear button opens a dialog that edits all of these with validation.
@@ -81,10 +81,11 @@ saves the file and tells you to restart; the running instance keeps its original
 
 ## How in-app CA trust works
 
-1. **Download** – `CertificateService.DownloadAsync` fetches `CaCertUrl` with a plain `HttpClient` and **normal,
-   full TLS validation**. The URL is an Azure Web App with a publicly-trusted certificate, so there is no
-   bootstrap-trust problem and no custom validation callback is set. Failure is non-fatal: a yellow banner is
-   shown and the browser starts anyway (HTTPS sites will then show the normal Edge certificate interstitial).
+1. **Download** – `CertificateService.DownloadAsync` fetches `CaCertUrl` with a plain `HttpClient`. For https
+   URLs that means **normal, full TLS validation**: no custom validation callback is set, there is no
+   bootstrap-trust problem. The default points at the proxy's own plain-HTTP port (`http://<host>:3128/ca.cer`);
+   note that plain HTTP cannot protect the download against substitution on the path. Failure is non-fatal: a
+   yellow banner is shown and the browser starts anyway (HTTPS sites will then show the normal Edge interstitial).
 2. **Parse** – PEM (`-----BEGIN CERTIFICATE-----`) via `X509Certificate2.CreateFromPem`, otherwise DER via
    `X509CertificateLoader.LoadCertificate` (the .NET 10 non-obsolete loaders). The certificate is held in memory only.
 3. **Enforce** – every tab subscribes to `CoreWebView2.ServerCertificateErrorDetected` inside

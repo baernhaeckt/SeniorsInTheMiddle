@@ -158,8 +158,9 @@
                         <TextBox x:Name="AddressBar" Style="{StaticResource PillTextBox}" Padding="30,5,12,5"
                                  Text="{Binding AddressText, UpdateSourceTrigger=PropertyChanged}"
                                  KeyDown="OnAddressBarKeyDown" GotKeyboardFocus="OnAddressBarGotFocus" />
-                        <TextBlock Text="🔒" FontSize="11" Margin="11,0,0,0" VerticalAlignment="Center" HorizontalAlignment="Left"
-                                   Foreground="{StaticResource TextMutedBrush}" IsHitTestVisible="False" />
+                        <Button Style="{StaticResource IconButton}" Width="26" Height="24" FontSize="12" Margin="4,0,0,0"
+                                HorizontalAlignment="Left" VerticalAlignment="Center" ToolTip="View site information"
+                                Content="{Binding ActiveTab.SecurityGlyph, FallbackValue=◎}" Click="OnSecurityInfoClick" />
                     </Grid>
                 </DockPanel>
             </Border>

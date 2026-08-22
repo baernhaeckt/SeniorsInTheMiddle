@@ -31,18 +31,21 @@ public sealed class CertificateService
     /// Downloads and parses the CA certificate from <paramref name="caCertUrl"/>.
     /// Returns <c>null</c> on success, otherwise a human-readable error message.
     ///
-    /// WHY normal TLS validation: the CA is served by an Azure Web App with a valid, publicly-trusted
-    /// certificate, so the default <see cref="HttpClient"/> validation is exactly right. There is no
-    /// bootstrap-trust problem (this request is made by .NET, not by the proxied WebView2), and relaxing
+    /// WHY normal TLS validation: when the CA is served over https (e.g. an Azure endpoint with a
+    /// publicly-trusted certificate) the default <see cref="HttpClient"/> validation is exactly right. There is
+    /// no bootstrap-trust problem (this request is made by .NET, not by the proxied WebView2), and relaxing
     /// validation here would let anyone on the path substitute their own CA, which would be a security regression.
+    /// The proxy also publishes the CA on its plain-HTTP port (http://host:3128/ca.cer); that is accepted too,
+    /// with the obvious caveat that plain HTTP offers no protection against substitution on the path.
     /// </summary>
     public async Task<string?> DownloadAsync(string caCertUrl, CancellationToken cancellationToken = default)
     {
         _proxyCa = null;
 
-        if (!Uri.TryCreate(caCertUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+        if (!Uri.TryCreate(caCertUrl, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
         {
-            return $"CaCertUrl '{caCertUrl}' is not a valid https:// URL.";
+            return $"CaCertUrl '{caCertUrl}' is not a valid http(s):// URL.";
         }
 
         try
@@ -83,11 +86,48 @@ public sealed class CertificateService
     /// (a genuinely bad certificate, or no CA loaded at all) falls through to
     /// <see cref="CoreWebView2ServerCertificateErrorAction.Default"/> so the normal Edge interstitial appears.
     /// </summary>
-    public void HandleServerCertificateError(CoreWebView2ServerCertificateErrorDetectedEventArgs e)
+    /// <returns><c>true</c> if the certificate was accepted because it chains to the proxy CA.</returns>
+    public bool HandleServerCertificateError(CoreWebView2ServerCertificateErrorDetectedEventArgs e)
     {
-        e.Action = IsIssuedByProxyCa(e.ServerCertificate)
+        var trusted = IsIssuedByProxyCa(e.ServerCertificate);
+        e.Action = trusted
             ? CoreWebView2ServerCertificateErrorAction.AlwaysAllow
             : CoreWebView2ServerCertificateErrorAction.Default;
+        return trusted;
+    }
+
+    /// <summary>Checks whether an arbitrary chain (leaf first) ends at the in-memory proxy CA.</summary>
+    public bool ChainsToProxyCa(IReadOnlyList<X509Certificate2> chain)
+    {
+        var proxyCa = _proxyCa;
+        if (proxyCa is null || chain.Count == 0)
+        {
+            return false;
+        }
+
+        if (chain.Any(c => string.Equals(c.Thumbprint, proxyCa.Thumbprint, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        try
+        {
+            using var x509Chain = new X509Chain();
+            x509Chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+            x509Chain.ChainPolicy.CustomTrustStore.Add(proxyCa);
+            x509Chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+            x509Chain.ChainPolicy.VerificationFlags = X509VerificationFlags.IgnoreWrongUsage;
+            foreach (var issuer in chain.Skip(1))
+            {
+                x509Chain.ChainPolicy.ExtraStore.Add(issuer);
+            }
+
+            return x509Chain.Build(chain[0]);
+        }
+        catch (CryptographicException)
+        {
+            return false;
+        }
     }
 
     private bool IsIssuedByProxyCa(CoreWebView2Certificate? certificate)

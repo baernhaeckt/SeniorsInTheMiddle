@@ -1,4 +1,8 @@
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using System.Text.Json;
 using System.Windows;
+using DemoBrowser.Models;
 using DemoBrowser.Services;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -21,6 +25,8 @@ public sealed class TabViewModel : ObservableObject, IDisposable
     private bool _canGoBack;
     private bool _canGoForward;
     private bool _disposed;
+    private bool _lastCertErrorTrustedViaProxy;
+    private ConnectionSecurityInfo _securityInfo = new();
 
     public TabViewModel(CertificateService certificateService)
     {
@@ -82,6 +88,29 @@ public sealed class TabViewModel : ObservableObject, IDisposable
         get => _canGoForward;
         private set => SetProperty(ref _canGoForward, value);
     }
+
+    /// <summary>TLS details of the current page, for the lock-icon popup.</summary>
+    public ConnectionSecurityInfo SecurityInfo
+    {
+        get => _securityInfo;
+        private set
+        {
+            if (SetProperty(ref _securityInfo, value))
+            {
+                OnPropertyChanged(nameof(SecurityGlyph));
+            }
+        }
+    }
+
+    /// <summary>Lock glyph for the address bar: closed lock (https), open lock (http), warning (broken).</summary>
+    public string SecurityGlyph => SecurityInfo.SecurityState switch
+    {
+        "secure" => "\U0001F512",
+        "insecure-broken" => "⚠",
+        _ when Source.StartsWith("https://", StringComparison.OrdinalIgnoreCase) => "\U0001F512",
+        _ when string.IsNullOrEmpty(Source) => "◎",
+        _ => "\U0001F513",
+    };
 
     /// <summary>
     /// Initialises the CoreWebView2 against the single shared environment and navigates to <paramref name="initialUrl"/>.
@@ -147,7 +176,8 @@ public sealed class TabViewModel : ObservableObject, IDisposable
         var core = WebView.CoreWebView2;
 
         // Must be subscribed BEFORE the first navigation, otherwise that navigation's certificate error is missed.
-        core.ServerCertificateErrorDetected += (_, args) => _certificateService.HandleServerCertificateError(args);
+        core.ServerCertificateErrorDetected += (_, args) =>
+            _lastCertErrorTrustedViaProxy = _certificateService.HandleServerCertificateError(args);
 
         core.DocumentTitleChanged += (_, _) => UpdateTitle();
         core.HistoryChanged += (_, _) => UpdateHistoryState();
@@ -157,6 +187,88 @@ public sealed class TabViewModel : ObservableObject, IDisposable
             NewTabRequested?.Invoke(this, args.Uri);
         };
         core.Settings.IsStatusBarEnabled = true;
+
+        // TLS details of successful connections are only available through the DevTools protocol.
+        core.GetDevToolsProtocolEventReceiver("Security.visibleSecurityStateChanged").DevToolsProtocolEventReceived +=
+            (_, args) => OnVisibleSecurityStateChanged(args.ParameterObjectAsJson);
+        _ = EnableSecurityDomainAsync(core);
+    }
+
+    private static async Task EnableSecurityDomainAsync(CoreWebView2 core)
+    {
+        try
+        {
+            await core.CallDevToolsProtocolMethodAsync("Security.enable", "{}");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException)
+        {
+            // DevTools unavailable: the lock popup simply shows less detail.
+        }
+    }
+
+    /// <summary>Parses the CDP <c>Security.VisibleSecurityState</c> payload into <see cref="SecurityInfo"/>.</summary>
+    private void OnVisibleSecurityStateChanged(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("visibleSecurityState", out var state))
+            {
+                return;
+            }
+
+            var chain = new List<X509Certificate2>();
+            string protocol = "", keyExchange = "", cipher = "";
+            if (state.TryGetProperty("certificateSecurityState", out var cert))
+            {
+                protocol = cert.TryGetProperty("protocol", out var p) ? p.GetString() ?? "" : "";
+                keyExchange = cert.TryGetProperty("keyExchange", out var k) ? k.GetString() ?? "" : "";
+                cipher = cert.TryGetProperty("cipher", out var c) ? c.GetString() ?? "" : "";
+                if (cert.TryGetProperty("certificate", out var certs) && certs.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var entry in certs.EnumerateArray())
+                    {
+                        var b64 = entry.GetString();
+                        if (string.IsNullOrEmpty(b64))
+                        {
+                            continue;
+                        }
+
+                        try
+                        {
+                            chain.Add(X509CertificateLoader.LoadCertificate(Convert.FromBase64String(b64)));
+                        }
+                        catch (Exception ex) when (ex is CryptographicException or FormatException)
+                        {
+                        }
+                    }
+                }
+            }
+
+            var issues = new List<string>();
+            if (state.TryGetProperty("securityStateIssueIds", out var ids) && ids.ValueKind == JsonValueKind.Array)
+            {
+                issues.AddRange(ids.EnumerateArray().Select(i => i.GetString() ?? "").Where(i => i.Length > 0));
+            }
+
+            var host = Uri.TryCreate(Source, UriKind.Absolute, out var uri) ? uri.Host : "";
+            var previous = SecurityInfo;
+            SecurityInfo = new ConnectionSecurityInfo
+            {
+                Host = host,
+                SecurityState = state.TryGetProperty("securityState", out var s) ? s.GetString() ?? "" : "",
+                Protocol = protocol,
+                KeyExchange = keyExchange,
+                Cipher = cipher,
+                Chain = chain,
+                Issues = issues,
+                TrustedViaProxyCa = _lastCertErrorTrustedViaProxy || _certificateService.ChainsToProxyCa(chain),
+            };
+            DisposeChain(previous);
+        }
+        catch (JsonException)
+        {
+        }
     }
 
     private void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
@@ -170,7 +282,15 @@ public sealed class TabViewModel : ObservableObject, IDisposable
     private void SyncSource()
     {
         var uri = WebView.Source;
-        Source = uri is null || uri.ToString() == "about:blank" ? "" : uri.ToString();
+        var newSource = uri is null || uri.ToString() == "about:blank" ? "" : uri.ToString();
+        if (newSource != Source)
+        {
+            // New document: forget the previous page's trust decision and glyph.
+            _lastCertErrorTrustedViaProxy = false;
+            Source = newSource;
+            OnPropertyChanged(nameof(SecurityGlyph));
+        }
+
         UpdateTitle();
     }
 
@@ -200,6 +320,14 @@ public sealed class TabViewModel : ObservableObject, IDisposable
         RelayCommand.RaiseCanExecuteChanged();
     }
 
+    private static void DisposeChain(ConnectionSecurityInfo info)
+    {
+        foreach (var cert in info.Chain)
+        {
+            cert.Dispose();
+        }
+    }
+
     /// <summary>Disposes the WebView2 (and its CoreWebView2) when the tab is closed.</summary>
     public void Dispose()
     {
@@ -209,6 +337,7 @@ public sealed class TabViewModel : ObservableObject, IDisposable
         }
 
         _disposed = true;
+        DisposeChain(SecurityInfo);
         WebView.Dispose();
     }
 }
