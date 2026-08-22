@@ -360,8 +360,8 @@ sealed class ForwardProxyTransformer(
         }
 
         BodyDescriptor descriptor = new(contentType?.ToString(), EncodingOf(contentType?.ToString()));
-        trace.Responded((int)proxyResponse.StatusCode, descriptor.Encoding.GetString(plain));
-        trace.ResponseBuffered();
+        trace.Responded((int)proxyResponse.StatusCode, string.Empty);
+        trace.ResponseBuffered(plain, descriptor);
 
         byte[]? mutated;
         try

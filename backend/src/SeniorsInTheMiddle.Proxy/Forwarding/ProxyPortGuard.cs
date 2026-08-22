@@ -1,4 +1,4 @@
-namespace SeniorsInTheMiddle.Proxy.Forwarding;
+﻿namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
 /// <summary>
 /// Keeps the API off the proxy listeners.
@@ -16,19 +16,19 @@ sealed class ProxyPortGuard
     /// <see cref="Registrar.RegisterProxyEndpoints"/>.</summary>
     private static readonly string[] BootstrapPaths = ["/ca.crt", "/proxy.pac"];
 
-    private readonly RequestDelegate next;
-    private readonly ProxyPorts ports;
+    private readonly RequestDelegate _next;
+    private readonly ProxyPorts _ports;
 
     public ProxyPortGuard(RequestDelegate next, ProxyPorts ports)
     {
-        this.next = next;
-        this.ports = ports;
+        _next = next;
+        _ports = ports;
     }
 
     public Task InvokeAsync(HttpContext context)
     {
-        if (!ports.IsProxyListener(context.Connection.LocalPort) || IsBootstrapPath(context.Request.Path))
-            return next(context);
+        if (!_ports.IsProxyListener(context.Connection.LocalPort) || IsBootstrapPath(context.Request.Path))
+            return _next(context);
 
         context.Response.StatusCode = StatusCodes.Status404NotFound;
         return Task.CompletedTask;

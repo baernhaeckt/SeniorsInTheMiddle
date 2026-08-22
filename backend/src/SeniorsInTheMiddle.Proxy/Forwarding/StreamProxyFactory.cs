@@ -11,6 +11,6 @@ sealed class StreamProxyFactory : IStreamProxyFactory
         _loggerFactory = loggerFactory;
     }
 
-    public IStreamProxy Create(IDuplexPipe client, Stream remote) 
+    public IStreamProxy Create(IDuplexPipe client, Stream remote)
         => new StreamProxy(client, remote, _loggerFactory.CreateLogger<StreamProxy>());
 }

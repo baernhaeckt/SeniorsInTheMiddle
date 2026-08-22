@@ -570,6 +570,8 @@ public class ResponseBodyRewriteTests
     /// </summary>
     private sealed class TokenisingMutationFactory : IBodyMutationFactory
     {
+        public bool Rewrites => true;
+
         public IExchangeBodyMutation CreateForExchange(Uri destination, IExchangeObserver observer) => new Exchange(observer);
 
         private sealed class Exchange(IExchangeObserver observer) : IExchangeBodyMutation
@@ -577,7 +579,7 @@ public class ResponseBodyRewriteTests
             private const string RealName = "Hans Muster";
             private const string Token = "PERSON_1";
 
-            private bool replaced;
+            private bool _replaced;
 
             public ValueTask<byte[]?> MutateRequestAsync(
                 ReadOnlyMemory<byte> body,
@@ -588,7 +590,7 @@ public class ResponseBodyRewriteTests
                 if (!text.Contains(RealName, StringComparison.Ordinal))
                     return ValueTask.FromResult<byte[]?>(null);
 
-                replaced = true;
+                _replaced = true;
 
                 int start = text.IndexOf(RealName, StringComparison.Ordinal);
                 observer.Detected(
@@ -605,7 +607,7 @@ public class ResponseBodyRewriteTests
                 CancellationToken cancellationToken)
             {
                 string text = descriptor.Encoding.GetString(body.Span);
-                if (!replaced || !text.Contains(Token, StringComparison.Ordinal))
+                if (!_replaced || !text.Contains(Token, StringComparison.Ordinal))
                     return ValueTask.FromResult<byte[]?>(null);
 
                 string restored = text.Replace(Token, RealName, StringComparison.Ordinal);

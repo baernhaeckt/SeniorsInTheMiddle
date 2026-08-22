@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
 using Microsoft.Extensions.Configuration;
@@ -20,23 +20,23 @@ namespace Backend.Tests.Unit;
 [TestClass]
 public class MitmCertificateProviderTests
 {
-    private string caPath = string.Empty;
+    private string _caPath = string.Empty;
 
     [TestInitialize]
     public void CreateCaPath()
-        => caPath = Path.Combine(Path.GetTempPath(), $"sitm-ca-{Guid.NewGuid():N}.pfx");
+        => _caPath = Path.Combine(Path.GetTempPath(), $"sitm-ca-{Guid.NewGuid():N}.pfx");
 
     [TestCleanup]
     public void RemoveCaFiles()
     {
-        File.Delete(caPath);
-        File.Delete(Path.ChangeExtension(caPath, ".cer"));
+        File.Delete(_caPath);
+        File.Delete(Path.ChangeExtension(_caPath, ".cer"));
     }
 
     private MitmCertificateProvider Provider()
         => new(
             new ConfigurationBuilder()
-                .AddInMemoryCollection([new KeyValuePair<string, string?>("Mitm:CertificatePath", caPath)])
+                .AddInMemoryCollection([new KeyValuePair<string, string?>("Mitm:CertificatePath", _caPath)])
                 .Build(),
             NullLogger<MitmCertificateProvider>.Instance);
 

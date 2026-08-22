@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 
 using SeniorsInTheMiddle.Proxy.Forwarding;
 using SeniorsInTheMiddle.Proxy.Forwarding.Tokenizer;
@@ -444,8 +444,9 @@ public class ReplacerServiceTests
 
         Assert.IsNull(mutated);
         // The label-only finding is nested in the cross-value one, so the overlap rule drops
-        // it first; only the outer span reaches the document check.
-        Assert.AreEqual(1, events.OfType<ProxyLog>().Count(l => l.Level == TelemetryLogLevel.Warn));
+        // it first; only the outer span reaches the document check. (The stub faker hands
+        // every PERSON the same stand-in, so a separate collision warning is expected too.)
+        Assert.AreEqual(1, events.OfType<ProxyLog>().Count(l => l.Level == TelemetryLogLevel.Warn && l.Message.Contains("dropped")));
     }
 
     /// <summary>What does not parse is not JSON, whatever the header says, and is analysed as
@@ -487,7 +488,7 @@ public class ReplacerServiceTests
     }
 
     private static ReplacerService Replacer(StubPiiService client, List<TelemetryEvent> events)
-        => new(new TokenDetectionService(client), new TokenAnonymizerService(client), new CollectingSink(events));
+        => new(new TokenDetectionService(client), client, new CollectingSink(events));
 
     /// <summary>A finding over text that is actually in the body, with the offset the analyzer
     /// would report for it -- counted in code points, as the python side counts.</summary>

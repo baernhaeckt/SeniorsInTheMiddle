@@ -1,4 +1,4 @@
-namespace SeniorsInTheMiddle.Proxy.Services.PrivacyCheck;
+﻿namespace SeniorsInTheMiddle.Proxy.Services.PrivacyCheck;
 
 /// <summary>The re-identification risk check (services/privacy_check_service), over its unix socket.</summary>
 public interface IPrivacyCheckServiceClient

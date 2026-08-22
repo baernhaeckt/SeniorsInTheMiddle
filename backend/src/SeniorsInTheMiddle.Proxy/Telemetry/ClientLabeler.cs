@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Net;
 
 namespace SeniorsInTheMiddle.Proxy.Telemetry;
@@ -12,14 +12,14 @@ namespace SeniorsInTheMiddle.Proxy.Telemetry;
 /// </summary>
 sealed class ClientLabeler
 {
-    private readonly ConcurrentDictionary<string, string> labels = new();
+    private readonly ConcurrentDictionary<string, string> _labels = new();
 
     public string Label(IPAddress? address, string? userAgent)
     {
         string ip = Ip(address);
         string kind = DeviceKind(userAgent);
 
-        return labels.GetOrAdd($"{kind}|{ip}", _ => $"{kind} · {Suffix(ip)}");
+        return _labels.GetOrAdd($"{kind}|{ip}", _ => $"{kind} · {Suffix(ip)}");
     }
 
     /// <summary>

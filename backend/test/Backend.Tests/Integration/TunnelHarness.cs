@@ -16,6 +16,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 using SeniorsInTheMiddle.Proxy.Forwarding;
+using SeniorsInTheMiddle.Proxy.Services.PrivacyCheck;
 using SeniorsInTheMiddle.Proxy.Telemetry;
 
 namespace Backend.Tests.Integration;
@@ -92,10 +93,10 @@ internal sealed class TunnelHarness : IAsyncDisposable
         public void Publish(TelemetryEvent telemetryEvent) => events.Enqueue(telemetryEvent);
     }
 
-    private readonly WebApplication destination;
-    private readonly WebApplication proxy;
-    private readonly HarnessState state;
-    private readonly X509Certificate2 destinationCertificate;
+    private readonly WebApplication _destination;
+    private readonly WebApplication _proxy;
+    private readonly HarnessState _state;
+    private readonly X509Certificate2 _destinationCertificate;
 
     private TunnelHarness(
         WebApplication destination,
@@ -106,10 +107,10 @@ internal sealed class TunnelHarness : IAsyncDisposable
         Uri proxyUri,
         int unreachablePort)
     {
-        this.destination = destination;
-        this.proxy = proxy;
-        this.state = state;
-        this.destinationCertificate = destinationCertificate;
+        _destination = destination;
+        _proxy = proxy;
+        _state = state;
+        _destinationCertificate = destinationCertificate;
         DestinationUri = destinationUri;
         ProxyUri = proxyUri;
         UnreachablePort = unreachablePort;
@@ -124,13 +125,13 @@ internal sealed class TunnelHarness : IAsyncDisposable
     /// <summary>A port nothing listens on, for the tunnels that are meant to fail.</summary>
     public int UnreachablePort { get; }
 
-    public RecordedRequest? Received => state.Received;
+    public RecordedRequest? Received => _state.Received;
 
-    public IReadOnlyList<TelemetryEvent> Telemetry => state.Telemetry.ToArray();
+    public IReadOnlyList<TelemetryEvent> Telemetry => _state.Telemetry.ToArray();
 
-    public IReadOnlyList<string> Logs => state.Logs.ToArray();
+    public IReadOnlyList<string> Logs => _state.Logs.ToArray();
 
-    public IReadOnlyList<string> PresentedIssuers => state.PresentedIssuers.ToArray();
+    public IReadOnlyList<string> PresentedIssuers => _state.PresentedIssuers.ToArray();
 
     public static async Task<TunnelHarness> StartAsync(
         IBodyMutationFactory? mutation = null,
@@ -179,7 +180,7 @@ internal sealed class TunnelHarness : IAsyncDisposable
             RemoteCertificateValidationCallback = (_, certificate, _, _) =>
             {
                 if (certificate is X509Certificate2 presented)
-                    state.PresentedIssuers.Enqueue(presented.Issuer);
+                    _state.PresentedIssuers.Enqueue(presented.Issuer);
 
                 return true;
             },
@@ -215,7 +216,7 @@ internal sealed class TunnelHarness : IAsyncDisposable
 
     public RecordedRequest RequireReceived()
     {
-        RecordedRequest? received = state.Received;
+        RecordedRequest? received = _state.Received;
         Assert.IsNotNull(received, "The destination server received no request at all.");
 
         return received;
@@ -223,11 +224,11 @@ internal sealed class TunnelHarness : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        await proxy.StopAsync();
-        await destination.StopAsync();
-        await proxy.DisposeAsync();
-        await destination.DisposeAsync();
-        destinationCertificate.Dispose();
+        await _proxy.StopAsync();
+        await _destination.StopAsync();
+        await _proxy.DisposeAsync();
+        await _destination.DisposeAsync();
+        _destinationCertificate.Dispose();
     }
 
     private static WebApplication BuildDestination(
@@ -307,6 +308,9 @@ internal sealed class TunnelHarness : IAsyncDisposable
             .AddSingleton<ConnectProxyMiddleware>()
             .AddSingleton<ClientLabeler>()
             .AddSingleton<ITelemetrySink>(new QueueTelemetrySink(state.Telemetry))
+            // Disabled: the assessor answers "skipped" at once, and no tunnel test waits on it.
+            .AddSingleton<IPrivacyCheckServiceClient, DisabledPrivacyCheck>()
+            .AddSingleton<PrivacyAssessor>()
             .AddSingleton<IForwardProxy, ForwardProxy>();
 
         // The one seam in all of this: the destination is self-signed, so the process has no
@@ -371,4 +375,13 @@ internal sealed class TunnelHarness : IAsyncDisposable
 
         return port;
     }
+}
+
+/// <summary>A privacy check that is switched off, as on a dev box without the container.</summary>
+internal sealed class DisabledPrivacyCheck : IPrivacyCheckServiceClient
+{
+    public bool IsEnabled => false;
+
+    public Task<PrivacyRiskResult> RiskCheckAsync(string text, IReadOnlyList<string> replacedNames, CancellationToken cancellationToken = default)
+        => Task.FromResult(PrivacyRiskResult.Empty);
 }

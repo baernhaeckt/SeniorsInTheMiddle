@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 
 using SeniorsInTheMiddle.Proxy.Services.Pii;
 
@@ -6,9 +6,9 @@ namespace SeniorsInTheMiddle.Proxy.Services.PrivacyCheck;
 
 sealed class PrivacyCheckServiceClient(ServiceConnections services) : IPrivacyCheckServiceClient
 {
-    private readonly ServiceConnection connection = services.Get(ServiceConnections.PrivacyCheckService);
+    private readonly ServiceConnection _connection = services.Get(ServiceConnections.PrivacyCheckService);
 
-    public bool IsEnabled => connection.IsConfigured;
+    public bool IsEnabled => _connection.IsConfigured;
 
     public async Task<PrivacyRiskResult> RiskCheckAsync(
         string text,
@@ -21,7 +21,7 @@ sealed class PrivacyCheckServiceClient(ServiceConnections services) : IPrivacyCh
         if (replacedNames.Count == 0)
             return PrivacyRiskResult.Empty;
 
-        JsonElement result = await connection.CallAsync(
+        JsonElement result = await _connection.CallAsync(
             "risk_check",
             new { text, replaced_names = replacedNames },
             cancellationToken);

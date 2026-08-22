@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Hosting;
+﻿using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using SeniorsInTheMiddle.Proxy.Forwarding;
@@ -108,7 +108,7 @@ public class PrivacyAssessorTests
         List<TelemetryEvent> events = [];
 
         return (
-            new PrivacyAssessor(client, new Sink(events), new Lifetime(), new ServiceOptions(), NullLogger<PrivacyAssessor>.Instance),
+            new PrivacyAssessor(client, new Sink(events), new Lifetime(), NullLogger<PrivacyAssessor>.Instance),
             events);
     }
 

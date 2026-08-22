@@ -1,9 +1,9 @@
-using SeniorsInTheMiddle.Proxy.Services.Pii;
+﻿using SeniorsInTheMiddle.Proxy.Services.Pii;
 using SeniorsInTheMiddle.Proxy.Telemetry;
 
 namespace SeniorsInTheMiddle.Proxy.Forwarding.Tokenizer;
 
-public class TokenDetectionService
+public sealed class TokenDetectionService
 {
     private readonly IPiiServiceClient _piiClient;
 
@@ -16,8 +16,10 @@ public class TokenDetectionService
     {
         PiiAnalyzeResult results = await _piiClient.AnalyzeAsync(content, cancellationToken);
 
+        // Grouped by the pair, not by a concatenation of the two: "PERSON" + "Anna" and
+        // "PERSONA" + "nna" must not land in one group.
         TokenDetectionResult[] tokens = results.DetectionResults
-            .GroupBy(d => $"{d.EntityType}{d.DetectedText}")
+            .GroupBy(d => (d.EntityType, d.DetectedText))
             .Select(Map)
             .ToArray();
 
@@ -28,7 +30,7 @@ public class TokenDetectionService
         return new TokenDetection(tokens, nearMisses);
     }
 
-    private static TokenDetectionResult Map(IGrouping<string, PiiDetection> grouping)
+    private static TokenDetectionResult Map(IGrouping<(string EntityType, string DetectedText), PiiDetection> grouping)
     {
         PiiDetection entity = grouping.First();
         Token token = new(entity.DetectedText, entity.EntityType);

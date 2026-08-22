@@ -1,4 +1,4 @@
-using System.Net.Http.Json;
+﻿using System.Net.Http.Json;
 
 using SeniorsInTheMiddle.Proxy.Auth.Api;
 

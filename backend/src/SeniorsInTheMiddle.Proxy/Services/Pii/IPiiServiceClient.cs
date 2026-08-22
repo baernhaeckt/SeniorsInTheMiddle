@@ -1,4 +1,4 @@
-namespace SeniorsInTheMiddle.Proxy.Services.Pii;
+﻿namespace SeniorsInTheMiddle.Proxy.Services.Pii;
 
 /// <summary>The PII detection service (services/pii_service), over its unix socket.</summary>
 public interface IPiiServiceClient

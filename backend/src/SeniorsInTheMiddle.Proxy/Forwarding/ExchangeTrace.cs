@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 
 using SeniorsInTheMiddle.Proxy.Telemetry;
@@ -48,64 +48,74 @@ sealed class ExchangeTrace : IExchangeObserver
 
     private const string Cut = "…";
 
-    private readonly ITelemetrySink sink;
-    private readonly string requestId;
-    private readonly RequestFacts facts;
-    private readonly PrivacyAssessor? privacy;
-    private readonly long openedAtTimestamp = Stopwatch.GetTimestamp();
+    private readonly ITelemetrySink _sink;
+    private readonly string _requestId;
+    private readonly RequestFacts _facts;
+    private readonly PrivacyAssessor? _privacy;
+    private readonly long _openedAtTimestamp = Stopwatch.GetTimestamp();
 
     // The announcement is published late but describes the moment the request was seen.
-    private readonly long seenAt = TelemetryJson.Now();
+    private readonly long _seenAt = TelemetryJson.Now();
 
-    private bool observed;
-    private bool exchange;
-    private bool completed;
-    private string? exchangeId;
+    private bool _observed;
+    private bool _exchange;
+    private bool _completed;
+    private string? _exchangeId;
 
     // Facts reported along the way, released by the decisions below.
-    private string? requestBody;
-    private long bodyBufferedAt;
-    private long detectionStartedAt;
-    private IReadOnlyList<DetectedEntity> entities = [];
-    private DetectionStats stats = DetectionStats.None;
-    private long detectedAt;
-    private long detectedAtTimestamp;
+    //
+    // Bodies are kept as the bytes they arrived as and decoded only when an event needs the
+    // text -- which, for the common clean request, is never. A mutation that decoded them
+    // anyway hands the text over (RequestText, RewrittenText, ResponseText), so the same bytes
+    // are not decoded twice on the rare treated path either.
+    private ReadOnlyMemory<byte> _requestBytes;
+    private BodyDescriptor? _requestDescriptor;
+    private string? _requestText;
+    private string? _rewrittenText;
+    private long _bodyBufferedAt;
+    private long _detectionStartedAt;
+    private IReadOnlyList<DetectedEntity> _entities = [];
+    private DetectionStats _stats = DetectionStats.None;
+    private long _detectedAt;
+    private long _detectedAtTimestamp;
 
-    private long dispatchedAtTimestamp;
-    private bool dispatched;
+    private long _dispatchedAtTimestamp;
+    private bool _dispatched;
 
-    private int? responseStatus;
-    private string tokenizedResponseBody = string.Empty;
-    private long respondedAt;
-    private long respondedAtTimestamp;
-    private double upstreamMs;
-    private bool responded;
+    private int? _responseStatus;
+    private string? _tokenizedResponseBody;
+    private ReadOnlyMemory<byte> _responseBytes;
+    private BodyDescriptor? _responseDescriptor;
+    private long _respondedAt;
+    private long _respondedAtTimestamp;
+    private double _upstreamMs;
+    private bool _responded;
 
-    private long responseBufferedAtTimestamp;
+    private long _responseBufferedAtTimestamp;
 
-    private string? restoredBody;
-    private int restoredCount;
-    private long restoredAt;
-    private long restoredAtTimestamp;
-    private bool restored;
+    private string? _restoredBody;
+    private int _restoredCount;
+    private long _restoredAt;
+    private long _restoredAtTimestamp;
+    private bool _restored;
 
     public ExchangeTrace(ITelemetrySink sink, string requestId, RequestFacts facts, PrivacyAssessor? privacy = null)
     {
-        this.sink = sink;
-        this.requestId = requestId;
-        this.facts = facts;
-        this.privacy = privacy;
+        _sink = sink;
+        _requestId = requestId;
+        _facts = facts;
+        _privacy = privacy;
     }
 
-    public string RequestId => requestId;
+    public string RequestId => _requestId;
 
     /// <summary>Set once the body was buffered; null for a request that never got that far.</summary>
-    public string? ExchangeId => exchangeId;
+    public string? ExchangeId => _exchangeId;
 
     /// <summary>The request is forwarded as it arrived, for <paramref name="reason"/>.</summary>
     public void Passthrough(string reason)
     {
-        if (observed)
+        if (_observed)
             return;
 
         Observe(Treatment.Passthrough, reason, exchangeId: null);
@@ -114,24 +124,35 @@ sealed class ExchangeTrace : IExchangeObserver
     /// <summary>The request body is in hand and about to be offered to the mutation.</summary>
     public void BodyBuffered(ReadOnlyMemory<byte> body, BodyDescriptor descriptor)
     {
-        if (observed || exchangeId is not null)
+        if (_observed || _exchangeId is not null)
             return;
 
-        exchangeId = CorrelationIds.NextExchange();
-        requestBody = descriptor.Encoding.GetString(body.Span);
-        bodyBufferedAt = TelemetryJson.Now();
-        detectionStartedAt = Stopwatch.GetTimestamp();
+        _exchangeId = CorrelationIds.NextExchange();
+        _requestBytes = body;
+        _requestDescriptor = descriptor;
+        _bodyBufferedAt = TelemetryJson.Now();
+        _detectionStartedAt = Stopwatch.GetTimestamp();
+    }
+
+    public void RequestText(string text) => _requestText ??= text;
+
+    public void RewrittenText(string text) => _rewrittenText ??= text;
+
+    public void ResponseText(string text)
+    {
+        if (string.IsNullOrEmpty(_tokenizedResponseBody))
+            _tokenizedResponseBody = text;
     }
 
     public void Detected(IReadOnlyList<DetectedEntity> entities, DetectionStats stats)
     {
-        if (observed)
+        if (_observed)
             return;
 
-        this.entities = entities;
-        this.stats = stats;
-        detectedAt = TelemetryJson.Now();
-        detectedAtTimestamp = Stopwatch.GetTimestamp();
+        _entities = entities;
+        _stats = stats;
+        _detectedAt = TelemetryJson.Now();
+        _detectedAtTimestamp = Stopwatch.GetTimestamp();
     }
 
     /// <summary>
@@ -140,83 +161,83 @@ sealed class ExchangeTrace : IExchangeObserver
     /// </summary>
     public void RequestRewritten(byte[]? mutated, BodyDescriptor descriptor)
     {
-        if (observed)
+        if (_observed)
             return;
 
-        if (entities.Count == 0 || mutated is null)
+        if (_entities.Count == 0 || mutated is null)
         {
             Observe(Treatment.Clean, CleanReason(), exchangeId: null);
 
             return;
         }
 
-        string id = exchangeId ??= CorrelationIds.NextExchange();
+        string id = _exchangeId ??= CorrelationIds.NextExchange();
         long now = TelemetryJson.Now();
-        long openedAt = bodyBufferedAt == 0 ? now : bodyBufferedAt;
+        long openedAt = _bodyBufferedAt == 0 ? now : _bodyBufferedAt;
 
-        Observe(Treatment.Treated, IdentifiersReason(entities.Count), id);
+        Observe(Treatment.Treated, IdentifiersReason(_entities.Count), id);
 
-        exchange = true;
+        _exchange = true;
 
-        sink.Publish(new ExchangeOpened(
+        _sink.Publish(new ExchangeOpened(
             id,
-            requestId,
+            _requestId,
             openedAt,
-            facts.ClientLabel,
-            facts.Method,
-            facts.Scheme,
-            facts.Host,
-            facts.Path,
-            facts.ContentType ?? string.Empty,
-            Capped(requestBody ?? string.Empty)));
+            _facts.ClientLabel,
+            _facts.Method,
+            _facts.Scheme,
+            _facts.Host,
+            _facts.Path,
+            _facts.ContentType ?? string.Empty,
+            Capped(RequestBody)));
 
-        sink.Publish(new DetectionCompleted(
+        _sink.Publish(new DetectionCompleted(
             id,
-            detectedAt == 0 ? now : detectedAt,
-            entities,
-            stats.ScannedMs > 0 ? stats.ScannedMs : Stopwatch.GetElapsedTime(detectionStartedAt).TotalMilliseconds,
-            entities.Average(entity => entity.Confidence),
-            entities.GroupBy(entity => entity.Kind).ToDictionary(group => group.Key, group => group.Count()),
-            stats.Suppressed,
-            stats.NearMisses));
+            _detectedAt == 0 ? now : _detectedAt,
+            _entities,
+            _stats.ScannedMs > 0 ? _stats.ScannedMs : Stopwatch.GetElapsedTime(_detectionStartedAt).TotalMilliseconds,
+            _entities.Average(entity => entity.Confidence),
+            _entities.GroupBy(entity => entity.Kind).ToDictionary(group => group.Key, group => group.Count()),
+            _stats.Suppressed,
+            _stats.NearMisses));
 
-        string redacted = descriptor.Encoding.GetString(mutated);
+        string redacted = _rewrittenText ?? descriptor.Encoding.GetString(mutated);
 
-        sink.Publish(new RedactionCompleted(id, now, Capped(redacted)));
+        _sink.Publish(new RedactionCompleted(id, now, Capped(redacted)));
 
         // Off the request path: the check takes seconds and the answer is for the dashboard,
         // not for this response. The full text goes, not the capped one.
-        privacy?.Schedule(id, redacted, entities);
+        _privacy?.Schedule(id, redacted, _entities);
     }
 
     /// <summary>The mutation failed and the request is not being forwarded.</summary>
     public void RequestRefused(Exception exception)
     {
-        if (observed)
+        if (_observed)
             return;
 
         Observe(Treatment.Passthrough, "not forwarded: rewrite failed", exchangeId: null);
 
-        sink.Publish(new ProxyLog(
+        _sink.Publish(new ProxyLog(
             TelemetryJson.Now(),
             TelemetryLogLevel.Block,
-            $"Request to {facts.Host} was not forwarded: the body could not be rewritten ({exception.Message}).",
-            exchangeId));
+            $"Request to {_facts.Host} was not forwarded: the body could not be rewritten ({exception.Message}).",
+            _exchangeId));
     }
 
     /// <summary>The request has left for <paramref name="target"/>.</summary>
     public void Dispatched(string target, long bytes)
     {
-        if (dispatched)
+        if (_dispatched)
             return;
 
-        dispatched = true;
-        dispatchedAtTimestamp = Stopwatch.GetTimestamp();
+        _dispatched = true;
+        _dispatchedAtTimestamp = Stopwatch.GetTimestamp();
 
-        if (!exchange || exchangeId is null)
+        if (!_exchange || _exchangeId is null)
             return;
 
-        sink.Publish(new UpstreamDispatched(exchangeId, TelemetryJson.Now(), target, bytes));
+        _sink.Publish(new UpstreamDispatched(_exchangeId, TelemetryJson.Now(), target, bytes));
     }
 
     /// <summary>
@@ -227,39 +248,49 @@ sealed class ExchangeTrace : IExchangeObserver
     /// </summary>
     public void Responded(int status, string tokenizedBody)
     {
-        if (responded)
+        if (_responded)
             return;
 
-        if (responseStatus is null)
+        if (_responseStatus is null)
         {
-            respondedAt = TelemetryJson.Now();
-            respondedAtTimestamp = Stopwatch.GetTimestamp();
-            upstreamMs = dispatched
-                ? Stopwatch.GetElapsedTime(dispatchedAtTimestamp).TotalMilliseconds
-                : Stopwatch.GetElapsedTime(openedAtTimestamp).TotalMilliseconds;
+            _respondedAt = TelemetryJson.Now();
+            _respondedAtTimestamp = Stopwatch.GetTimestamp();
+            _upstreamMs = _dispatched
+                ? Stopwatch.GetElapsedTime(_dispatchedAtTimestamp).TotalMilliseconds
+                : Stopwatch.GetElapsedTime(_openedAtTimestamp).TotalMilliseconds;
         }
 
-        responseStatus = status;
+        _responseStatus = status;
 
         if (tokenizedBody.Length > 0)
-            tokenizedResponseBody = tokenizedBody;
+            _tokenizedResponseBody = tokenizedBody;
     }
 
     public void ResponseBuffered()
     {
-        if (responseBufferedAtTimestamp == 0)
-            responseBufferedAtTimestamp = Stopwatch.GetTimestamp();
+        if (_responseBufferedAtTimestamp == 0)
+            _responseBufferedAtTimestamp = Stopwatch.GetTimestamp();
+    }
+
+    /// <summary>The same, with the decoded body in hand -- kept as bytes until an event
+    /// needs the text, or until the mutation hands the text over itself.</summary>
+    public void ResponseBuffered(ReadOnlyMemory<byte> body, BodyDescriptor descriptor)
+    {
+        ResponseBuffered();
+
+        _responseBytes = body;
+        _responseDescriptor = descriptor;
     }
 
     public void Restored(string responseBody, int restored)
     {
-        if (this.restored)
+        if (_restored)
             return;
 
-        restoredBody = responseBody;
-        restoredCount = restored;
-        restoredAt = TelemetryJson.Now();
-        restoredAtTimestamp = Stopwatch.GetTimestamp();
+        _restoredBody = responseBody;
+        _restoredCount = restored;
+        _restoredAt = TelemetryJson.Now();
+        _restoredAtTimestamp = Stopwatch.GetTimestamp();
 
         FlushResponded();
         FlushRestored();
@@ -268,46 +299,46 @@ sealed class ExchangeTrace : IExchangeObserver
     /// <summary>The response has been delivered, or the attempt has ended. Always last.</summary>
     public void Completed(int status, long responseBytes, double durationMs)
     {
-        if (completed)
+        if (_completed)
             return;
 
-        completed = true;
+        _completed = true;
 
-        if (!observed)
+        if (!_observed)
             Observe(Treatment.Passthrough, "not inspected", exchangeId: null);
 
-        if (exchange && exchangeId is not null)
+        if (_exchange && _exchangeId is not null)
         {
-            if (!dispatched)
-                Dispatched(facts.Host, facts.RequestBytes);
+            if (!_dispatched)
+                Dispatched(_facts.Host, _facts.RequestBytes);
 
             Responded(status, string.Empty);
             FlushResponded();
             FlushRestored();
 
-            double totalMs = Stopwatch.GetElapsedTime(openedAtTimestamp).TotalMilliseconds;
+            double totalMs = Stopwatch.GetElapsedTime(_openedAtTimestamp).TotalMilliseconds;
 
-            sink.Publish(new ExchangeDelivered(exchangeId, TelemetryJson.Now(), totalMs, Timing(totalMs)));
+            _sink.Publish(new ExchangeDelivered(_exchangeId, TelemetryJson.Now(), totalMs, Timing(totalMs)));
         }
 
-        sink.Publish(new RequestCompleted(requestId, TelemetryJson.Now(), status, responseBytes, durationMs));
+        _sink.Publish(new RequestCompleted(_requestId, TelemetryJson.Now(), status, responseBytes, durationMs));
     }
 
     private void Observe(Treatment treatment, string reason, string? exchangeId)
     {
-        observed = true;
+        _observed = true;
 
-        sink.Publish(new RequestObserved(
-            requestId,
-            seenAt,
-            facts.ClientIp,
-            facts.ClientLabel,
-            facts.Method,
-            facts.Scheme,
-            facts.Host,
-            facts.Path,
-            facts.ContentType,
-            facts.RequestBytes,
+        _sink.Publish(new RequestObserved(
+            _requestId,
+            _seenAt,
+            _facts.ClientIp,
+            _facts.ClientLabel,
+            _facts.Method,
+            _facts.Scheme,
+            _facts.Host,
+            _facts.Path,
+            _facts.ContentType,
+            _facts.RequestBytes,
             treatment,
             reason,
             exchangeId));
@@ -315,32 +346,45 @@ sealed class ExchangeTrace : IExchangeObserver
 
     private void FlushResponded()
     {
-        if (responded || !exchange || exchangeId is null || responseStatus is not int status)
+        if (_responded || !_exchange || _exchangeId is null || _responseStatus is not int status)
             return;
 
-        responded = true;
+        _responded = true;
 
-        sink.Publish(new UpstreamResponded(
-            exchangeId,
-            respondedAt,
+        _sink.Publish(new UpstreamResponded(
+            _exchangeId,
+            _respondedAt,
             status,
-            Capped(tokenizedResponseBody),
-            upstreamMs));
+            Capped(TokenizedResponseBody),
+            _upstreamMs));
     }
 
     private void FlushRestored()
     {
-        if (restored || !exchange || exchangeId is null || !responded)
+        if (_restored || !_exchange || _exchangeId is null || !_responded)
             return;
 
-        restored = true;
+        _restored = true;
 
-        sink.Publish(new RehydrationCompleted(
-            exchangeId,
-            restoredAt == 0 ? TelemetryJson.Now() : restoredAt,
-            Capped(restoredBody ?? tokenizedResponseBody),
-            restoredCount));
+        _sink.Publish(new RehydrationCompleted(
+            _exchangeId,
+            _restoredAt == 0 ? TelemetryJson.Now() : _restoredAt,
+            Capped(_restoredBody ?? TokenizedResponseBody),
+            _restoredCount));
     }
+
+    /// <summary>The request body as text: what the mutation reported, or the buffered bytes
+    /// decoded once, here, the first time an event asks.</summary>
+    private string RequestBody
+        => _requestText ??= _requestDescriptor is null
+            ? string.Empty
+            : _requestDescriptor.Encoding.GetString(_requestBytes.Span);
+
+    /// <summary>The response body before anything was put back, on the same terms.</summary>
+    private string TokenizedResponseBody
+        => _tokenizedResponseBody ??= _responseDescriptor is null
+            ? string.Empty
+            : _responseDescriptor.Encoding.GetString(_responseBytes.Span);
 
     /// <summary>
     /// The round trip split by step, from the Stopwatch instants above. A step the exchange
@@ -349,14 +393,14 @@ sealed class ExchangeTrace : IExchangeObserver
     /// </summary>
     private ExchangeTiming Timing(double totalMs)
     {
-        double bufferMs = Between(openedAtTimestamp, detectionStartedAt);
-        double detectMs = Between(detectionStartedAt, detectedAtTimestamp);
+        double bufferMs = Between(_openedAtTimestamp, _detectionStartedAt);
+        double detectMs = Between(_detectionStartedAt, _detectedAtTimestamp);
         double rehydrateMs = Between(
-            responseBufferedAtTimestamp != 0 ? responseBufferedAtTimestamp : respondedAtTimestamp,
-            restoredAtTimestamp);
-        double overheadMs = Math.Max(0, totalMs - bufferMs - detectMs - upstreamMs - rehydrateMs);
+            _responseBufferedAtTimestamp != 0 ? _responseBufferedAtTimestamp : _respondedAtTimestamp,
+            _restoredAtTimestamp);
+        double overheadMs = Math.Max(0, totalMs - bufferMs - detectMs - _upstreamMs - rehydrateMs);
 
-        return new ExchangeTiming(bufferMs, detectMs, upstreamMs, rehydrateMs, overheadMs);
+        return new ExchangeTiming(bufferMs, detectMs, _upstreamMs, rehydrateMs, overheadMs);
     }
 
     private static double Between(long from, long to)
@@ -364,15 +408,15 @@ sealed class ExchangeTrace : IExchangeObserver
 
     private string CleanReason()
     {
-        string size = Size(requestBody is null ? facts.RequestBytes : Encoding.UTF8.GetByteCount(requestBody));
-        string misses = stats.NearMisses.Count switch
+        string size = Size(_requestDescriptor is null ? _facts.RequestBytes : _requestBytes.Length);
+        string misses = _stats.NearMisses.Count switch
         {
             0 => string.Empty,
             1 => " (1 near miss)",
             int count => $" ({count} near misses)",
         };
 
-        return facts.ContentType is { Length: > 0 } contentType
+        return _facts.ContentType is { Length: > 0 } contentType
             ? $"nothing found in {size} of {MediaType(contentType)}{misses}"
             : $"nothing found in {size}{misses}";
     }

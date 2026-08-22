@@ -1,4 +1,4 @@
-namespace SeniorsInTheMiddle.Proxy.Telemetry;
+﻿namespace SeniorsInTheMiddle.Proxy.Telemetry;
 
 /// <summary>
 /// Keeps other people's web pages off the telemetry stream.
@@ -18,32 +18,30 @@ namespace SeniorsInTheMiddle.Proxy.Telemetry;
 /// </summary>
 sealed class TelemetryOriginGuard
 {
-    private readonly RequestDelegate next;
-    private readonly HashSet<string> allowed;
-    private readonly ILogger<TelemetryOriginGuard> logger;
+    private readonly RequestDelegate _next;
+    private readonly AllowedOrigins _allowed;
+    private readonly ILogger<TelemetryOriginGuard> _logger;
 
     public TelemetryOriginGuard(
         RequestDelegate next,
-        IConfiguration configuration,
+        AllowedOrigins allowed,
         ILogger<TelemetryOriginGuard> logger)
     {
-        this.next = next;
-        this.logger = logger;
-        allowed = new HashSet<string>(
-            InfrastructureRegistrations.AllowedOrigins(configuration),
-            StringComparer.OrdinalIgnoreCase);
+        _next = next;
+        _allowed = allowed;
+        _logger = logger;
     }
 
     public Task InvokeAsync(HttpContext context)
     {
         if (!context.Request.Path.StartsWithSegments(TelemetryRoutes.HubPath))
-            return next(context);
+            return _next(context);
 
         string? origin = context.Request.Headers.Origin.ToString().TrimEnd('/');
-        if (string.IsNullOrEmpty(origin) || allowed.Contains(origin))
-            return next(context);
+        if (string.IsNullOrEmpty(origin) || _allowed.Contains(origin))
+            return _next(context);
 
-        logger.LogWarning(
+        _logger.LogWarning(
             "Refused a telemetry connection from {Origin}. Add it to Cors:AllowedOrigins if "
             + "that is where the dashboard is served from.",
             origin);

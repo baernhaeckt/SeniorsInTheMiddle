@@ -1,4 +1,4 @@
-using System.Security.Cryptography.X509Certificates;
+﻿using System.Security.Cryptography.X509Certificates;
 using System.Text;
 
 using Microsoft.AspNetCore.Server.Kestrel.Core;
@@ -18,7 +18,6 @@ public static class Registrar
             .AddSingleton(provider => ProxyPorts.From(provider.GetRequiredService<IConfiguration>()))
             .AddSingleton(provider => BodyLimits.From(provider.GetRequiredService<IConfiguration>()))
             .AddSingleton<TokenDetectionService>()
-            .AddSingleton<TokenAnonymizerService>()
             // The rewrite applied to every proxied body, request and response, plaintext and
             // intercepted HTTPS alike. PassthroughMutationFactory is the one that changes
             // nothing, for a deployment that only watches -- see IBodyMutationFactory.
@@ -55,10 +54,11 @@ public static class Registrar
         this IWebHostBuilder webHost,
         IConfiguration configuration)
     {
-        ProxyPorts ports = ProxyPorts.From(configuration);
-
         webHost.ConfigureKestrel(options =>
         {
+            // The same instance the rest of the app resolves, parsed and validated once.
+            ProxyPorts ports = options.ApplicationServices.GetRequiredService<ProxyPorts>();
+
             // Pass header bytes through instead of insisting they are ASCII.
             //
             // A proxy does not get to choose what a destination puts in a header. Real sites send raw UTF-8 in

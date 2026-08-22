@@ -57,13 +57,21 @@ sealed class ConnectProxyMiddleware
     /// </summary>
     private static readonly TimeSpan HeadTimeout = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// How long the origin has to accept the TCP connection. The same figure as
+    /// <see cref="UpstreamHttpClient"/> uses for forwarded requests: a black-holed origin
+    /// would otherwise hold the tunnel -- and the 200 already sent into it -- until the client
+    /// gives up on its own.
+    /// </summary>
+    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(15);
+
     /// <summary>The buffered request head, and the position just past its terminator.</summary>
     internal readonly record struct RequestHead(ReadOnlySequence<byte> Buffer, SequencePosition? End);
 
-    private readonly IStreamProxyFactory streamProxyFactory;
-    private readonly MitmCertificateProvider certificateProvider;
-    private readonly InterceptionBypass bypass;
-    private readonly ILogger<ConnectProxyMiddleware> logger;
+    private readonly IStreamProxyFactory _streamProxyFactory;
+    private readonly MitmCertificateProvider _certificateProvider;
+    private readonly InterceptionBypass _bypass;
+    private readonly ILogger<ConnectProxyMiddleware> _logger;
 
     public ConnectProxyMiddleware(
         IStreamProxyFactory streamProxyFactory,
@@ -71,10 +79,10 @@ sealed class ConnectProxyMiddleware
         InterceptionBypass bypass,
         ILogger<ConnectProxyMiddleware> logger)
     {
-        this.streamProxyFactory = streamProxyFactory;
-        this.certificateProvider = certificateProvider;
-        this.bypass = bypass;
-        this.logger = logger;
+        _streamProxyFactory = streamProxyFactory;
+        _certificateProvider = certificateProvider;
+        _bypass = bypass;
+        _logger = logger;
     }
 
     public async Task InvokeAsync(ConnectionContext connection, ConnectionDelegate next)
@@ -84,7 +92,7 @@ sealed class ConnectProxyMiddleware
 
         if (await ReadHeadAsync(input, HeadTimeout, connection.ConnectionClosed) is not { } head)
         {
-            logger.LogDebug(
+            _logger.LogDebug(
                 "No complete request head from {Endpoint} within {Timeout}.",
                 connection.RemoteEndPoint,
                 HeadTimeout);
@@ -134,7 +142,7 @@ sealed class ConnectProxyMiddleware
         // Host and port are all a CONNECT carries, so this is necessarily all-or-nothing for a
         // destination: there is no path here to be selective about, and none will exist until
         // after the very handshake being skipped.
-        if (bypass.Covers(host))
+        if (_bypass.Covers(host))
         {
             await TunnelVerbatimAsync(connection, host, port);
             return;
@@ -150,7 +158,7 @@ sealed class ConnectProxyMiddleware
 
             // Not disposed here: the provider owns it and hands the same instance to every
             // connection for this host (see MitmCertificateProvider.GetServerCertificate).
-            X509Certificate2 serverCertificate = certificateProvider.GetServerCertificate(host);
+            X509Certificate2 serverCertificate = _certificateProvider.GetServerCertificate(host);
             await clientTls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
             {
                 ServerCertificate = serverCertificate,
@@ -187,14 +195,10 @@ sealed class ConnectProxyMiddleware
         }
         catch (Exception ex) when (ex is AuthenticationException or IOException or OperationCanceledException)
         {
-            logger.LogDebug(ex, "HTTPS interception ended for {Host}:{Port}", host, port);
+            _logger.LogDebug(ex, "HTTPS interception ended for {Host}:{Port}", host, port);
         }
     }
 
-    /// <summary>
-    /// Copies bytes between the client and the origin without reading them, for a tunnel that
-    /// turned out not to carry HTTP.
-    /// </summary>
     /// <summary>
     /// Copies the tunnel's bytes through untouched, TLS records and all.
     ///
@@ -210,22 +214,22 @@ sealed class ConnectProxyMiddleware
 
         try
         {
-            await tcpClient.ConnectAsync(host, port, connection.ConnectionClosed);
+            await ConnectAsync(tcpClient, host, port, connection.ConnectionClosed);
         }
         catch (Exception ex) when (ex is SocketException or IOException or OperationCanceledException)
         {
             // The 200 has gone out already, so the client is waiting inside a tunnel and there is
             // no status line left to answer with. Closing is the only signal available.
-            logger.LogDebug(ex, "Could not reach {Host}:{Port} for an unintercepted tunnel.", host, port);
+            _logger.LogDebug(ex, "Could not reach {Host}:{Port} for an unintercepted tunnel.", host, port);
 
             return;
         }
 
-        logger.LogDebug("Tunnelling {Host}:{Port} unintercepted.", host, port);
+        _logger.LogDebug("Tunnelling {Host}:{Port} unintercepted.", host, port);
 
         await using NetworkStream upstream = tcpClient.GetStream();
 
-        await streamProxyFactory
+        await _streamProxyFactory
             .Create(connection.Transport, upstream)
             .ProxyAsync(connection.ConnectionClosed);
     }
@@ -240,13 +244,13 @@ sealed class ConnectProxyMiddleware
 
         try
         {
-            await tcpClient.ConnectAsync(host, port, cancellationToken);
+            await ConnectAsync(tcpClient, host, port, cancellationToken);
         }
         catch (Exception ex) when (ex is SocketException or IOException or OperationCanceledException)
         {
             // The tunnel was confirmed already, so there is no status line left to answer with
             // and the client is inside TLS. Closing is the only signal available.
-            logger.LogDebug(ex, "Could not reach {Host}:{Port} for a tunnelled connection.", host, port);
+            _logger.LogDebug(ex, "Could not reach {Host}:{Port} for a tunnelled connection.", host, port);
             return;
         }
 
@@ -257,7 +261,16 @@ sealed class ConnectProxyMiddleware
             EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13
         }, cancellationToken);
 
-        await streamProxyFactory.Create(decrypted, upstreamTls).ProxyAsync(cancellationToken);
+        await _streamProxyFactory.Create(decrypted, upstreamTls).ProxyAsync(cancellationToken);
+    }
+
+    /// <summary>Connects to the origin, or gives up after <see cref="ConnectTimeout"/>.</summary>
+    private static async Task ConnectAsync(TcpClient tcpClient, string host, int port, CancellationToken cancellationToken)
+    {
+        using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(ConnectTimeout);
+
+        await tcpClient.ConnectAsync(host, port, timeout.Token);
     }
 
     /// <summary>

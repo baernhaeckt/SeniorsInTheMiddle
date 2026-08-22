@@ -1,7 +1,8 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 using SeniorsInTheMiddle.Proxy.Services;
 using SeniorsInTheMiddle.Proxy.Services.PrivacyCheck;
+
 using SeniorsInTheMiddle.Proxy.Telemetry;
 
 namespace SeniorsInTheMiddle.Proxy.Forwarding;
@@ -26,31 +27,28 @@ sealed class PrivacyAssessor
 {
     private const string PersonKind = "PERSON";
 
-    private readonly IPrivacyCheckServiceClient client;
-    private readonly ITelemetrySink sink;
-    private readonly IHostApplicationLifetime lifetime;
-    private readonly ILogger<PrivacyAssessor> logger;
-    private readonly TimeSpan callTimeout;
-    private readonly SemaphoreSlim oneAtATime = new(1, 1);
+    private readonly IPrivacyCheckServiceClient _client;
+    private readonly ITelemetrySink _sink;
+    private readonly IHostApplicationLifetime _lifetime;
+    private readonly ILogger<PrivacyAssessor> _logger;
+    private readonly SemaphoreSlim _oneAtATime = new(1, 1);
 
     public PrivacyAssessor(
         IPrivacyCheckServiceClient client,
         ITelemetrySink sink,
         IHostApplicationLifetime lifetime,
-        ServiceOptions options,
         ILogger<PrivacyAssessor> logger)
     {
-        this.client = client;
-        this.sink = sink;
-        this.lifetime = lifetime;
-        this.logger = logger;
-        callTimeout = TimeSpan.FromSeconds(options.Get(ServiceConnections.PrivacyCheckService).CallTimeoutSeconds);
+        _client = client;
+        _sink = sink;
+        _lifetime = lifetime;
+        _logger = logger;
     }
 
     /// <summary>Starts the check for one exchange. Never throws, never waits.</summary>
     public void Schedule(string exchangeId, string redactedText, IReadOnlyList<DetectedEntity> entities)
     {
-        if (!client.IsEnabled)
+        if (!_client.IsEnabled)
         {
             Skip(exchangeId, "privacy check disabled");
             return;
@@ -79,7 +77,7 @@ sealed class PrivacyAssessor
             return;
         }
 
-        if (!oneAtATime.Wait(0))
+        if (!_oneAtATime.Wait(0))
         {
             Skip(exchangeId, "assessor busy");
             return;
@@ -94,10 +92,9 @@ sealed class PrivacyAssessor
 
         try
         {
-            using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(lifetime.ApplicationStopping);
-            timeout.CancelAfter(callTimeout);
-
-            PrivacyRiskResult result = await client.RiskCheckAsync(redactedText, [.. tokenByName.Keys], timeout.Token);
+            // The per-call timeout is the connection's (Services:PrivacyCheck:CallTimeoutSeconds);
+            // a call that runs past it surfaces here as ServiceUnavailableException.
+            PrivacyRiskResult result = await _client.RiskCheckAsync(redactedText, [.. tokenByName.Keys], _lifetime.ApplicationStopping);
 
             List<PrivacyRiskEntry> risks = [];
 
@@ -105,14 +102,14 @@ sealed class PrivacyAssessor
             {
                 if (!tokenByName.TryGetValue(risk.Name, out string? token))
                 {
-                    logger.LogWarning("The privacy check answered for {Name}, which was not asked about.", risk.Name);
+                    _logger.LogWarning("The privacy check answered for {Name}, which was not asked about.", risk.Name);
                     continue;
                 }
 
                 risks.Add(new PrivacyRiskEntry(token, Math.Clamp(risk.RiskProbability, 0, 1)));
             }
 
-            sink.Publish(new PrivacyAssessed(
+            _sink.Publish(new PrivacyAssessed(
                 exchangeId,
                 TelemetryJson.Now(),
                 risks,
@@ -120,17 +117,17 @@ sealed class PrivacyAssessor
                 Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds,
                 PrivacyStatus.Ok));
         }
-        catch (OperationCanceledException) when (lifetime.ApplicationStopping.IsCancellationRequested)
+        catch (OperationCanceledException) when (_lifetime.ApplicationStopping.IsCancellationRequested)
         {
             // Shutting down; nobody is listening.
         }
-        catch (Exception ex) when (ex is OperationCanceledException or ServiceUnavailableException or ServiceCallException)
+        catch (Exception ex) when (ex is ServiceUnavailableException or ServiceCallException)
         {
-            string reason = ex is OperationCanceledException ? $"timed out after {callTimeout.TotalSeconds:0}s" : ex.Message;
+            string reason = ex.Message;
 
-            logger.LogWarning(ex, "The privacy check for {ExchangeId} failed.", exchangeId);
-            sink.Publish(new ProxyLog(TelemetryJson.Now(), TelemetryLogLevel.Warn, $"Privacy check failed: {reason}", exchangeId));
-            sink.Publish(new PrivacyAssessed(
+            _logger.LogWarning(ex, "The privacy check for {ExchangeId} failed.", exchangeId);
+            _sink.Publish(new ProxyLog(TelemetryJson.Now(), TelemetryLogLevel.Warn, $"Privacy check failed: {reason}", exchangeId));
+            _sink.Publish(new PrivacyAssessed(
                 exchangeId,
                 TelemetryJson.Now(),
                 [],
@@ -141,8 +138,8 @@ sealed class PrivacyAssessor
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "The privacy check for {ExchangeId} threw.", exchangeId);
-            sink.Publish(new PrivacyAssessed(
+            _logger.LogError(ex, "The privacy check for {ExchangeId} threw.", exchangeId);
+            _sink.Publish(new PrivacyAssessed(
                 exchangeId,
                 TelemetryJson.Now(),
                 [],
@@ -153,10 +150,10 @@ sealed class PrivacyAssessor
         }
         finally
         {
-            oneAtATime.Release();
+            _oneAtATime.Release();
         }
     }
 
     private void Skip(string exchangeId, string reason)
-        => sink.Publish(new PrivacyAssessed(exchangeId, TelemetryJson.Now(), [], 0, 0, PrivacyStatus.Skipped, reason));
+        => _sink.Publish(new PrivacyAssessed(exchangeId, TelemetryJson.Now(), [], 0, 0, PrivacyStatus.Skipped, reason));
 }

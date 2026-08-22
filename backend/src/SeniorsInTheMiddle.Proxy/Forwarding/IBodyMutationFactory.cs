@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 
 namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
@@ -20,6 +20,13 @@ namespace SeniorsInTheMiddle.Proxy.Forwarding;
 /// </summary>
 interface IBodyMutationFactory
 {
+    /// <summary>
+    /// Whether this mutation changes bodies at all. The dashboard's hello reports the policy
+    /// from this rather than from a type check, so a new mutation cannot be announced as
+    /// "observe-only" by accident.
+    /// </summary>
+    bool Rewrites { get; }
+
     /// <summary>
     /// The mutation for one request and the response it earns.
     ///
@@ -50,6 +57,18 @@ interface IExchangeObserver
 
     /// <summary>The response body with the proxy's stand-ins put back, and how many were.</summary>
     void Restored(string responseBody, int restored);
+
+    /// <summary>
+    /// The request body as the mutation decoded it. Optional: a mutation that reads the body
+    /// as text hands the text over so the trace does not decode the same bytes a second time.
+    /// </summary>
+    void RequestText(string text) { }
+
+    /// <summary>The rewritten request body as text, for the same reason as <see cref="RequestText"/>.</summary>
+    void RewrittenText(string text) { }
+
+    /// <summary>The response body as text, before anything was put back.</summary>
+    void ResponseText(string text) { }
 }
 
 /// <summary>What a scan cost and what it left out, beside the entities it produced.</summary>

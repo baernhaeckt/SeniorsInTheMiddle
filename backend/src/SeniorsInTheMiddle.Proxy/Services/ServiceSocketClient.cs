@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Net.Sockets;
 using System.Text.Json;
@@ -67,6 +67,13 @@ public sealed class ServiceSocketClient : IAsyncDisposable
                 last = ex;
                 socket.Dispose();
                 await Task.Delay(100, cancellationToken);
+            }
+            catch
+            {
+                // Cancelled, or something other than a refused connection: the socket would
+                // otherwise wait for its finalizer.
+                socket.Dispose();
+                throw;
             }
         }
 
@@ -200,11 +207,19 @@ public sealed class ServiceSocketClient : IAsyncDisposable
             return;
         }
 
-        var error = root.GetProperty("error");
+        // A frame that is neither a result nor an error fails the one call it answers, not
+        // the connection: every other call in flight is unaffected by one malformed answer.
+        if (!root.TryGetProperty("error", out var error) || error.ValueKind != JsonValueKind.Object)
+        {
+            completion.TrySetException(new ServiceCallException(
+                "malformed_response",
+                "The service answered with neither a result nor an error."));
+            return;
+        }
+
         completion.TrySetException(new ServiceCallException(
             error.TryGetProperty("code", out var code) ? code.GetString() ?? "unknown" : "unknown",
-            error.TryGetProperty("message", out var message) ? message.GetString() ?? string.Empty : string.Empty,
-            error.TryGetProperty("details", out var details) ? details.Clone() : null));
+            error.TryGetProperty("message", out var message) ? message.GetString() ?? string.Empty : string.Empty));
     }
 
     private void FailPending(Exception exception)
@@ -245,24 +260,15 @@ public sealed class ServiceSocketClient : IAsyncDisposable
         _writeLock.Dispose();
     }
 
-    /// <summary>Convenience wrapper that deserializes the result.</summary>
-    public async Task<T?> CallAsync<T>(string method, object? payload = null, CancellationToken cancellationToken = default)
-    {
-        var result = await CallAsync(method, payload, cancellationToken);
-        return result.Deserialize<T>(SerializerOptions);
-    }
-
     public static string Describe(JsonElement element) =>
         element.ValueKind == JsonValueKind.Undefined ? "<undefined>" : element.GetRawText();
 }
 
 /// <summary>An error response returned by the python service.</summary>
-public sealed class ServiceCallException(string code, string message, JsonElement? details = null)
+public sealed class ServiceCallException(string code, string message)
     : Exception($"{code}: {message}")
 {
     public string Code { get; } = code;
 
     public string ServiceMessage { get; } = message;
-
-    public JsonElement? Details { get; } = details;
 }

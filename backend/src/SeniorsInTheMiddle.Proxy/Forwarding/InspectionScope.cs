@@ -1,4 +1,4 @@
-namespace SeniorsInTheMiddle.Proxy.Forwarding;
+﻿namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
 /// <summary>
 /// Which paths on a host are worth rewriting, for hosts where the answer is "hardly any of them".
@@ -23,8 +23,8 @@ namespace SeniorsInTheMiddle.Proxy.Forwarding;
 /// </summary>
 sealed class InspectionScope
 {
-    private readonly List<(HostPattern Host, string[] Paths)> scoped = [];
-    private readonly Dictionary<string, string[]> configured = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<(HostPattern Host, string[] Paths)> _scoped = [];
+    private readonly Dictionary<string, string[]> _configured = new(StringComparer.OrdinalIgnoreCase);
 
     public InspectionScope(IConfiguration configuration, ILogger<InspectionScope> logger)
     {
@@ -35,8 +35,8 @@ sealed class InspectionScope
             if (paths.Length == 0)
                 continue;
 
-            scoped.Add((new HostPattern([host.Key]), paths));
-            configured[host.Key] = paths;
+            _scoped.Add((new HostPattern([host.Key]), paths));
+            _configured[host.Key] = paths;
 
             logger.LogInformation(
                 "On {Host} only {Paths} are inspected; every other path is forwarded untouched.",
@@ -46,7 +46,7 @@ sealed class InspectionScope
     }
 
     /// <summary>The entries as configured, host to paths, for the dashboard's hello.</summary>
-    public IReadOnlyDictionary<string, string[]> Scoped => configured;
+    public IReadOnlyDictionary<string, string[]> Scoped => _configured;
 
     /// <summary>
     /// Whether the body of an exchange with <paramref name="destination"/> may be rewritten.
@@ -56,7 +56,7 @@ sealed class InspectionScope
     /// </summary>
     public bool Allows(Uri destination)
     {
-        foreach ((HostPattern host, string[] paths) in scoped)
+        foreach ((HostPattern host, string[] paths) in _scoped)
         {
             if (!host.Covers(destination.Host))
                 continue;

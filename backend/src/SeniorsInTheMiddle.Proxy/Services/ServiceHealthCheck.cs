@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Diagnostics.HealthChecks;
+﻿using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace SeniorsInTheMiddle.Proxy.Services;
 
@@ -13,33 +13,35 @@ sealed class ServiceHealthCheck(ServiceConnections services) : IHealthCheck
 
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
-        Dictionary<string, object> data = new();
-        List<string> failed = [];
+        // Pinged together, so the probe waits for the slowest service rather than for the sum.
+        (string Name, string State, bool Failed)[] results = await Task.WhenAll(
+            services.All.Select(service => ProbeAsync(service, cancellationToken)));
 
-        foreach (ServiceConnection service in services.All)
-        {
-            if (!service.IsConfigured)
-            {
-                data[service.Name] = "disabled";
-                continue;
-            }
+        Dictionary<string, object> data = results.ToDictionary(result => result.Name, result => (object)result.State);
+        string[] failed = [.. results.Where(result => result.Failed).Select(result => result.Name)];
 
-            using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(PingTimeout);
-            try
-            {
-                await service.PingAsync(timeout.Token);
-                data[service.Name] = $"ok ({service.Options.SocketPath})";
-            }
-            catch (Exception ex) when (ex is ServiceUnavailableException or OperationCanceledException or ServiceCallException)
-            {
-                data[service.Name] = $"unreachable ({service.Options.SocketPath}): {ex.Message}";
-                failed.Add(service.Name);
-            }
-        }
-
-        return failed.Count == 0
+        return failed.Length == 0
             ? HealthCheckResult.Healthy("All configured services answer.", data)
             : HealthCheckResult.Unhealthy($"Not answering: {string.Join(", ", failed)}.", data: data);
+    }
+
+    private static async Task<(string Name, string State, bool Failed)> ProbeAsync(
+        ServiceConnection service,
+        CancellationToken cancellationToken)
+    {
+        if (!service.IsConfigured)
+            return (service.Name, "disabled", false);
+
+        using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(PingTimeout);
+        try
+        {
+            await service.PingAsync(timeout.Token);
+            return (service.Name, $"ok ({service.Options.SocketPath})", false);
+        }
+        catch (Exception ex) when (ex is ServiceUnavailableException or OperationCanceledException or ServiceCallException)
+        {
+            return (service.Name, $"unreachable ({service.Options.SocketPath}): {ex.Message}", true);
+        }
     }
 }

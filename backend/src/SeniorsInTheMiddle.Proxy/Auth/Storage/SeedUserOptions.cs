@@ -1,4 +1,4 @@
-namespace SeniorsInTheMiddle.Proxy.Auth.Storage;
+﻿namespace SeniorsInTheMiddle.Proxy.Auth.Storage;
 
 /// <summary>
 /// An account created at startup, bound from <c>Auth:SeedUser</c>.

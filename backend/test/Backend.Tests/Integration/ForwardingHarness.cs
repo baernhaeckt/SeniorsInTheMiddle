@@ -49,6 +49,8 @@ internal sealed class DelegateMutationFactory(
     Func<ReadOnlyMemory<byte>, BodyDescriptor, byte[]?>? onRequest = null,
     Func<ReadOnlyMemory<byte>, BodyDescriptor, byte[]?>? onResponse = null) : IBodyMutationFactory
 {
+    public bool Rewrites => onRequest is not null || onResponse is not null;
+
     public IExchangeBodyMutation CreateForExchange(Uri destination, IExchangeObserver observer) => new Exchange(onRequest, onResponse);
 
     private sealed class Exchange(
@@ -164,15 +166,15 @@ internal sealed class ForwardingHarness : IAsyncDisposable
     /// </summary>
     internal sealed class RecordingLogger : ILogger<ForwardProxyTransformer>
     {
-        private readonly List<(LogLevel Level, string Message)> entries = [];
+        private readonly List<(LogLevel Level, string Message)> _entries = [];
 
         public IReadOnlyList<string> WarningsAndAbove
         {
             get
             {
-                lock (entries)
+                lock (_entries)
                 {
-                    return entries
+                    return _entries
                         .Where(entry => entry.Level >= LogLevel.Warning)
                         .Select(entry => entry.Message)
                         .ToList();
@@ -191,17 +193,17 @@ internal sealed class ForwardingHarness : IAsyncDisposable
             Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            lock (entries)
+            lock (_entries)
             {
-                entries.Add((logLevel, formatter(state, exception)));
+                _entries.Add((logLevel, formatter(state, exception)));
             }
         }
     }
 
-    private readonly WebApplication destination;
-    private readonly WebApplication forwarder;
-    private readonly HttpMessageInvoker upstream;
-    private readonly HarnessState state;
+    private readonly WebApplication _destination;
+    private readonly WebApplication _forwarder;
+    private readonly HttpMessageInvoker _upstream;
+    private readonly HarnessState _state;
 
     private ForwardingHarness(
         WebApplication destination,
@@ -211,22 +213,22 @@ internal sealed class ForwardingHarness : IAsyncDisposable
         Uri destinationUri,
         Uri proxyUri)
     {
-        this.destination = destination;
-        this.forwarder = forwarder;
-        this.upstream = upstream;
-        this.state = state;
+        _destination = destination;
+        _forwarder = forwarder;
+        _upstream = upstream;
+        _state = state;
         DestinationUri = destinationUri;
         ProxyUri = proxyUri;
     }
 
     /// <summary>What the destination server received, or null while nothing has arrived.</summary>
-    public RecordedRequest? Received => state.Received;
+    public RecordedRequest? Received => _state.Received;
 
     /// <summary>Everything the transform logged at Warning or above.</summary>
-    public IReadOnlyList<string> Warnings => state.Logger.WarningsAndAbove;
+    public IReadOnlyList<string> Warnings => _state.Logger.WarningsAndAbove;
 
     /// <summary>Every telemetry event the forwarder published so far, in publish order.</summary>
-    public IReadOnlyList<TelemetryEvent> Telemetry => [.. state.Telemetry];
+    public IReadOnlyList<TelemetryEvent> Telemetry => [.. _state.Telemetry];
 
     public Uri DestinationUri { get; }
 
@@ -372,7 +374,7 @@ internal sealed class ForwardingHarness : IAsyncDisposable
 
         try
         {
-            return await state.Completions.Reader.ReadAsync(expiry.Token);
+            return await _state.Completions.Reader.ReadAsync(expiry.Token);
         }
         catch (OperationCanceledException)
         {
@@ -384,7 +386,7 @@ internal sealed class ForwardingHarness : IAsyncDisposable
     /// <summary>The destination's request, or a failed assertion when nothing arrived.</summary>
     public RecordedRequest RequireReceived()
     {
-        RecordedRequest? received = state.Received;
+        RecordedRequest? received = _state.Received;
         Assert.IsNotNull(received, "The destination server received no request at all.");
 
         return received;
@@ -392,11 +394,11 @@ internal sealed class ForwardingHarness : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        await forwarder.StopAsync();
-        await destination.StopAsync();
-        upstream.Dispose();
-        await forwarder.DisposeAsync();
-        await destination.DisposeAsync();
+        await _forwarder.StopAsync();
+        await _destination.StopAsync();
+        _upstream.Dispose();
+        await _forwarder.DisposeAsync();
+        await _destination.DisposeAsync();
     }
 
     private static WebApplication BuildApp(Action<IServiceCollection>? configureServices = null)

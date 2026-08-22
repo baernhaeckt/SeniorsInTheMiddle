@@ -1,4 +1,4 @@
-namespace SeniorsInTheMiddle.Proxy.Forwarding;
+﻿namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
 /// <summary>
 /// Forwards proxy traffic, and only on the proxy listeners.
@@ -13,10 +13,10 @@ namespace SeniorsInTheMiddle.Proxy.Forwarding;
 /// </summary>
 sealed class ForwardProxyMiddleware
 {
-    private readonly RequestDelegate next;
-    private readonly IForwardProxy proxy;
-    private readonly SelfHostNames selfHostNames;
-    private readonly ProxyPorts ports;
+    private readonly RequestDelegate _next;
+    private readonly IForwardProxy _proxy;
+    private readonly SelfHostNames _selfHostNames;
+    private readonly ProxyPorts _ports;
 
     public ForwardProxyMiddleware(
         RequestDelegate next,
@@ -24,22 +24,22 @@ sealed class ForwardProxyMiddleware
         SelfHostNames selfHostNames,
         ProxyPorts ports)
     {
-        this.next = next;
-        this.proxy = proxy;
-        this.selfHostNames = selfHostNames;
-        this.ports = ports;
+        _next = next;
+        _proxy = proxy;
+        _selfHostNames = selfHostNames;
+        _ports = ports;
     }
 
     public Task InvokeAsync(HttpContext context)
     {
-        if (!ports.IsProxyListener(context.Connection.LocalPort))
-            return next(context);
+        if (!_ports.IsProxyListener(context.Connection.LocalPort))
+            return _next(context);
 
         Uri? destination = ForwardProxy.GetProxyDestination(context);
 
         return destination is null || PointsAtUs(context, destination)
-            ? next(context)
-            : proxy.HandleAsync(context);
+            ? _next(context)
+            : _proxy.HandleAsync(context);
     }
 
     /// <summary>
@@ -48,5 +48,5 @@ sealed class ForwardProxyMiddleware
     /// </summary>
     private bool PointsAtUs(HttpContext context, Uri destination)
         => destination.Port == context.Connection.LocalPort
-           && selfHostNames.Contains(destination.Host);
+           && _selfHostNames.Contains(destination.Host);
 }

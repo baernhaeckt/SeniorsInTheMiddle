@@ -1,5 +1,4 @@
-using SeniorsInTheMiddle.Proxy.Forwarding;
-using SeniorsInTheMiddle.Proxy.Forwarding.Tokenizer;
+﻿using SeniorsInTheMiddle.Proxy.Forwarding;
 using SeniorsInTheMiddle.Proxy.Services;
 
 namespace SeniorsInTheMiddle.Proxy.Telemetry;
@@ -23,9 +22,9 @@ sealed class TelemetryDescriptor
 
     public const double DefaultThreshold = 0.6;
 
-    private readonly ServiceConnections services;
-    private readonly ProxyInfo proxy;
-    private readonly ProxyPolicy policy;
+    private readonly ServiceConnections _services;
+    private readonly ProxyInfo _proxy;
+    private readonly ProxyPolicy _policy;
 
     public TelemetryDescriptor(
         IConfiguration configuration,
@@ -35,17 +34,17 @@ sealed class TelemetryDescriptor
         IBodyMutationFactory mutations,
         ServiceConnections services)
     {
-        this.services = services;
+        _services = services;
 
-        bool rewrite = mutations is ReplacerService && limits.MaxMutableBodyBytes > 0;
+        bool rewrite = mutations.Rewrites && limits.MaxMutableBodyBytes > 0;
 
-        proxy = new ProxyInfo(
+        _proxy = new ProxyInfo(
             Name: configuration.GetValue("Proxy:Name", "Seniors in the Middle")!,
             Region: configuration.GetValue("Proxy:Region", Environment.MachineName)!,
             Mode: "intercept",
             Policy: rewrite ? "rewrite" : "observe-only");
 
-        policy = new ProxyPolicy(
+        _policy = new ProxyPolicy(
             rewrite,
             bypass.Hosts,
             scope.Scoped,
@@ -55,21 +54,22 @@ sealed class TelemetryDescriptor
     }
 
     /// <summary>The hello without asking the services, for tests and for the static parts.</summary>
-    public ServerHello Hello => new(TelemetryJson.ProtocolVersion, proxy, policy);
+    public ServerHello Hello => new(TelemetryJson.ProtocolVersion, _proxy, _policy);
 
     /// <summary>The hello with each service pinged. Never throws: a service that does not
     /// answer in time is <see cref="ServiceState.Down"/>.</summary>
     public async Task<ServerHello> HelloAsync(CancellationToken cancellationToken)
     {
-        ServiceState pii = await StateAsync(ServiceConnections.PiiService, cancellationToken);
-        ServiceState privacy = await StateAsync(ServiceConnections.PrivacyCheckService, cancellationToken);
+        // Pinged together: a dashboard connecting waits for the slowest, not for the sum.
+        Task<ServiceState> pii = StateAsync(ServiceConnections.PiiService, cancellationToken);
+        Task<ServiceState> privacy = StateAsync(ServiceConnections.PrivacyCheckService, cancellationToken);
 
-        return Hello with { Policy = policy with { Services = new ServiceStates(pii, privacy) } };
+        return Hello with { Policy = _policy with { Services = new ServiceStates(await pii, await privacy) } };
     }
 
     private async Task<ServiceState> StateAsync(string name, CancellationToken cancellationToken)
     {
-        ServiceConnection service = services.Get(name);
+        ServiceConnection service = _services.Get(name);
 
         if (!service.IsConfigured)
             return ServiceState.Disabled;

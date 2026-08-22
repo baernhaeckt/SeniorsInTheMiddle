@@ -1,4 +1,4 @@
-using System.Buffers;
+﻿using System.Buffers;
 using System.IO.Pipelines;
 using System.Text;
 
@@ -63,7 +63,7 @@ public class StreamProxyTests
     /// <summary>Answers <paramref name="reply"/> after <paramref name="delay"/>, then ends.</summary>
     private sealed class SlowReplyStream(byte[] reply, TimeSpan delay) : Stream
     {
-        private bool sent;
+        private bool _sent;
 
         public override bool CanRead => true;
 
@@ -83,11 +83,11 @@ public class StreamProxyTests
             Memory<byte> buffer,
             CancellationToken cancellationToken = default)
         {
-            if (sent)
+            if (_sent)
                 return 0;
 
             await Task.Delay(delay, cancellationToken);
-            sent = true;
+            _sent = true;
             reply.CopyTo(buffer);
 
             return reply.Length;

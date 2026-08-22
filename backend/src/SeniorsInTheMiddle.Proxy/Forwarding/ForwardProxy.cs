@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Microsoft.AspNetCore.Http.Features;
 using SeniorsInTheMiddle.Proxy.Telemetry;
 using Yarp.ReverseProxy.Forwarder;
@@ -7,18 +7,18 @@ namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
 sealed class ForwardProxy : IForwardProxy
 {
-    private readonly IHttpForwarder forwarder;
-    private readonly ITelemetrySink telemetry;
-    private readonly ClientLabeler clientLabeler;
-    private readonly IBodyMutationFactory bodyMutations;
-    private readonly BodyLimits bodyLimits;
-    private readonly InspectionScope scope;
-    private readonly ILogger<ForwardProxyTransformer> transformerLogger;
-    private readonly PrivacyAssessor? privacy;
+    private readonly IHttpForwarder _forwarder;
+    private readonly ITelemetrySink _telemetry;
+    private readonly ClientLabeler _clientLabeler;
+    private readonly IBodyMutationFactory _bodyMutations;
+    private readonly BodyLimits _bodyLimits;
+    private readonly InspectionScope _scope;
+    private readonly ILogger<ForwardProxyTransformer> _transformerLogger;
+    private readonly PrivacyAssessor _privacy;
 
-    private readonly UpstreamHttpClient upstream;
+    private readonly UpstreamHttpClient _upstream;
 
-    private readonly ForwarderRequestConfig requestConfig = new()
+    private readonly ForwarderRequestConfig _requestConfig = new()
     {
         ActivityTimeout = TimeSpan.FromMinutes(2)
     };
@@ -32,17 +32,17 @@ sealed class ForwardProxy : IForwardProxy
         InspectionScope scope,
         UpstreamHttpClient upstream,
         ILogger<ForwardProxyTransformer> transformerLogger,
-        PrivacyAssessor? privacy = null)
+        PrivacyAssessor privacy)
     {
-        this.forwarder = forwarder;
-        this.telemetry = telemetry;
-        this.clientLabeler = clientLabeler;
-        this.bodyMutations = bodyMutations;
-        this.bodyLimits = bodyLimits;
-        this.scope = scope;
-        this.upstream = upstream;
-        this.transformerLogger = transformerLogger;
-        this.privacy = privacy;
+        _forwarder = forwarder;
+        _telemetry = telemetry;
+        _clientLabeler = clientLabeler;
+        _bodyMutations = bodyMutations;
+        _bodyLimits = bodyLimits;
+        _scope = scope;
+        _upstream = upstream;
+        _transformerLogger = transformerLogger;
+        _privacy = privacy;
     }
 
     public async Task HandleAsync(HttpContext context)
@@ -55,7 +55,7 @@ sealed class ForwardProxy : IForwardProxy
             return;
         }
 
-        ExchangeTrace trace = new(telemetry, CorrelationIds.NextRequest(), Facts(context, destination), privacy);
+        ExchangeTrace trace = new(_telemetry, CorrelationIds.NextRequest(), Facts(context, destination), _privacy);
         long startedAt = Stopwatch.GetTimestamp();
 
         // Counted on the way out rather than read from Content-Length, which a chunked
@@ -67,17 +67,17 @@ sealed class ForwardProxy : IForwardProxy
         ForwarderError error;
         try
         {
-            error = await forwarder.SendAsync(
+            error = await _forwarder.SendAsync(
                 context,
                 destination.GetLeftPart(UriPartial.Authority),
-                upstream,
-                requestConfig,
+                _upstream,
+                _requestConfig,
                 new ForwardProxyTransformer(
                     destination,
-                    bodyMutations.CreateForExchange(destination, trace),
-                    bodyLimits,
-                    scope,
-                    transformerLogger,
+                    _bodyMutations.CreateForExchange(destination, trace),
+                    _bodyLimits,
+                    _scope,
+                    _transformerLogger,
                     trace));
         }
         finally
@@ -103,7 +103,7 @@ sealed class ForwardProxy : IForwardProxy
     private RequestFacts Facts(HttpContext context, Uri destination)
         => new(
             ClientLabeler.Ip(context.Connection.RemoteIpAddress),
-            clientLabeler.Label(context.Connection.RemoteIpAddress, context.Request.Headers.UserAgent),
+            _clientLabeler.Label(context.Connection.RemoteIpAddress, context.Request.Headers.UserAgent),
             context.Request.Method,
             destination.Scheme == Uri.UriSchemeHttps ? TelemetryScheme.Https : TelemetryScheme.Http,
             destination.Host,

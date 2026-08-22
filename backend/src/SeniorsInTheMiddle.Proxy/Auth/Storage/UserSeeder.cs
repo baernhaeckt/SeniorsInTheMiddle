@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Options;
+﻿using Microsoft.Extensions.Options;
 
 using SeniorsInTheMiddle.Proxy.Auth.Domain;
 
@@ -13,22 +13,22 @@ namespace SeniorsInTheMiddle.Proxy.Auth.Storage;
 /// </summary>
 sealed class UserSeeder : IHostedService
 {
-    private readonly IUserStore users;
-    private readonly SeedUserOptions options;
-    private readonly ILogger<UserSeeder> logger;
+    private readonly IUserStore _users;
+    private readonly SeedUserOptions _options;
+    private readonly ILogger<UserSeeder> _logger;
 
     public UserSeeder(IUserStore users, IOptions<SeedUserOptions> options, ILogger<UserSeeder> logger)
     {
-        this.users = users;
-        this.options = options.Value;
-        this.logger = logger;
+        _users = users;
+        _options = options.Value;
+        _logger = logger;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        if (!options.IsConfigured)
+        if (!_options.IsConfigured)
         {
-            logger.LogInformation(
+            _logger.LogInformation(
                 "No {Section}:Username configured, so no account is seeded. Everyone "
                 + "self-registers, and a restart clears them again.",
                 SeedUserOptions.SectionName);
@@ -36,23 +36,23 @@ sealed class UserSeeder : IHostedService
         }
 
         // Registering over an existing account would reset a password someone had changed.
-        if (await users.FindByUsernameAsync(options.Username) is not null)
+        if (await _users.FindByUsernameAsync(_options.Username) is not null)
             return;
 
-        await users.SaveAsync(new User(options.Username, options.Email), options.Password);
+        await _users.SaveAsync(new User(_options.Username, _options.Email), _options.Password);
 
-        if (options.Advertise)
+        if (_options.Advertise)
         {
-            logger.LogWarning(
+            _logger.LogWarning(
                 "Seeded the account {Username} and is handing its password to anyone who asks "
                 + "at /api/v1/auth/demo-account, so the login screen can prefill it. Intended "
                 + "for demos. Set {Section}:Advertise to false anywhere real traffic flows.",
-                options.Username,
+                _options.Username,
                 SeedUserOptions.SectionName);
         }
         else
         {
-            logger.LogInformation("Seeded the account {Username}.", options.Username);
+            _logger.LogInformation("Seeded the account {Username}.", _options.Username);
         }
     }
 
