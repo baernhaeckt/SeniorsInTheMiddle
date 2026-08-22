@@ -33,13 +33,13 @@ public sealed class BrowserEnvironment
 /// Owns the single CEF runtime shared by every tab.
 ///
 /// WHY one environment: all tabs share the same cache path, and therefore the same cookies,
-/// session storage and cache, across tabs. The folder is wiped on every start and on exit, so nothing
-/// survives a restart: each launch of the demo browser is a clean profile.
+/// session storage and cache, across tabs. The folder is kept between runs (cookies, cache and storage
+/// survive a restart); which tabs were open is never persisted.
 ///
-/// WHY the proxy is an environment-time argument: Chromium reads <c>--proxy-server</c> only from the
-/// command line of the browser process, which CEF configures when the runtime is initialised (once per
-/// process). There is no API to change the proxy on a live runtime, so proxy settings changed in the
-/// settings dialog only take effect after restarting the application.
+/// WHY the proxy is an environment-time argument: Chromium reads <c>--proxy-server</c> (and the SPKI pins) only
+/// from the command line of the browser process, which CEF configures when the runtime is initialised (once per
+/// process). There is no API to change either on a live runtime, so proxy/CA changes are applied by restarting
+/// the process in flight (<see cref="App.RestartInFlightAsync"/>), which reopens the same tabs.
 /// </summary>
 public sealed class BrowserEnvironmentService
 {
@@ -175,15 +175,16 @@ public sealed class BrowserEnvironmentService
 
     private Task<BrowserEnvironment> CreateAsync(AppSettings settings, IReadOnlyCollection<string>? proxyTlsPins)
     {
-        // Fresh profile on every launch: no history, cookies or cache from a previous run.
-        AppPaths.WipeBrowserData();
+        // The profile persists between runs: cookies (session cookies included), cache and local storage are
+        // picked up again. Open tabs are not part of the profile — CEF has no session restore and the app keeps
+        // none of its own.
         Directory.CreateDirectory(AppPaths.UserDataFolder);
 
         var cefSettings = new CefSettings
         {
             RootCachePath = AppPaths.UserDataFolder,
             CachePath = AppPaths.UserDataFolder,
-            PersistSessionCookies = false,
+            PersistSessionCookies = true,
             LogSeverity = CefLogSeverity.Warning,
             LogFile = Path.Combine(AppPaths.RootFolder, "cef.log"),
             WindowlessRenderingEnabled = false,

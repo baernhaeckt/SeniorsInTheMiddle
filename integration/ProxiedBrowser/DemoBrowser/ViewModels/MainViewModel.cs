@@ -13,6 +13,12 @@ public sealed class MainViewModel : ObservableObject
     private TabViewModel? _activeTab;
     private string _addressText = "";
     private string? _warningMessage;
+    private Task? _caCheck;
+    private DateTime _lastCaCheck = DateTime.MinValue;
+    private bool _restartRequested;
+
+    /// <summary>A page that keeps failing must not hammer the CA URL; one re-check per interval is plenty.</summary>
+    private static readonly TimeSpan CaCheckInterval = TimeSpan.FromSeconds(20);
 
     public MainViewModel(
         BrowserEnvironment environment,
@@ -44,7 +50,7 @@ public sealed class MainViewModel : ObservableObject
             }
         }, () => ActiveTab is not null);
         DevToolsCommand = new RelayCommand(() => ActiveTab?.ToggleDevTools(), () => ActiveTab is not null);
-        NewTabCommand = new RelayCommand(() => _ = OpenTabAsync(_settingsService.Current.StartPage, activate: true));
+        NewTabCommand = new RelayCommand(() => _ = OpenNewTabAsync());
         CloseTabCommand = new RelayCommand(p => CloseTab(p as TabViewModel));
         ActivateTabCommand = new RelayCommand(p => ActiveTab = p as TabViewModel ?? ActiveTab);
         NavigateCommand = new RelayCommand(NavigateFromAddressBar);
@@ -67,6 +73,15 @@ public sealed class MainViewModel : ObservableObject
 
     /// <summary>Raised whenever the URL shown in the address bar should change (active tab switched or navigated).</summary>
     public event Action<string>? ActiveSourceChanged;
+
+    /// <summary>
+    /// Raised when the browser engine has to be re-initialised (proxy/CA settings changed, or the proxy's CA was
+    /// re-issued). The application answers by restarting itself in flight with the current tabs.
+    /// </summary>
+    public event Action<string>? RestartRequested;
+
+    /// <summary>Raised after the user opened a new tab (Ctrl+T / "+"): the window puts the focus into the address bar.</summary>
+    public event Action<TabViewModel>? NewTabOpened;
 
     public TabViewModel? ActiveTab
     {
@@ -153,6 +168,7 @@ public sealed class MainViewModel : ObservableObject
     {
         var tab = new TabViewModel(_certificateService);
         tab.NewTabRequested += (sender, uri) => _ = OpenTabAsync(uri, activate: true);
+        tab.CertificateProblem += OnCertificateProblem;
         Tabs.Add(tab);
         if (activate || ActiveTab is null)
         {
@@ -189,6 +205,94 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>Every launch starts fresh with a single tab on the configured start page.</summary>
     public Task OpenStartPageAsync() => OpenTabAsync(_settingsService.Current.StartPage, activate: true);
 
+    /// <summary>
+    /// Reopens the tabs an in-flight restart handed over (<see cref="Models.RestartState"/>); falls back to the
+    /// start page if the list is empty.
+    /// </summary>
+    public async Task OpenTabsAsync(IReadOnlyList<string> urls, int activeIndex)
+    {
+        if (urls.Count == 0)
+        {
+            await OpenStartPageAsync();
+            return;
+        }
+
+        var tabs = new List<TabViewModel>(urls.Count);
+        foreach (var url in urls)
+        {
+            tabs.Add(await OpenTabAsync(url, activate: false));
+        }
+
+        ActiveTab = tabs[Math.Clamp(activeIndex, 0, tabs.Count - 1)];
+    }
+
+    /// <summary>
+    /// User-opened tab (Ctrl+T / "+"): opens the start page and hands the focus to the address bar, selected, so
+    /// a URL can be typed straight away. The tab keeps its hands off the focus until the user navigates or clicks.
+    /// </summary>
+    public async Task OpenNewTabAsync()
+    {
+        var startPage = _settingsService.Current.StartPage;
+        var tab = new TabViewModel(_certificateService) { SuppressNavigationFocus = true };
+        tab.NewTabRequested += (sender, uri) => _ = OpenTabAsync(uri, activate: true);
+        tab.CertificateProblem += OnCertificateProblem;
+        Tabs.Add(tab);
+        ActiveTab = tab;
+        AddressText = startPage;
+        NewTabOpened?.Invoke(tab);
+        await tab.InitializeAsync(_environment, startPage);
+    }
+
+    /// <summary>The URLs of all open tabs and the active one, for handing over to a restarted instance.</summary>
+    public (IReadOnlyList<string> Urls, int ActiveIndex) CaptureTabs()
+    {
+        var urls = Tabs.Select(t => string.IsNullOrEmpty(t.Source) ? _settingsService.Current.StartPage : t.Source).ToList();
+        var active = ActiveTab is null ? 0 : Math.Max(0, Tabs.IndexOf(ActiveTab));
+        return (urls, active);
+    }
+
+    /// <summary>Asks the application to restart the browser engine in flight; idempotent.</summary>
+    public void RequestRestart(string reason)
+    {
+        if (_restartRequested)
+        {
+            return;
+        }
+
+        _restartRequested = true;
+        Diagnostics.Info("Restart", $"Restarting the browser engine: {reason}");
+        RestartRequested?.Invoke(reason);
+    }
+
+    /// <summary>
+    /// A certificate that no longer chains to the CA this instance was started with, or a failed proxy tunnel.
+    /// Both are what a re-issued proxy CA looks like from inside the engine, and the pins that would accept the
+    /// new CA are command-line switches — so the CA is fetched again and, if it really changed, the engine is
+    /// restarted in flight. A genuinely bad site certificate (CA unchanged) just shows Chromium's error page.
+    /// </summary>
+    private void OnCertificateProblem(TabViewModel tab, string reason)
+    {
+        var settings = _environment.Settings;
+        if (!settings.UseProxy || _restartRequested || _caCheck is { IsCompleted: false }
+            || DateTime.UtcNow - _lastCaCheck < CaCheckInterval)
+        {
+            return;
+        }
+
+        _lastCaCheck = DateTime.UtcNow;
+        Diagnostics.Info("CA", $"Certificate problem ({reason}): re-checking whether the proxy CA changed");
+        _caCheck = CheckCaAsync(settings.CaCertUrl);
+    }
+
+    private async Task CheckCaAsync(string caCertUrl)
+    {
+        var changed = await _certificateService.HasCaChangedAsync(caCertUrl);
+        if (changed)
+        {
+            RequestRestart("the proxy CA changed");
+        }
+    }
+
     /// <summary>Navigates the active tab to whatever the address bar contains (URL, bare host or search query).</summary>
     public void NavigateFromAddressBar()
     {
@@ -204,6 +308,8 @@ public sealed class MainViewModel : ObservableObject
         }
         else
         {
+            // The user is done with the address bar: the page may take the focus again.
+            ActiveTab.SuppressNavigationFocus = false;
             ActiveTab.Navigate(target);
         }
     }

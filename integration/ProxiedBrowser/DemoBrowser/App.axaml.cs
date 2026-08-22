@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
+using DemoBrowser.Models;
 using DemoBrowser.Services;
 using DemoBrowser.ViewModels;
 using DemoBrowser.Views;
@@ -12,14 +14,18 @@ namespace DemoBrowser;
 /// <summary>
 /// Application bootstrap. Startup order is fixed:
 /// 1. load settings, 2. verify the bundled Chromium (CEF) runtime, 3. download the proxy CA (non-fatal),
-/// 4. initialise the single CEF runtime with the proxy switches (on a freshly wiped profile),
-/// 5. open the start page. Nothing from a previous run is restored; the profile is wiped again on exit.
+/// 4. initialise the single CEF runtime with the proxy switches (on the persistent profile: cookies, cache and
+///    storage are kept between runs),
+/// 5. open the start page. Which tabs were open is never stored; only an in-flight restart
+///    (<see cref="RestartInFlightAsync"/>) hands the current tabs to its successor, via the command line.
 /// An animated splash screen is shown throughout (at least one second).
 /// </summary>
 public partial class App : Application
 {
     private const string RuntimeHelp = "Rebuild the application with publish.sh (see README.md) so that the CEF runtime " +
                                        "and the CefGlueBrowserProcess helper are bundled next to the executable.";
+
+    private static readonly TimeSpan PredecessorExitTimeout = TimeSpan.FromSeconds(15);
 
     private readonly ProxyDiagnostics _diagnostics = new();
     private BrowserEnvironmentService? _environmentService;
@@ -78,8 +84,55 @@ public partial class App : Application
         }
     }
 
+    /// <summary>
+    /// An in-flight restart hands its tabs to the successor on the command line; the successor must not touch the
+    /// profile before its predecessor has released it (Chromium refuses a cache_path another process still uses).
+    /// </summary>
+    private static async Task WaitForPredecessorAsync(RestartState state, SplashWindow splash)
+    {
+        if (state.PreviousProcessId <= 0 || state.PreviousProcessId == Environment.ProcessId)
+        {
+            return;
+        }
+
+        Process predecessor;
+        try
+        {
+            predecessor = Process.GetProcessById(state.PreviousProcessId);
+        }
+        catch (ArgumentException)
+        {
+            return; // already gone
+        }
+
+        splash.SetStatus("Restarting browser engine…");
+        using var timeout = new CancellationTokenSource(PredecessorExitTimeout);
+        try
+        {
+            await predecessor.WaitForExitAsync(timeout.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Carry on; the engine start reports the locked profile if it is still held.
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        finally
+        {
+            predecessor.Dispose();
+        }
+    }
+
     private async Task StartAsync(IClassicDesktopStyleApplicationLifetime desktop, SplashWindow splash)
     {
+        // 0. Restarted in flight? Then wait until the previous instance has let go of the profile.
+        var restart = RestartState.TryParse(desktop.Args);
+        if (restart is not null)
+        {
+            await WaitForPredecessorAsync(restart, splash);
+        }
+
         // 1. Settings
         splash.SetStatus("Loading settings…");
         var settingsService = new SettingsService();
@@ -165,28 +218,81 @@ public partial class App : Application
         }
 
         var window = new MainWindow(viewModel, settingsService);
+        if (restart is not null)
+        {
+            window.ApplyRestartState(restart);
+        }
+
+        viewModel.RestartRequested += reason => _ = RestartInFlightAsync(window, reason);
         desktop.MainWindow = window;
         desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
 
         // Hand over: fade the splash out (honouring its minimum display time), then reveal the main window.
         await splash.DismissAsync();
         window.Show();
-        await window.OpenStartPageAsync();
+        if (restart is not null)
+        {
+            await viewModel.OpenTabsAsync(restart.TabUrls, restart.ActiveTabIndex);
+        }
+        else
+        {
+            await window.OpenStartPageAsync();
+        }
     }
 
     /// <summary>
-    /// Wipe the profile on exit too, so nothing lingers on disk between demo sessions. Chromium keeps profile
-    /// files locked until the engine has fully shut down, so shut it down first. This runs after the Avalonia
-    /// loop has finished and after every browser is closed (<see cref="MainWindow"/> waits for that before it
-    /// lets itself close), which is what CefShutdown requires.
+    /// Re-initialises the browser engine without the user having to close and reopen the app.
+    ///
+    /// WHY a new process: the proxy and the SPKI pins for the proxy CA are command-line switches of the browser
+    /// process, and CEF initialises the runtime exactly once per process — there is no "reload the control with
+    /// new settings". So a successor process is started with the current tabs and window geometry as arguments
+    /// (in memory only, nothing is written to disk), it shows the splash and waits for this instance to release
+    /// the profile, and this instance closes. From the outside it looks like a reload of the window.
     /// </summary>
-    private void OnExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
+    private async Task RestartInFlightAsync(MainWindow window, string reason)
     {
-        _environmentService?.ShutdownBrowserEngine();
-        AppPaths.WipeBrowserData();
+        var state = window.CaptureRestartState();
+        var executable = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(executable))
+        {
+            _diagnostics.Error("Restart", "Cannot restart: the executable path is unknown");
+            return;
+        }
 
-        // CEF hosts the browser in-process, so parts of the profile stay memory-mapped until this process is gone;
-        // a detached helper finishes the job right after exit.
-        AppPaths.WipeBrowserDataAfterExit();
+        var startInfo = new ProcessStartInfo(executable) { UseShellExecute = false };
+        foreach (var argument in state.ToArguments())
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        try
+        {
+            using var successor = Process.Start(startInfo);
+            if (successor is null)
+            {
+                _diagnostics.Error("Restart", "Cannot restart: the successor process did not start");
+                return;
+            }
+
+            _diagnostics.Info("Restart", $"Successor process {successor.Id} started ({reason}); closing this instance");
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+        {
+            _diagnostics.Error("Restart", $"Cannot restart: {ex.Message}", ex.ToString());
+            await MessageDialog.ShowAsync(window,
+                $"The browser engine could not be restarted ({ex.Message}). Please close and reopen the application.",
+                "Restart failed", MessageDialogIcon.Warning);
+            return;
+        }
+
+        window.CloseForRestart();
     }
+
+    /// <summary>
+    /// Shut the engine down cleanly so the profile (cookies, cache, storage) is flushed and unlocked for the next
+    /// run. This runs after the Avalonia loop has finished and after every browser is closed
+    /// (<see cref="MainWindow"/> waits for that before it lets itself close), which is what CefShutdown requires.
+    /// </summary>
+    private void OnExit(object? sender, ControlledApplicationLifetimeExitEventArgs e) =>
+        _environmentService?.ShutdownBrowserEngine();
 }

@@ -72,7 +72,7 @@
 
             <Border Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" Background="#14FFFFFF" CornerRadius="8" Padding="12,8" Margin="0,4,0,16">
                 <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextMutedBrush}" FontSize="12"
-                           Text="Proxy and CA settings are read once when the browser engine starts. Changes take effect after restarting the application." />
+                           Text="Proxy and CA settings are read once when the browser engine starts. Saving a change restarts the engine in place: the open tabs are reopened with the new settings." />
             </Border>
 
             <DockPanel Grid.Row="9" Grid.Column="0" Grid.ColumnSpan="2">

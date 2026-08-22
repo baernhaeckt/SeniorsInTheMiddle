@@ -52,10 +52,12 @@ public sealed class TabViewModel : ObservableObject, IDisposable
             // navigation's certificate error is already covered.
             RequestHandler = new TabRequestHandler(this),
             LifeSpanHandler = new TabLifeSpanHandler(this),
+            FocusHandler = new TabFocusHandler(this),
         };
         WebView.BrowserInitialized += OnBrowserInitialized;
         WebView.LoadStart += OnLoadStart;
         WebView.LoadEnd += OnLoadEnd;
+        WebView.LoadError += OnLoadError;
         WebView.LoadingStateChange += OnLoadingStateChange;
         WebView.AddressChanged += (_, url) => Post(() => SyncSource(url));
         WebView.TitleChanged += (_, _) => Post(UpdateTitle);
@@ -73,6 +75,20 @@ public sealed class TabViewModel : ObservableObject, IDisposable
 
     /// <summary>Raised when the page asks for a new window (target=_blank); the host opens a new tab.</summary>
     public event Action<TabViewModel, string>? NewTabRequested;
+
+    /// <summary>
+    /// Raised (on the UI thread) when a certificate did not chain to the loaded proxy CA, or a main-frame load
+    /// failed with a certificate/proxy-tunnel error. Both are what a re-issued proxy CA looks like from inside
+    /// the browser: the owner re-checks the CA and restarts the engine if it really changed.
+    /// </summary>
+    public event Action<TabViewModel, string>? CertificateProblem;
+
+    /// <summary>
+    /// While <c>true</c>, the browser is not allowed to take keyboard focus when a navigation completes.
+    /// Set for a freshly opened tab so the address bar keeps the focus (and its selection) while the start
+    /// page loads behind it; cleared as soon as the user navigates from the address bar or clicks into the page.
+    /// </summary>
+    public bool SuppressNavigationFocus { get; set; }
 
     public string Title
     {
@@ -394,6 +410,27 @@ public sealed class TabViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Main-frame load failures that point at a certificate the engine was not started with: a site certificate
+    /// Chromium rejected (-200…-219, ERR_CERT_*), a proxy whose own TLS certificate is no longer pinned
+    /// (-136, ERR_PROXY_CERTIFICATE_INVALID) or a CONNECT tunnel that failed (-111). CefGlue 120 has no names
+    /// for the proxy codes, hence the numbers.
+    /// </summary>
+    private void OnLoadError(object sender, LoadErrorEventArgs e)
+    {
+        if (!e.Frame.IsMain || e.Frame.Browser.IsPopup)
+        {
+            return;
+        }
+
+        var code = (int)e.ErrorCode;
+        if (code is (<= -200 and >= -219) or (-136) or (-111))
+        {
+            var reason = $"{e.ErrorCode} ({code}) loading {e.FailedUrl}";
+            Post(() => CertificateProblem?.Invoke(this, reason));
+        }
+    }
+
     private void OnLoadEnd(object sender, LoadEndEventArgs e)
     {
         if (!e.Frame.IsMain || e.Frame.Browser.IsPopup)
@@ -551,6 +588,12 @@ public sealed class TabViewModel : ObservableObject, IDisposable
             owner._lastCertErrorTrustedViaProxy = trusted;
             owner._lastCertErrorIssues = trusted ? [] : DescribeCertStatus(sslInfo?.CertStatus ?? CefCertStatus.None, certError);
             owner.ReplaceCertErrorChain(chain);
+            if (!trusted)
+            {
+                var reason = $"{certError} for {requestUrl}";
+                owner.Post(() => owner.CertificateProblem?.Invoke(owner, reason));
+            }
+
             return trusted;
         }
 
@@ -593,6 +636,25 @@ public sealed class TabViewModel : ObservableObject, IDisposable
             (CefCertStatus.Sha1SignaturePresent, "SHA-1 signature present"),
             (CefCertStatus.CTComplianceFailed, "certificate transparency requirements not met"),
         ];
+    }
+
+    /// <summary>
+    /// Keeps a freshly opened tab from pulling the keyboard focus out of the address bar when its start page
+    /// finishes loading. <c>OnSetFocus</c> returning <c>true</c> cancels the focus change; a click into the page
+    /// (<see cref="CefFocusSource.System"/>) always wins and ends the suppression.
+    /// </summary>
+    private sealed class TabFocusHandler(TabViewModel owner) : FocusHandler
+    {
+        protected override bool OnSetFocus(CefBrowser browser, CefFocusSource source)
+        {
+            if (source == CefFocusSource.Navigation && owner.SuppressNavigationFocus)
+            {
+                return true;
+            }
+
+            owner.SuppressNavigationFocus = false;
+            return base.OnSetFocus(browser, source);
+        }
     }
 
     /// <summary>The CEF counterpart of WebView2's <c>NewWindowRequested</c>: popups are redirected into a new tab.</summary>
