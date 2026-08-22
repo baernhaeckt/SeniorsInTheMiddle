@@ -22,7 +22,7 @@ public class TokenDetectionService
     private TokenDetectionResult Map(IGrouping<string, PiiDetection> grouping)
     {
         PiiDetection entity = grouping.First();
-        Token token = new(entity.EntityType, entity.DetectedText);
+        Token token = new(entity.DetectedText, entity.EntityType);
         int[] positions = grouping.Select(d => d.StartPosition).ToArray();
 
         return new TokenDetectionResult(token, positions);
