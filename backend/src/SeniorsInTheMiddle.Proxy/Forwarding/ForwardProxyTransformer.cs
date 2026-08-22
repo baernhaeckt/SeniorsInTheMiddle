@@ -191,10 +191,31 @@ sealed class ForwardProxyTransformer(
             return;
         }
 
-        byte[]? mutated = await mutation.MutateRequestAsync(
-            buffered,
-            new BodyDescriptor(request.ContentType, EncodingOf(request.ContentType)),
-            cancellationToken);
+        byte[]? mutated;
+        try
+        {
+            mutated = await mutation.MutateRequestAsync(
+                buffered,
+                new BodyDescriptor(request.ContentType, EncodingOf(request.ContentType)),
+                cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Deliberately fatal. A mutation that threw did not finish deciding what in this body
+            // had to be hidden, so forwarding the bytes it was handed would send exactly what it
+            // exists to withhold. YARP answers the client 502, and the reason is here rather than
+            // only in its RequestCreation warning.
+            logger.LogError(
+                ex,
+                "Request body for {Host} was not rewritten and the request was not forwarded: the mutation failed over {Bytes} bytes of {ContentType}.",
+                destination.Host,
+                buffered.Length,
+                request.ContentType ?? "no declared content type");
+
+            throw new BodyMutationException(
+                $"The request body for {destination.Host} could not be rewritten, so it was not forwarded.",
+                ex);
+        }
 
         if (mutated is null)
         {
@@ -297,10 +318,31 @@ sealed class ForwardProxyTransformer(
             return;
         }
 
-        byte[]? mutated = await mutation.MutateResponseAsync(
-            plain,
-            new BodyDescriptor(contentType?.ToString(), EncodingOf(contentType?.ToString())),
-            cancellationToken);
+        byte[]? mutated;
+        try
+        {
+            mutated = await mutation.MutateResponseAsync(
+                plain,
+                new BodyDescriptor(contentType?.ToString(), EncodingOf(contentType?.ToString())),
+                cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Not fatal, unlike the request side, and for the reason that decides both: this
+            // direction restores what the proxy hid rather than hiding anything, so a failure
+            // costs the client a body still carrying stand-in values -- not a disclosure. The
+            // origin's own bytes are what the headers already sent to the client describe.
+            logger.LogError(
+                ex,
+                "Response body from {Host} was not rewritten: the mutation failed over {Bytes} bytes of {ContentType}.",
+                destination.Host,
+                plain.Length,
+                contentType?.MediaType ?? "no declared content type");
+
+            Replace(proxyResponse, new ByteArrayContent(encoded));
+
+            return;
+        }
 
         if (mutated is null)
         {
