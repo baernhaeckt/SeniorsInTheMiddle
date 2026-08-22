@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.Net;
 using System.Text;
 
 using Microsoft.AspNetCore.Http.Features;
@@ -12,34 +13,31 @@ using MediaTypeHeaderValue = System.Net.Http.Headers.MediaTypeHeaderValue;
 namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
 /// <summary>
-/// Shapes the request that leaves the proxy: the destination it is sent to, and the body it
-/// carries.
+/// Shapes both halves of one exchange: the request that leaves the proxy and the response that
+/// comes back.
 ///
-/// The body is rewritten on <see cref="HttpContext.Request"/> and not on the outgoing
+/// The request body is rewritten on <see cref="HttpContext.Request"/> and not on the outgoing
 /// <see cref="HttpRequestMessage"/>. That is not a preference. YARP assigns its own streaming
-/// content before this runs and refuses any replacement -- "Replacing the YARP outgoing
-/// request HttpContent is not supported. You should configure the HttpContext.Request
-/// instead." -- and the refusal is reported as a failed request creation and answered with
-/// 502, so it reads like an unreachable destination rather than a bug in here.
+/// content before this runs and refuses any replacement -- "Replacing the YARP outgoing request
+/// HttpContent is not supported. You should configure the HttpContext.Request instead." -- and
+/// the refusal is reported as a failed request creation answered with 502, so it reads like an
+/// unreachable destination rather than a bug in here.
 ///
-/// Rewriting the incoming request instead is the better half of the bargain anyway. YARP
-/// streams whatever <c>HttpContext.Request.Body</c> holds at the moment it sends, and it
-/// builds the outgoing headers by copying <c>HttpContext.Request.Headers</c>. Correcting
-/// both before <see cref="HttpTransformer.TransformRequestAsync"/> copies them makes the
-/// framing right by construction: there is no second set of headers that can drift out of
-/// step with the bytes.
+/// The response is the mirror image and, for once, the easier one. There is no such guard on
+/// <see cref="HttpResponseMessage.Content"/>, so the body is replaced directly; and the base
+/// transform copies the origin's headers onto the client response before this sees them, so the
+/// ones that describe the old bytes are corrected afterwards rather than beforehand.
 ///
-/// It costs one thing, and only one. The body is now read here, before the destination
-/// connection exists, so Kestrel answers a client's <c>Expect: 100-continue</c> as soon as
-/// buffering starts, instead of leaving the destination to decline the upload first.
-/// Skipping the rewrite for those requests would fix that and hand every client a
-/// one-header way to opt out of inspection, which is the worse trade for a proxy whose job
-/// is to look.
+/// The request rewrite costs one thing. The body is read here, before the destination connection
+/// exists, so Kestrel answers a client's <c>Expect: 100-continue</c> as soon as buffering starts
+/// instead of leaving the destination to decline the upload first. Skipping the rewrite for those
+/// requests would fix that and hand every client a one-header way to opt out of inspection, which
+/// is the worse trade for a proxy whose job is to look.
 /// </summary>
 sealed class ForwardProxyTransformer(
     Uri destination,
-    IRequestBodyMutation mutation,
-    RequestBodyLimits limits,
+    IExchangeBodyMutation mutation,
+    BodyLimits limits,
     ILogger<ForwardProxyTransformer> logger) : HttpTransformer
 {
     /// <summary>
@@ -48,8 +46,8 @@ sealed class ForwardProxyTransformer(
     ///
     /// Matching on a substring rather than on a list of names is deliberate. An unrecognised
     /// signature header means a rewritten body and a destination answering 401 with no
-    /// explanation; an over-eager match only means one body goes uninspected. The second is
-    /// the mistake to make.
+    /// explanation; an over-eager match only means one body goes uninspected. The second is the
+    /// mistake to make.
     /// </summary>
     private static readonly string[] SignatureHeaderMarkers = ["signature", "hmac"];
 
@@ -74,13 +72,13 @@ sealed class ForwardProxyTransformer(
     ];
 
     /// <summary>
-    /// Headers that describe the original bytes rather than the message. They are dropped
-    /// once the body is no longer the body they were written for: a surviving
-    /// <c>Content-Encoding: gzip</c> makes the destination inflate plain text and fail, and a
+    /// Headers that describe the original bytes rather than the message. They are dropped once
+    /// the body is no longer the body they were written for: a surviving
+    /// <c>Content-Encoding: gzip</c> makes the reader inflate plain text and fail, and a
     /// surviving digest simply does not match.
     ///
-    /// Dropping rather than recomputing is deliberate. Recomputing a digest would re-assert
-    /// an integrity claim on the proxy's behalf that the client never made.
+    /// Dropping rather than recomputing is deliberate. Recomputing a digest would re-assert an
+    /// integrity claim on the proxy's behalf that neither end ever made.
     /// </summary>
     private static readonly string[] BodyDescribingHeaders =
     [
@@ -93,10 +91,10 @@ sealed class ForwardProxyTransformer(
     ];
 
     /// <summary>
-    /// Largest buffer reserved up front from a client's declared Content-Length. Past this
-    /// the buffer grows from bytes actually received: the declared length is a claim, and
-    /// reserving a megabyte on it lets a client that opens many connections and then dribbles
-    /// pin that much memory per connection without ever sending a body.
+    /// Largest buffer reserved up front from a declared Content-Length. Past this the buffer
+    /// grows from bytes actually received: the declared length is a claim, and reserving a
+    /// megabyte on it lets a peer that opens many connections and then dribbles pin that much
+    /// memory per connection without ever sending a body.
     /// </summary>
     private const int MaxPreallocatedBytes = 64 * 1024;
 
@@ -109,69 +107,90 @@ sealed class ForwardProxyTransformer(
         CancellationToken cancellationToken)
     {
         // Before the base transform, which is what copies the headers this may have changed.
-        await RewriteBodyAsync(httpContext, cancellationToken);
+        await RewriteRequestBodyAsync(httpContext, cancellationToken);
 
         await base.TransformRequestAsync(httpContext, proxyRequest, destinationPrefix, cancellationToken);
 
         proxyRequest.RequestUri = destination;
 
-        // Cleared so it is recomputed from the destination. The client's Host names this
-        // proxy, and name-based virtual hosts route on it.
+        // Cleared so it is recomputed from the destination. The client's Host names this proxy,
+        // and name-based virtual hosts route on it.
         proxyRequest.Headers.Host = null;
     }
 
+    public override async ValueTask<bool> TransformResponseAsync(
+        HttpContext httpContext,
+        HttpResponseMessage? proxyResponse,
+        CancellationToken cancellationToken)
+    {
+        // After the base transform, which is what puts the origin's headers on the client
+        // response in the first place.
+        bool shouldProxy = await base.TransformResponseAsync(httpContext, proxyResponse, cancellationToken);
+
+        if (shouldProxy && proxyResponse?.Content is not null)
+            await RewriteResponseBodyAsync(httpContext, proxyResponse, cancellationToken);
+
+        return shouldProxy;
+    }
+
     /// <summary>
-    /// Offers the body to the mutation and leaves the request describing whatever comes back.
+    /// Offers the request body to the mutation and leaves the request describing whatever comes
+    /// back.
     ///
     /// Every path out of here leaves <c>HttpContext.Request.Body</c> readable from its first
     /// unread byte, because YARP streams from it after this returns. Nothing is consumed and
     /// dropped.
     /// </summary>
-    private async ValueTask RewriteBodyAsync(HttpContext httpContext, CancellationToken cancellationToken)
+    private async ValueTask RewriteRequestBodyAsync(HttpContext httpContext, CancellationToken cancellationToken)
     {
         HttpRequest request = httpContext.Request;
 
         // The server answers this definitively. A GET or a HEAD gets no content at all, and
-        // giving it one would put a Content-Length or a Transfer-Encoding on a request that
-        // must carry neither; servers that do not expect a body there answer 400.
+        // giving it one would put a Content-Length or a Transfer-Encoding on a request that must
+        // carry neither; servers that do not expect a body there answer 400.
         if (httpContext.Features.Get<IHttpRequestBodyDetectionFeature>()?.CanHaveBody != true)
             return;
 
         if (BodySigningHeader(request) is string signedBy)
         {
             logger.LogWarning(
-                "Body left uninspected for {Host}: {Header} signs the payload and a rewrite would invalidate it.",
+                "Request body left uninspected for {Host}: {Header} signs the payload and a rewrite would invalidate it.",
                 destination.Host,
                 signedBy);
 
             return;
         }
 
-        byte[] buffered = await ReadAtMostAsync(request, limits.MaxMutableBodyBytes, cancellationToken);
+        byte[] buffered = await ReadAtMostAsync(
+            request.Body,
+            limits.MaxMutableBodyBytes,
+            request.ContentLength ?? 0,
+            cancellationToken);
 
         if (buffered.Length > limits.MaxMutableBodyBytes)
         {
             logger.LogWarning(
-                "Body left uninspected for {Host}: larger than the {Limit} byte rewrite limit.",
+                "Request body left uninspected for {Host}: larger than the {Limit} byte rewrite limit.",
                 destination.Host,
                 limits.MaxMutableBodyBytes);
 
-            // What was read cannot be put back, so the rest of the body is served behind it.
-            // No header is touched, so the client's own framing still describes the stream.
-            request.Body = new PrefixedStream(buffered, request.Body);
+            // What was read cannot be put back, so the rest of the body is served behind it. No
+            // header is touched, so the client's own framing still describes the stream. Kestrel
+            // owns the body stream, so this must not close it.
+            request.Body = new PrefixedStream(buffered, request.Body, leaveRestOpen: true);
 
             return;
         }
 
-        byte[]? mutated = await mutation.MutateAsync(
+        byte[]? mutated = await mutation.MutateRequestAsync(
             buffered,
-            new RequestBodyDescriptor(destination, request.ContentType, EncodingOf(request.ContentType)),
+            new BodyDescriptor(request.ContentType, EncodingOf(request.ContentType)),
             cancellationToken);
 
         if (mutated is null)
         {
-            // Nothing was changed, so every header the client sent still describes these
-            // bytes -- Content-Encoding and any digest included -- and none are disturbed.
+            // Nothing was changed, so every header the client sent still describes these bytes --
+            // Content-Encoding and any digest included -- and none are disturbed.
             request.Body = new MemoryStream(buffered, writable: false);
 
             return;
@@ -185,18 +204,261 @@ sealed class ForwardProxyTransformer(
         }
 
         // Goes with them: the base transform drops Content-Length from the outgoing request
-        // whenever the incoming one carried both framings, so a leftover Transfer-Encoding
-        // would send the rewritten body with no framing at all.
+        // whenever the incoming one carried both framings, so a leftover Transfer-Encoding would
+        // send the rewritten body with no framing at all.
         request.Headers.Remove(HeaderNames.TransferEncoding);
 
-        // Last, and from the bytes rather than from anything the client claimed. Assigning
-        // this writes the Content-Length header the base transform then copies, and an
-        // explicit length is what decides the outgoing request is not sent chunked.
+        // Last, and from the bytes rather than from anything the client claimed. Assigning this
+        // writes the Content-Length header the base transform then copies, and an explicit length
+        // is what decides the outgoing request is not sent chunked.
         request.ContentLength = mutated.Length;
     }
 
     /// <summary>
-    /// The header that signs the body, or null when nothing does.
+    /// Offers the response body to the mutation and leaves the client response describing
+    /// whatever comes back.
+    ///
+    /// Half of this is about what not to touch. A request body is a finite document by the time
+    /// it arrives; a response body may be a protocol upgrade, an event stream that never ends, or
+    /// a fragment of something larger, and buffering any of those is a hang rather than a mistake
+    /// anyone sees in a log.
+    ///
+    /// The other half is that the bytes on the wire and the bytes a mutation can read are not the
+    /// same bytes. Both are held: the encoded ones because they are the only thing that still
+    /// matches the headers already copied to the client, and the decoded ones because that is
+    /// what a mutation works on. Every path from the first read onwards puts one or the other
+    /// back, because by then the origin's stream is spent and there is nothing else left to send.
+    /// </summary>
+    private async ValueTask RewriteResponseBodyAsync(
+        HttpContext httpContext,
+        HttpResponseMessage proxyResponse,
+        CancellationToken cancellationToken)
+    {
+        if (!MayReadBody(httpContext, proxyResponse))
+            return;
+
+        MediaTypeHeaderValue? contentType = proxyResponse.Content.Headers.ContentType;
+        if (!IsInspectable(contentType?.MediaType))
+            return;
+
+        // One encoding this runtime can undo, or none at all. A chain of them is rare enough that
+        // reading it is not worth the ways it can go wrong.
+        string[] encodings = [.. proxyResponse.Content.Headers.ContentEncoding];
+        if (encodings.Length > 1)
+        {
+            logger.LogWarning(
+                "Response body left uninspected for {Host}: stacked content encodings {Encodings}.",
+                destination.Host,
+                string.Join(", ", encodings));
+
+            return;
+        }
+
+        Stream origin = await proxyResponse.Content.ReadAsStreamAsync(cancellationToken);
+        byte[] encoded = await ReadAtMostAsync(
+            origin,
+            limits.MaxMutableBodyBytes,
+            proxyResponse.Content.Headers.ContentLength ?? 0,
+            cancellationToken);
+
+        if (encoded.Length > limits.MaxMutableBodyBytes)
+        {
+            logger.LogWarning(
+                "Response body left uninspected for {Host}: larger than the {Limit} byte rewrite limit.",
+                destination.Host,
+                limits.MaxMutableBodyBytes);
+
+            // What was read cannot be put back, so the rest is served behind it. The handler owns
+            // this stream and a pooled connection stays out of circulation until it is closed.
+            Replace(
+                proxyResponse,
+                new StreamContent(new PrefixedStream(encoded, origin, leaveRestOpen: false)),
+                disposeReplaced: false);
+
+            return;
+        }
+
+        byte[]? plain = Decoded(encodings, encoded);
+        if (plain is null)
+        {
+            // Unreadable, but harmless: the encoded bytes are exactly what the headers on the
+            // client response already promise.
+            Replace(proxyResponse, new ByteArrayContent(encoded));
+
+            return;
+        }
+
+        byte[]? mutated = await mutation.MutateResponseAsync(
+            plain,
+            new BodyDescriptor(contentType?.ToString(), EncodingOf(contentType?.ToString())),
+            cancellationToken);
+
+        if (mutated is null)
+        {
+            // Nothing was changed, so the response goes out exactly as it arrived, still encoded
+            // and still described by the origin's own headers.
+            Replace(proxyResponse, new ByteArrayContent(encoded));
+
+            return;
+        }
+
+        Replace(proxyResponse, new ByteArrayContent(mutated));
+        DescribeRewrittenBody(httpContext, mutated.Length);
+    }
+
+    /// <summary>
+    /// The body as a mutation should see it, or null when this one cannot be read.
+    ///
+    /// Decoding happens from memory rather than off the wire so that a body which turns out to be
+    /// unreadable, malformed, or a small archive of something enormous can still be forwarded
+    /// exactly as it came.
+    /// </summary>
+    private byte[]? Decoded(string[] encodings, byte[] encoded)
+    {
+        if (encodings.Length == 0)
+            return encoded;
+
+        string encoding = encodings[0];
+        using MemoryStream source = new(encoded, writable: false);
+        using Stream? decoder = BodyCodec.Decompressing(encoding, source);
+
+        if (decoder is null)
+        {
+            logger.LogWarning(
+                "Response body left uninspected for {Host}: no decompressor for {Encoding}.",
+                destination.Host,
+                encoding);
+
+            return null;
+        }
+
+        byte[] plain;
+        try
+        {
+            // Reading synchronously is deliberate: the source is a MemoryStream, so there is
+            // nothing to await and an async decompressor would only add a state machine.
+            plain = ReadAtMost(decoder, limits.MaxMutableBodyBytes);
+        }
+        catch (InvalidDataException exception)
+        {
+            // A body that does not match the encoding it claims is the origin's mistake. Passing
+            // it on unread lets the client decide, which is better than failing the response.
+            logger.LogWarning(
+                exception,
+                "Response body left uninspected for {Host}: it is not valid {Encoding}.",
+                destination.Host,
+                encoding);
+
+            return null;
+        }
+
+        if (plain.Length <= limits.MaxMutableBodyBytes)
+            return plain;
+
+        logger.LogWarning(
+            "Response body left uninspected for {Host}: {Encoding} expands past the {Limit} byte rewrite limit.",
+            destination.Host,
+            encoding,
+            limits.MaxMutableBodyBytes);
+
+        return null;
+    }
+
+    /// <summary>
+    /// Whether this response has a body that can be held at all.
+    ///
+    /// The forwarder checks for a protocol upgrade only after this transform has run, so a 101
+    /// arrives here with a live duplex stream where its body should be. Reading that one does not
+    /// fail: it waits for the far end forever, and takes the WebSocket with it.
+    /// </summary>
+    private static bool MayReadBody(HttpContext httpContext, HttpResponseMessage proxyResponse)
+    {
+        if (proxyResponse.StatusCode == HttpStatusCode.SwitchingProtocols)
+            return false;
+
+        // A 206 carries a fragment described by a Content-Range that a rewrite would contradict,
+        // and reassembling the whole is not this proxy's business.
+        if (proxyResponse.StatusCode == HttpStatusCode.PartialContent)
+            return false;
+
+        // 1xx, 204, 205 and 304 are terminated by their headers and cannot carry content.
+        if ((int)proxyResponse.StatusCode is (>= 100 and < 200) or 204 or 205 or 304)
+            return false;
+
+        // A HEAD response describes a body it does not send, so there is nothing here to read and
+        // giving it one would be a protocol error rather than a redaction.
+        return !HttpMethods.IsHead(httpContext.Request.Method);
+    }
+
+    /// <summary>
+    /// Whether a media type is one worth opening.
+    ///
+    /// Most of what a browser fetches is stylesheets, scripts, fonts and images, which cannot
+    /// carry a person's details and are expensive to hold; those are passed through unread. The
+    /// list is what a mutation can actually work on as text.
+    ///
+    /// Input:  "application/json"        -> true
+    /// Input:  "application/ld+json"     -> true
+    /// Input:  "text/html"               -> true
+    /// Input:  "text/event-stream"       -> false, it never ends
+    /// Input:  "image/png"               -> false
+    ///
+    /// Adding a type: one entry here, and a mutation that knows what to do with it.
+    /// </summary>
+    private static bool IsInspectable(string? mediaType)
+    {
+        if (string.IsNullOrEmpty(mediaType))
+            return false;
+
+        // Under text/ but endless, so it is the one exception that has to come first.
+        if (mediaType.Equals("text/event-stream", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return mediaType.StartsWith("text/", StringComparison.OrdinalIgnoreCase)
+               || mediaType.EndsWith("json", StringComparison.OrdinalIgnoreCase)
+               || mediaType.EndsWith("xml", StringComparison.OrdinalIgnoreCase)
+               || mediaType.Equals("application/x-www-form-urlencoded", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Swaps the body the forwarder will send, and disposes the one it replaces so the pooled
+    /// connection behind it is released rather than waiting for a finalizer.
+    ///
+    /// <paramref name="disposeReplaced"/> is false in exactly one case: when the replacement is
+    /// still reading from the stream the replaced content owns. Disposing it there closes that
+    /// stream out from under the body being sent, and the client sees a response that ends early.
+    /// The replacement takes over releasing the connection instead.
+    /// </summary>
+    private static void Replace(
+        HttpResponseMessage proxyResponse,
+        HttpContent replacement,
+        bool disposeReplaced = true)
+    {
+        HttpContent replaced = proxyResponse.Content;
+        proxyResponse.Content = replacement;
+
+        if (disposeReplaced)
+            replaced.Dispose();
+    }
+
+    /// <summary>
+    /// Restates the client response for a body that is no longer the one the origin sent.
+    ///
+    /// Transfer-Encoding needs no attention here: the base transform never copies it to the
+    /// client, so Kestrel frames the response from this length alone.
+    /// </summary>
+    private static void DescribeRewrittenBody(HttpContext httpContext, int length)
+    {
+        foreach (string header in BodyDescribingHeaders)
+        {
+            httpContext.Response.Headers.Remove(header);
+        }
+
+        httpContext.Response.ContentLength = length;
+    }
+
+    /// <summary>
+    /// The header that signs the request body, or null when nothing does.
     ///
     /// Input:  "x-amz-content-sha256: e3b0c44..."                -> "x-amz-content-sha256"
     /// Input:  "X-Hub-Signature-256: sha256=7d38..."             -> "X-Hub-Signature-256"
@@ -231,7 +493,7 @@ sealed class ForwardProxyTransformer(
     }
 
     /// <summary>
-    /// The encoding the request declares, so a mutation that decodes text works from a named
+    /// The encoding a message declares, so a mutation that decodes text works from a named
     /// alphabet rather than a hopeful one.
     ///
     /// Input:  "application/json; charset=iso-8859-1" -> Latin1
@@ -240,8 +502,8 @@ sealed class ForwardProxyTransformer(
     ///
     /// Only the UTF family, ASCII and Latin-1 are built into this runtime. Anything else, a
     /// legacy Windows code page included, needs System.Text.Encoding.CodePages registered at
-    /// startup; until it is, the substitution says so rather than quietly handing a mutation
-    /// the wrong alphabet.
+    /// startup; until it is, the substitution says so rather than quietly handing a mutation the
+    /// wrong alphabet.
     /// </summary>
     private Encoding EncodingOf(string? contentType)
     {
@@ -260,7 +522,7 @@ sealed class ForwardProxyTransformer(
         catch (ArgumentException)
         {
             logger.LogWarning(
-                "Reading the body for {Host} as UTF-8: the declared charset {Charset} is not available to this runtime.",
+                "Reading a body for {Host} as UTF-8: the declared charset {Charset} is not available to this runtime.",
                 destination.Host,
                 charset);
 
@@ -269,22 +531,13 @@ sealed class ForwardProxyTransformer(
     }
 
     /// <summary>
-    /// Reads up to <paramref name="limit"/> + 1 bytes, so the caller can tell a body that fits
-    /// from one that does not by length alone.
-    ///
-    /// The arithmetic is in long on purpose: <paramref name="limit"/> is configured, and
-    /// "limit + 1" on a large one wraps negative and takes the request down with an argument
-    /// out of range rather than a body out of range.
+    /// The synchronous twin of <see cref="ReadAtMostAsync"/>, for decoding a buffer that is
+    /// already in memory. Same "limit + 1" contract, so the caller can still tell a body that
+    /// fits from one that does not.
     /// </summary>
-    private static async Task<byte[]> ReadAtMostAsync(
-        HttpRequest request,
-        int limit,
-        CancellationToken cancellationToken)
+    private static byte[] ReadAtMost(Stream body, int limit)
     {
-        long declared = request.ContentLength ?? 0;
-        int capacity = (int)Math.Clamp(declared, 0, Math.Min(limit, MaxPreallocatedBytes));
-
-        using MemoryStream buffer = new(capacity);
+        using MemoryStream buffer = new();
         byte[] chunk = ArrayPool<byte>.Shared.Rent(ReadChunkBytes);
 
         try
@@ -292,7 +545,7 @@ sealed class ForwardProxyTransformer(
             while (buffer.Length <= limit)
             {
                 long room = Math.Min(chunk.Length, (long)limit + 1 - buffer.Length);
-                int read = await request.Body.ReadAsync(chunk.AsMemory(0, (int)room), cancellationToken);
+                int read = body.Read(chunk, 0, (int)room);
                 if (read == 0)
                     break;
 
@@ -304,8 +557,47 @@ sealed class ForwardProxyTransformer(
             ArrayPool<byte>.Shared.Return(chunk);
         }
 
-        // ToArray rather than GetBuffer: the mutation is handed exactly the body, and a
-        // buffer that grew by doubling would otherwise carry a tail of zeroes into it.
+        return buffer.ToArray();
+    }
+
+    /// <summary>
+    /// Reads up to <paramref name="limit"/> + 1 bytes, so the caller can tell a body that fits
+    /// from one that does not by length alone.
+    ///
+    /// The arithmetic is in long on purpose: <paramref name="limit"/> is configured, and
+    /// "limit + 1" on a large one wraps negative and takes the exchange down with an argument out
+    /// of range rather than a body out of range.
+    /// </summary>
+    private static async Task<byte[]> ReadAtMostAsync(
+        Stream body,
+        int limit,
+        long declaredLength,
+        CancellationToken cancellationToken)
+    {
+        int capacity = (int)Math.Clamp(declaredLength, 0, Math.Min(limit, MaxPreallocatedBytes));
+
+        using MemoryStream buffer = new(capacity);
+        byte[] chunk = ArrayPool<byte>.Shared.Rent(ReadChunkBytes);
+
+        try
+        {
+            while (buffer.Length <= limit)
+            {
+                long room = Math.Min(chunk.Length, (long)limit + 1 - buffer.Length);
+                int read = await body.ReadAsync(chunk.AsMemory(0, (int)room), cancellationToken);
+                if (read == 0)
+                    break;
+
+                buffer.Write(chunk, 0, read);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(chunk);
+        }
+
+        // ToArray rather than GetBuffer: the mutation is handed exactly the body, and a buffer
+        // that grew by doubling would otherwise carry a tail of zeroes into it.
         return buffer.ToArray();
     }
 }

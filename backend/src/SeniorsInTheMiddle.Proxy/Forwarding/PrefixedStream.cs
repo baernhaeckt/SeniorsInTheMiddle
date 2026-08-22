@@ -7,10 +7,13 @@
 /// to be served from the part that was read while measuring it, and then from the socket. It
 /// reads forward only, like the stream it stands in for.
 ///
-/// It deliberately does not dispose <c>rest</c>: the request body belongs to the server, and
-/// closing it here would end the connection under Kestrel's feet.
+/// Who closes <c>rest</c> differs by direction, so it is stated rather than assumed. A request
+/// body belongs to Kestrel and closing it here would end the connection under the server's feet;
+/// a response body belongs to the handler that produced it, and not closing that one keeps its
+/// pooled connection out of circulation.
 /// </summary>
-sealed class PrefixedStream(byte[] prefix, Stream rest) : Stream
+/// <param name="leaveRestOpen">True when someone else owns <paramref name="rest"/>.</param>
+sealed class PrefixedStream(byte[] prefix, Stream rest, bool leaveRestOpen) : Stream
 {
     private int consumed;
 
@@ -66,6 +69,14 @@ sealed class PrefixedStream(byte[] prefix, Stream rest) : Stream
     public override void SetLength(long value) => throw new NotSupportedException();
 
     public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !leaveRestOpen)
+            rest.Dispose();
+
+        base.Dispose(disposing);
+    }
 
     /// <summary>Serves as much of the prefix as fits in <paramref name="destination"/>.</summary>
     private int CopyFromPrefix(Span<byte> destination)

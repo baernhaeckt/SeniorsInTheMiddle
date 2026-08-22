@@ -11,20 +11,20 @@ namespace Backend.Tests.Unit;
 /// rewritten body for the process.
 /// </summary>
 [TestClass]
-public class RequestBodyLimitsTests
+public class BodyLimitsTests
 {
-    private static RequestBodyLimits From(params (string Key, string Value)[] settings)
-        => RequestBodyLimits.From(new ConfigurationBuilder()
+    private static BodyLimits From(params (string Key, string Value)[] settings)
+        => BodyLimits.From(new ConfigurationBuilder()
             .AddInMemoryCollection(settings.Select(s => new KeyValuePair<string, string?>(s.Key, s.Value)))
             .Build());
 
     [TestMethod]
     public void Default_Is_One_Megabyte()
     {
-        RequestBodyLimits limits = From();
+        BodyLimits limits = From();
 
         Assert.AreEqual(1024 * 1024, limits.MaxMutableBodyBytes);
-        Assert.AreEqual(RequestBodyLimits.DefaultMaxMutableBodyBytes, limits.MaxMutableBodyBytes);
+        Assert.AreEqual(BodyLimits.DefaultMaxMutableBodyBytes, limits.MaxMutableBodyBytes);
     }
 
     /// <summary>Pins the configuration key itself; a rename that misses it reads as a setting
@@ -32,7 +32,7 @@ public class RequestBodyLimitsTests
     [TestMethod]
     public void Limit_Is_Read_From_Configuration()
     {
-        RequestBodyLimits limits = From(("Proxy:MaxMutableBodyBytes", "65536"));
+        BodyLimits limits = From(("Proxy:MaxMutableBodyBytes", "65536"));
 
         Assert.AreEqual(65536, limits.MaxMutableBodyBytes);
     }
@@ -41,7 +41,7 @@ public class RequestBodyLimitsTests
     [TestMethod]
     public void Zero_Turns_Rewriting_Off()
     {
-        RequestBodyLimits limits = From(("Proxy:MaxMutableBodyBytes", "0"));
+        BodyLimits limits = From(("Proxy:MaxMutableBodyBytes", "0"));
 
         Assert.AreEqual(0, limits.MaxMutableBodyBytes);
     }
@@ -49,10 +49,10 @@ public class RequestBodyLimitsTests
     [TestMethod]
     public void Ceiling_Itself_Is_Accepted()
     {
-        RequestBodyLimits limits = From(
-            ("Proxy:MaxMutableBodyBytes", RequestBodyLimits.MaxAllowedMutableBodyBytes.ToString()));
+        BodyLimits limits = From(
+            ("Proxy:MaxMutableBodyBytes", BodyLimits.MaxAllowedMutableBodyBytes.ToString()));
 
-        Assert.AreEqual(RequestBodyLimits.MaxAllowedMutableBodyBytes, limits.MaxMutableBodyBytes);
+        Assert.AreEqual(BodyLimits.MaxAllowedMutableBodyBytes, limits.MaxMutableBodyBytes);
     }
 
     /// <summary>

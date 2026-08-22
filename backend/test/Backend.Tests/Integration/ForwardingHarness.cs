@@ -35,6 +35,37 @@ internal sealed record RecordedRequest(
 }
 
 /// <summary>
+/// A mutation defined inline by the test that uses it. Returning null from either half means
+/// that body is forwarded exactly as it arrived.
+///
+/// A fresh exchange object is handed out per call, the way the contract says, so a test that
+/// carries state from the request to the response is exercising the real arrangement.
+/// </summary>
+internal sealed class DelegateMutationFactory(
+    Func<ReadOnlyMemory<byte>, BodyDescriptor, byte[]?>? onRequest = null,
+    Func<ReadOnlyMemory<byte>, BodyDescriptor, byte[]?>? onResponse = null) : IBodyMutationFactory
+{
+    public IExchangeBodyMutation CreateForExchange(Uri destination) => new Exchange(onRequest, onResponse);
+
+    private sealed class Exchange(
+        Func<ReadOnlyMemory<byte>, BodyDescriptor, byte[]?>? onRequest,
+        Func<ReadOnlyMemory<byte>, BodyDescriptor, byte[]?>? onResponse) : IExchangeBodyMutation
+    {
+        public ValueTask<byte[]?> MutateRequestAsync(
+            ReadOnlyMemory<byte> body,
+            BodyDescriptor descriptor,
+            CancellationToken cancellationToken)
+            => ValueTask.FromResult(onRequest?.Invoke(body, descriptor));
+
+        public ValueTask<byte[]?> MutateResponseAsync(
+            ReadOnlyMemory<byte> body,
+            BodyDescriptor descriptor,
+            CancellationToken cancellationToken)
+            => ValueTask.FromResult(onResponse?.Invoke(body, descriptor));
+    }
+}
+
+/// <summary>
 /// The two things a body rewrite gets wrong, asserted against the bytes that really arrived
 /// rather than against the headers the proxy meant to send.
 /// </summary>
@@ -195,16 +226,17 @@ internal sealed class ForwardingHarness : IAsyncDisposable
     /// for the cases that need something other than the real transformer entirely.
     /// </summary>
     public static async Task<ForwardingHarness> StartAsync(
-        IRequestBodyMutation? mutation = null,
-        RequestBodyLimits? limits = null,
-        Func<Uri, HttpTransformer>? transformerFactory = null)
+        IBodyMutationFactory? mutation = null,
+        BodyLimits? limits = null,
+        Func<Uri, HttpTransformer>? transformerFactory = null,
+        Func<HttpContext, byte[], Task>? respond = null)
     {
         HarnessState state = new();
 
         transformerFactory ??= target => new ForwardProxyTransformer(
             target,
-            mutation ?? new PassthroughBodyMutation(),
-            limits ?? new RequestBodyLimits(RequestBodyLimits.DefaultMaxMutableBodyBytes),
+            (mutation ?? new PassthroughMutationFactory()).CreateForExchange(target),
+            limits ?? new BodyLimits(BodyLimits.DefaultMaxMutableBodyBytes),
             state.Logger);
 
         WebApplication destinationApp = BuildApp();
@@ -223,7 +255,12 @@ internal sealed class ForwardingHarness : IAsyncDisposable
                     StringComparer.OrdinalIgnoreCase),
                 body.ToArray());
 
-            await context.Response.WriteAsync("ok", context.RequestAborted);
+            // The recorder has already drained the request, so the responder is handed what
+            // it read rather than an empty stream.
+            if (respond is not null)
+                await respond(context, state.Received.Body);
+            else
+                await context.Response.WriteAsync("ok", context.RequestAborted);
         });
 
         await destinationApp.StartAsync();

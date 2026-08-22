@@ -11,15 +11,15 @@ public static class Registrar
 
     public static IServiceCollection AddForwardProxyServices(this IServiceCollection services)
     {
-        // The rewrite applied to every proxied request body, plaintext and intercepted HTTPS
-        // alike. Replacing this one registration is the whole of "start redacting" -- see
-        // IRequestBodyMutation.
-        services.AddSingleton<IRequestBodyMutation, PassthroughBodyMutation>();
+        // The rewrite applied to every proxied body, request and response, plaintext and
+        // intercepted HTTPS alike. Replacing this one registration is the whole of "start
+        // redacting" -- see IBodyMutationFactory.
+        services.AddSingleton<IBodyMutationFactory, PassthroughMutationFactory>();
 
         services
             .AddHttpForwarder()
             .AddSingleton(provider => ProxyPorts.From(provider.GetRequiredService<IConfiguration>()))
-            .AddSingleton(provider => RequestBodyLimits.From(provider.GetRequiredService<IConfiguration>()))
+            .AddSingleton(provider => BodyLimits.From(provider.GetRequiredService<IConfiguration>()))
             .AddSingleton<SelfHostNames>()
             .AddSingleton<UpstreamHttpClient>()
             .AddSingleton<IForwardProxy, ForwardProxy>()

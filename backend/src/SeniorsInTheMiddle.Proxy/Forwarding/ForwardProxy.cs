@@ -10,8 +10,8 @@ sealed class ForwardProxy : IForwardProxy
     private readonly IHttpForwarder forwarder;
     private readonly ITelemetrySink telemetry;
     private readonly ClientLabeler clientLabeler;
-    private readonly IRequestBodyMutation bodyMutation;
-    private readonly RequestBodyLimits bodyLimits;
+    private readonly IBodyMutationFactory bodyMutations;
+    private readonly BodyLimits bodyLimits;
     private readonly ILogger<ForwardProxyTransformer> transformerLogger;
 
     private readonly UpstreamHttpClient upstream;
@@ -25,15 +25,15 @@ sealed class ForwardProxy : IForwardProxy
         IHttpForwarder forwarder,
         ITelemetrySink telemetry,
         ClientLabeler clientLabeler,
-        IRequestBodyMutation bodyMutation,
-        RequestBodyLimits bodyLimits,
+        IBodyMutationFactory bodyMutations,
+        BodyLimits bodyLimits,
         UpstreamHttpClient upstream,
         ILogger<ForwardProxyTransformer> transformerLogger)
     {
         this.forwarder = forwarder;
         this.telemetry = telemetry;
         this.clientLabeler = clientLabeler;
-        this.bodyMutation = bodyMutation;
+        this.bodyMutations = bodyMutations;
         this.bodyLimits = bodyLimits;
         this.upstream = upstream;
         this.transformerLogger = transformerLogger;
@@ -57,7 +57,11 @@ sealed class ForwardProxy : IForwardProxy
             destination.GetLeftPart(UriPartial.Authority),
             upstream,
             requestConfig,
-            new ForwardProxyTransformer(destination, bodyMutation, bodyLimits, transformerLogger));
+            new ForwardProxyTransformer(
+                destination,
+                bodyMutations.CreateForExchange(destination),
+                bodyLimits,
+                transformerLogger));
 
         if (error != ForwarderError.None && !context.Response.HasStarted)
         {

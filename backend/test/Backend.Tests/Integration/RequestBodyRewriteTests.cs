@@ -28,12 +28,12 @@ public class RequestBodyRewriteTests
     private static readonly TimeSpan CompletionTimeout = TimeSpan.FromSeconds(20);
 
     /// <summary>Rewrites the body to <paramref name="replacement"/>, whatever arrives.</summary>
-    private static IRequestBodyMutation Replacing(string replacement)
-        => new DelegateBodyMutation((_, _) => Encoding.UTF8.GetBytes(replacement));
+    private static IBodyMutationFactory Replacing(string replacement)
+        => new DelegateMutationFactory(onRequest: (_, _) => Encoding.UTF8.GetBytes(replacement));
 
     /// <summary>Rewrites every body to nothing at all.</summary>
-    private static IRequestBodyMutation Emptying()
-        => new DelegateBodyMutation((_, _) => []);
+    private static IBodyMutationFactory Emptying()
+        => new DelegateMutationFactory(onRequest: (_, _) => []);
 
     private static async Task<HttpResponseMessage> PostAsync(
         ForwardingHarness harness,
@@ -245,7 +245,7 @@ public class RequestBodyRewriteTests
     public async Task Bodyless_Request_Is_Never_Offered_To_The_Mutation()
     {
         bool offered = false;
-        DelegateBodyMutation mutation = new((_, _) =>
+        DelegateMutationFactory mutation = new(onRequest: (_, _) =>
         {
             offered = true;
             return null;
@@ -354,7 +354,7 @@ public class RequestBodyRewriteTests
 
         await using ForwardingHarness harness = await ForwardingHarness.StartAsync(
             Replacing("""{"clean":true}"""),
-            new RequestBodyLimits(4096));
+            new BodyLimits(4096));
 
         using HttpResponseMessage response = await PostAsync(harness, "/upload", payload);
 
@@ -377,7 +377,7 @@ public class RequestBodyRewriteTests
 
         await using ForwardingHarness harness = await ForwardingHarness.StartAsync(
             Replacing(replacement),
-            new RequestBodyLimits(4096));
+            new BodyLimits(4096));
 
         using HttpResponseMessage response = await PostAsync(harness, "/upload", new byte[4096]);
 
@@ -396,7 +396,7 @@ public class RequestBodyRewriteTests
 
         await using ForwardingHarness harness = await ForwardingHarness.StartAsync(
             Replacing("""{"clean":true}"""),
-            new RequestBodyLimits(0));
+            new BodyLimits(0));
 
         using HttpResponseMessage response = await PostAsync(harness, "/orders", payload);
 
@@ -422,7 +422,7 @@ public class RequestBodyRewriteTests
     public async Task Mutation_Is_Told_The_Declared_Charset(string contentType, string expectedEncoding)
     {
         string? seen = null;
-        DelegateBodyMutation mutation = new((_, descriptor) =>
+        DelegateMutationFactory mutation = new(onRequest: (_, descriptor) =>
         {
             seen = descriptor.Encoding.WebName;
             return null;
@@ -450,7 +450,7 @@ public class RequestBodyRewriteTests
         byte[] payload = [0x00, 0x01, 0xfe, 0xff, 0x7f, 0x80];
         byte[]? seen = null;
 
-        DelegateBodyMutation mutation = new((body, _) =>
+        DelegateMutationFactory mutation = new(onRequest: (body, _) =>
         {
             seen = body.ToArray();
             return null;
@@ -542,7 +542,7 @@ public class RequestBodyRewriteTests
 
         await using ForwardingHarness harness = await ForwardingHarness.StartAsync(
             Replacing("""{"clean":true}"""),
-            new RequestBodyLimits(4096));
+            new BodyLimits(4096));
         using HttpClient client = harness.CreateProxiedClient();
 
         using UnknownLengthContent content = new(payload);
@@ -625,27 +625,23 @@ public class RequestBodyRewriteTests
         }
     }
 
-    /// <summary>A mutation defined inline by the test that uses it. Returning null means the
-    /// body is forwarded exactly as it arrived.</summary>
-    private sealed class DelegateBodyMutation(Func<ReadOnlyMemory<byte>, RequestBodyDescriptor, byte[]?> mutate)
-        : IRequestBodyMutation
-    {
-        public ValueTask<byte[]?> MutateAsync(
-            ReadOnlyMemory<byte> body,
-            RequestBodyDescriptor descriptor,
-            CancellationToken cancellationToken)
-            => ValueTask.FromResult(mutate(body, descriptor));
-    }
-
     /// <summary>A mutation that fails on every body it is given.</summary>
-    private sealed class ThrowingBodyMutation : IRequestBodyMutation
+    private sealed class ThrowingBodyMutation : IBodyMutationFactory, IExchangeBodyMutation
     {
         public const string Message = "the body is not the shape this mutation parses";
 
-        public ValueTask<byte[]?> MutateAsync(
+        public IExchangeBodyMutation CreateForExchange(Uri destination) => this;
+
+        public ValueTask<byte[]?> MutateRequestAsync(
             ReadOnlyMemory<byte> body,
-            RequestBodyDescriptor descriptor,
+            BodyDescriptor descriptor,
             CancellationToken cancellationToken)
             => throw new InvalidOperationException(Message);
+
+        public ValueTask<byte[]?> MutateResponseAsync(
+            ReadOnlyMemory<byte> body,
+            BodyDescriptor descriptor,
+            CancellationToken cancellationToken)
+            => ValueTask.FromResult<byte[]?>(null);
     }
 }
