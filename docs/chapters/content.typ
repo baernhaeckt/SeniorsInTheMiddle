@@ -94,7 +94,7 @@ Die @bausteinsicht zeigt die Struktur des Software Systems. Der Proxy ist die ze
 Die @laufzeitsicht zeigt exemplarisch den Ablauf einer Anfrage durch das System. Der Proxy empfängt die Anfrage, leitet sie an den Erkennungsservice weiter, ersetzt erkannte PII durch Tokens und sendet die modifizierte Anfrage an den Zielserver. Die Antwort wird ebenfalls durch den Proxy geleitet, wobei Tokens wieder in die echten Werte zurückübersetzt werden, bevor sie an den Client zurückgegeben wird.
 
 #figure(
-  image("/assets/laufzeitsicht.svg"),
+  image("/assets/laufzeitsicht.svg", width: 86%),
   caption: [
     Das Software System zur Laufzeit.
   ],

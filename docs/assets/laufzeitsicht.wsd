@@ -1,5 +1,7 @@
 @startuml laufzeitsicht
 
+title Use Case "Anfrage an einen fremden Dienst"
+
 hide footbox
 
 skinparam sequence {
@@ -17,34 +19,76 @@ skinparam sequence {
     ActorFontName Arial
 }
 
-actor C as "Container Platform"
-participant S as "Software Service"
-participant P as "Persistence"
-participant D as "Downstream Software Service"
+actor C as "Client"
+participant P as "Proxy"
+participant S as "PII Service"
+participant Z as "Zielserver"
+participant D as "Dashboard"
 
-activate C
-loop Until '204' or 3x '500'
-    C -> S: HTTP Get 'healthz/ready'
+C -> P: HTTP CONNECT host:443
+activate P
+P -> P: Zertifikat für Zielhost ausstellen
+P -->> C: HTTP 200 Connection Established
+
+C -> P: HTTPS Request (im Proxy im Klartext)
+P ->> D: request.observed
+
+alt Content-Type ohne Personendaten
+
+    P -> Z: Request unverändert (passthrough)
+    activate Z
+    Z -->> P: Response
+    deactivate Z
+    P -->> C: Response
+
+else Body mit Text oder JSON
+
+    P ->> D: exchange.opened
+    P -> S: analyze(text)
     activate S
-    S -> S: Execute HealthCheckService
-    activate S
-    S -> P: EstablishConnection(userName, password)
-    P -->> S: ok/nok
-    S -> D: EstablishConnection(ApiToken)
-    D -->> S: ok/nok
+    S -->> P: Treffer mit Typ, Position, Konfidenz, Risikostufe
     deactivate S
-    alt all checks successful
-        S -->> C: HTTP 204
-    else at least one check not successful
-        S -->> C: HTTP 500
+    P ->> D: detection.completed
+
+    alt kein Treffer
+
+        P -> Z: Request unverändert (clean)
+        activate Z
+        Z -->> P: Response
+        deactivate Z
+        P -->> C: Response
+
+    else Personendaten gefunden (treated)
+
+        loop je erkanntem Wert
+            alt Wert bereits im Tresor
+                P -> P: bestehenden Token wiederverwenden
+            else neuer Wert
+                P -> S: replacement_text(entity_type)
+                activate S
+                S -->> P: formattreuer Ersatzwert
+                deactivate S
+                P -> P: Token zu Wert im Tresor ablegen
+            end
+        end
+        P ->> D: redaction.completed
+
+        P -> Z: Request mit Tokens
+        activate Z
+        P ->> D: upstream.dispatched
+        Z -->> P: Response mit Tokens
+        deactivate Z
+        P ->> D: upstream.responded
+
+        P -> P: Tokens aus Tresor zurückübersetzen
+        P ->> D: rehydration.completed
+        P -->> C: Response mit echten Werten
+
     end
-    deactivate S
-end
+    P ->> D: exchange.delivered
 
-alt 500
-    C -> C: Remove from Load Balancer
 end
-
-deactivate C
+P ->> D: request.completed
+deactivate P
 
 @enduml
