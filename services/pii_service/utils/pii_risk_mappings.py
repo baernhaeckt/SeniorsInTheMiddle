@@ -76,7 +76,7 @@ PII_TYPE_MAPPINGS: dict[str, PiiMapping] = {
         hipaa_category=HipaaCategory.NON_PHI,
         risk_level=RiskLevel.LEVEL_TWO,
         pii_enum=PiiTypes.ADDRESS,
-        faker=faker.street_address(),
+        faker=faker.address(),
     ),
     "US_DRIVERS_LICENSE_NUMBER": PiiMapping(
         information_type="Driver's License Number",
@@ -121,7 +121,7 @@ PII_TYPE_MAPPINGS: dict[str, PiiMapping] = {
         faker=faker.ssn(),
     ),
     "LOCATION": PiiMapping(
-        information_type="GPS Location",
+        information_type="Location",
         hipaa_category=HipaaCategory.PHI,
         risk_level=RiskLevel.LEVEL_TWO,
         pii_enum=PiiTypes.LOCATION,

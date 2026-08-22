@@ -85,13 +85,14 @@ class PiiDetector:
 
             detection_entities = list()
             for detection in detections:
-                pii_mapping = get_pii_risk_mapping(detection.entity_type)
+                pii_type_name = PiiTypes(detection.entity_type).name
+                pii_mapping = get_pii_risk_mapping(pii_type_name)
                 detected_text = text[detection.start:detection.end]
 
                 detection_entities.append(
                     DetectionResultItem(
                         information_type=pii_mapping.information_type,
-                        entity_type=PiiTypes(detection.entity_type).name,
+                        entity_type=pii_type_name,
                         score=detection.score,
                         start_position=detection.start,
                         end_position=detection.end,
