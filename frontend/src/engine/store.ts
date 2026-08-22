@@ -1,9 +1,4 @@
-import {
-  PROTOCOL_VERSION,
-  type Entity,
-  type ServerEvent,
-  type Treatment,
-} from '../protocol/types'
+import { PROTOCOL_VERSION, type Entity, type ServerEvent, type Treatment } from '../protocol/types'
 import type { LinkStatus } from '../transport/types'
 
 /**
