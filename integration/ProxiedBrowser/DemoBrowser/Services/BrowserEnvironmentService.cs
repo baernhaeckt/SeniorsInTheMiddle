@@ -82,7 +82,20 @@ public sealed class BrowserEnvironmentService
     /// Builds the Chromium switches for the proxy. Values are intentionally NOT quoted: they are
     /// passed as individual switches and literal quotes would be passed through to Chromium verbatim.
     /// </summary>
-    public static KeyValuePair<string, string>[] BuildBrowserSwitches(AppSettings settings)
+    /// <param name="proxyTlsPins">
+    /// SPKI pins (base64 of SHA-256 over the DER SubjectPublicKeyInfo) of certificates Chromium should accept
+    /// without validating them itself, passed as <c>--ignore-certificate-errors-spki-list</c>.
+    ///
+    /// WHY this switch is here: with <c>ProxyScheme = https</c> Chromium speaks TLS to the *proxy*, whose
+    /// certificate is signed by the proxy's own CA. A bad proxy certificate never reaches
+    /// <c>OnCertificateError</c> — Chromium fails the connection outright and every page stays blank — so this is
+    /// the only place the decision can be made. The list holds exactly the certificate
+    /// <see cref="CertificateService.ProbeProxyTlsPinAsync"/> already validated against the proxy CA in-process;
+    /// site certificates are not covered by it and still go through the in-app trust decision.
+    /// </param>
+    public static KeyValuePair<string, string>[] BuildBrowserSwitches(
+        AppSettings settings,
+        IReadOnlyCollection<string>? proxyTlsPins = null)
     {
         if (!settings.UseProxy)
         {
@@ -101,23 +114,33 @@ public sealed class BrowserEnvironmentService
             switches.Add(new("proxy-bypass-list", settings.ProxyBypassList.Trim()));
         }
 
+        var pins = (proxyTlsPins ?? [])
+            .Where(pin => !string.IsNullOrWhiteSpace(pin))
+            .Select(pin => pin.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (pins.Length > 0)
+        {
+            switches.Add(new("ignore-certificate-errors-spki-list", string.Join(',', pins)));
+        }
+
         return [.. switches];
     }
 
     /// <summary>Same switches as a single command-line string (what the WebView2 build passes verbatim).</summary>
-    public static string BuildBrowserArguments(AppSettings settings) =>
-        string.Join(' ', BuildBrowserSwitches(settings)
+    public static string BuildBrowserArguments(AppSettings settings, IReadOnlyCollection<string>? proxyTlsPins = null) =>
+        string.Join(' ', BuildBrowserSwitches(settings, proxyTlsPins)
             .Select(s => s.Value.Length == 0 ? $"--{s.Key}" : $"--{s.Key}={s.Value}"));
 
     /// <summary>Creates the environment exactly once; concurrent and repeated callers share the same cached task.</summary>
-    public async Task<BrowserEnvironment> GetOrCreateAsync(AppSettings settings)
+    public async Task<BrowserEnvironment> GetOrCreateAsync(AppSettings settings, IReadOnlyCollection<string>? proxyTlsPins = null)
     {
         if (_creation is null)
         {
             await _gate.WaitAsync().ConfigureAwait(true);
             try
             {
-                _creation ??= CreateAsync(settings);
+                _creation ??= CreateAsync(settings, proxyTlsPins);
             }
             finally
             {
@@ -150,7 +173,7 @@ public sealed class BrowserEnvironmentService
         }
     }
 
-    private Task<BrowserEnvironment> CreateAsync(AppSettings settings)
+    private Task<BrowserEnvironment> CreateAsync(AppSettings settings, IReadOnlyCollection<string>? proxyTlsPins)
     {
         // Fresh profile on every launch: no history, cookies or cache from a previous run.
         AppPaths.WipeBrowserData();
@@ -168,10 +191,10 @@ public sealed class BrowserEnvironmentService
 
         // CefGlue defers the real CefInitialize until the first browser control is created. Force it now so
         // a broken runtime surfaces here (on the splash, like the WebView2 build) and not inside the first tab.
-        CefRuntimeLoader.Initialize(cefSettings, BuildBrowserSwitches(settings));
+        CefRuntimeLoader.Initialize(cefSettings, BuildBrowserSwitches(settings, proxyTlsPins));
         ForceRuntimeLoad();
 
-        var environment = new BrowserEnvironment(settings.Clone(), BuildBrowserArguments(settings), CefRuntime.ChromeVersion);
+        var environment = new BrowserEnvironment(settings.Clone(), BuildBrowserArguments(settings, proxyTlsPins), CefRuntime.ChromeVersion);
         Environment = environment;
         return Task.FromResult(environment);
     }

@@ -114,10 +114,37 @@ public partial class App : Application
             caError = await certificateService.DownloadAsync(settings.CaCertUrl);
         }
 
+        // 3b. The proxy's own TLS certificate, when Chromium is going to speak TLS to the proxy.
+        //
+        // WHY before the engine starts: a site certificate the proxy re-signed is overridden in
+        // CertificateService.HandleServerCertificateError, but the certificate of the *proxy connection itself*
+        // never reaches that callback — Chromium refuses it outright (ERR_CERT_AUTHORITY_INVALID) and every tab
+        // stays blank with no way to intervene. The certificate is therefore validated here, against the CA that
+        // was just downloaded, and handed to the engine as a pin for that one key.
+        string[] proxyTlsPins = [];
+        string? proxyTlsError = null;
+        if (settings.UseProxy && string.Equals(settings.ProxyScheme, "https", StringComparison.OrdinalIgnoreCase))
+        {
+            splash.SetStatus("Checking the TLS proxy…");
+            var pin = await certificateService.ProbeProxyTlsPinAsync(settings.ProxyHost.Trim(), settings.ProxyPort);
+            if (pin is null)
+            {
+                proxyTlsError = $"The TLS proxy at {settings.ProxyHost.Trim()}:{settings.ProxyPort} could not be "
+                    + "verified against the proxy CA, so Chromium will refuse to connect to it and every page will "
+                    + "stay blank. Proxy diagnostics (Ctrl+Shift+D) has the reason.";
+            }
+            else
+            {
+                proxyTlsPins = [pin];
+            }
+        }
+
         // 4. Single shared environment
         splash.SetStatus("Starting browser engine…");
         _environmentService = new BrowserEnvironmentService();
-        var environment = await _environmentService.GetOrCreateAsync(settings);
+        var environment = await _environmentService.GetOrCreateAsync(settings, proxyTlsPins);
+        _diagnostics.Info("Proxy", "Chromium switches (final): "
+            + BrowserEnvironmentService.BuildBrowserArguments(settings, proxyTlsPins));
 
         // 5. Window + start page
         splash.SetStatus("Opening start page…");
@@ -125,6 +152,10 @@ public partial class App : Application
         if (caError is not null)
         {
             viewModel.WarningMessage = $"Proxy CA not loaded; HTTPS sites behind the proxy will show certificate errors. {caError}";
+        }
+        else if (proxyTlsError is not null)
+        {
+            viewModel.WarningMessage = proxyTlsError;
         }
 
         var window = new MainWindow(viewModel, settingsService);

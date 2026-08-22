@@ -32,7 +32,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $project = Join-Path $PSScriptRoot 'DemoBrowser\DemoBrowser.csproj'
-$output = Join-Path $PSScriptRoot 'publish\win-x64'
+$output = Join-Path $PSScriptRoot 'publish'
 $exe = Join-Path $output 'DemoBrowser.exe'
 
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {

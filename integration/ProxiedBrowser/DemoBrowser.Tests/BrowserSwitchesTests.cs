@@ -131,4 +131,52 @@ public class BrowserSwitchesTests
     {
         Assert.True(new AppSettings().UseProxy);
     }
+
+    /// <summary>
+    /// With ProxyScheme = https, Chromium speaks TLS to the proxy itself. That certificate never reaches
+    /// OnCertificateError — Chromium refuses the connection and every tab stays blank — so the pin established
+    /// before the engine starts is the only thing that lets the browser reach the proxy at all.
+    /// </summary>
+    [Fact]
+    public void ProxyTlsPin_IsPassedAsIgnoreCertificateErrorsSpkiList()
+    {
+        var switches = BrowserEnvironmentService.BuildBrowserSwitches(
+            Settings(s => s.ProxyScheme = "https"),
+            ["AAAApin1="]);
+
+        var pin = Assert.Single(switches, s => s.Key == "ignore-certificate-errors-spki-list");
+        Assert.Equal("AAAApin1=", pin.Value);
+    }
+
+    [Fact]
+    public void ProxyTlsPins_AreJoinedWithCommas_BlanksAndDuplicatesDropped()
+    {
+        var switches = BrowserEnvironmentService.BuildBrowserSwitches(
+            Settings(),
+            [" pin-a= ", "", "pin-b=", "pin-a=", "   "]);
+
+        var pin = Assert.Single(switches, s => s.Key == "ignore-certificate-errors-spki-list");
+        Assert.Equal("pin-a=,pin-b=", pin.Value);
+    }
+
+    [Fact]
+    public void NoProxyTlsPin_LeavesTheSwitchOff()
+    {
+        Assert.DoesNotContain(BrowserEnvironmentService.BuildBrowserSwitches(Settings()),
+            s => s.Key == "ignore-certificate-errors-spki-list");
+        Assert.DoesNotContain(BrowserEnvironmentService.BuildBrowserSwitches(Settings(), []),
+            s => s.Key == "ignore-certificate-errors-spki-list");
+    }
+
+    /// <summary>A pin must never widen the trust decision when the proxy is switched off entirely.</summary>
+    [Fact]
+    public void ProxyOff_IgnoresPinsAndStaysOnNoProxyServer()
+    {
+        var switches = BrowserEnvironmentService.BuildBrowserSwitches(
+            Settings(s => s.UseProxy = false),
+            ["AAAApin1="]);
+
+        var only = Assert.Single(switches);
+        Assert.Equal("no-proxy-server", only.Key);
+    }
 }

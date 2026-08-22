@@ -32,7 +32,7 @@ public partial class CertificateInfoWindow : Window
         {
             ("insecure-broken", _, _) => ("⚠", "Connection is not secure", "The certificate could not be validated. " + string.Join(", ", info.Issues), "#FF8A3D56"),
             ("secure", _, true) or (_, true, true) => ("🔒", "Secure · intercepted by the PII proxy",
-                "This connection is encrypted to the proxy. The certificate was issued by the proxy CA that this browser trusts in-process only (not installed in the macOS keychain).", "#FF288879"),
+                "This connection is encrypted to the proxy. The certificate was issued by the proxy CA that this browser trusts in-process only — nothing was installed in the system certificate store.", "#FF288879"),
             ("secure", _, false) or (_, true, false) => ("🔒", "Connection is secure", "Your connection to this site is encrypted.", "#FF288879"),
             (_, false, _) when string.IsNullOrEmpty(pageUrl) => ("◎", "No page loaded", "", "#FF949DA0"),
             _ => ("🔓", "Not secure", "This page is loaded over plain HTTP. Information you send can be read by others.", "#FF949DA0"),
