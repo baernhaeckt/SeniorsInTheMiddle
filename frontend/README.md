@@ -15,8 +15,8 @@ requests step by step on the band above it.
 This app is only a view. It runs no detection, no redaction, no rehydration and
 no classification, and it holds no policy. All of that happens in the proxy
 backend, including the decision about which requests need treatment. The
-dashboard subscribes to one WebSocket, receives events describing what the proxy
-already did, and draws them.
+dashboard subscribes to one SignalR hub, receives events describing what the
+proxy already did, and draws them.
 
 The wire protocol in [`src/protocol/types.ts`](src/protocol/types.ts) is the
 contract between the two sides.
@@ -50,7 +50,7 @@ Layout:
 | Path              | What lives there                                                                                |
 | ----------------- | ----------------------------------------------------------------------------------------------- |
 | `src/protocol/`   | the wire contract: valibot schemas, the types derived from them, recorded frames in `fixtures/` |
-| `src/transport/`  | where events come from: the WebSocket client and the demo feed                                  |
+| `src/transport/`  | where events come from: the SignalR client and the demo feed                                    |
 | `src/engine/`     | the store and pure helpers: reducer, selectors, geometry, text                                  |
 | `src/components/` | React views; each subscribes to the slice of the store it draws via `useStore`                  |
 | `src/styles/`     | one CSS file per area, plus `tokens.css` and `base.css`                                         |
@@ -72,12 +72,16 @@ first run the app opens a setup screen and asks for:
 | Field                   | Meaning                                                            |
 | ----------------------- | ------------------------------------------------------------------ |
 | Telemetry stream        | live proxy, or the built-in demo feed                              |
-| WebSocket URL           | where to read events from, when the source is the live proxy       |
+| Telemetry hub URL       | where to read events from, when the source is the live proxy       |
 | Host and port           | what the setup guide tells people to type into a device            |
 | Wi-Fi name              | the network that already routes through the proxy, if there is one |
 | Certificate and PAC URL | optional, derived from host and port when left empty               |
 
-The values are saved in `localStorage` under `sitm.config.v1` and belong to that
+The form starts filled in for a proxy on this machine — `http://localhost:8080/hub/telemetry`,
+host `localhost`, port `8080` — which is what `docker compose up` in `integration/` runs, so
+a fresh install reaches a local proxy without anything being typed.
+
+The values are saved in `localStorage` under `sitm.config.v2` and belong to that
 browser. Reconfigure in the header reopens the form with the current values, and
 Cancel goes back without changing anything. Saving resets the dashboard so
 traffic from the old source does not sit there looking live.
@@ -93,9 +97,23 @@ it for real traffic.
 
 ### The live proxy
 
-Pick Live proxy and give it a `ws://` or `wss://` URL. The socket reconnects on
-its own with jittered backoff, and the header badge reports the real state
-(`live`, `reattaching`, `detached`) with the endpoint spelled out.
+Pick Live proxy and give it the hub's `http://` or `https://` address. It is an
+HTTP URL even though it ends up as a socket: SignalR is handed the address and
+converts it itself.
+
+Negotiation is skipped and the transport pinned to WebSockets, so the browser
+opens the socket directly rather than posting to `/negotiate` first. That keeps
+the page's `connect-src` policy to `ws:`/`wss:` and takes CORS out of the
+picture — which matters, because the proxy's address is typed in at runtime and
+cannot be baked into a Content-Security-Policy at build time. The proxy checks
+the handshake's `Origin` against its own allowlist instead, so the dashboard's
+origin has to appear in the proxy's `Cors:AllowedOrigins`.
+
+Reconnection is the transport's own rather than SignalR's `withAutomaticReconnect`,
+which only covers a connection that was established once and does nothing for a
+proxy that is not up yet — the usual case when someone opens the dashboard
+first. It retries with jittered backoff, and the header badge reports the real
+state (`live`, `reattaching`, `detached`) with the endpoint spelled out.
 
 Every frame is validated against the schemas in `src/protocol/types.ts`. A
 frame that does not validate, including one with an unknown `type`, is dropped

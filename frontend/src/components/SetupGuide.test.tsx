@@ -47,7 +47,9 @@ describe('SetupGuide', () => {
   })
 
   it('explains itself when no address is configured', () => {
-    render(<SetupGuide config={BLANK_CONFIG} onClose={vi.fn()} />)
+    // The defaults carry a localhost address, so this state only happens once someone
+    // has cleared it on the setup screen.
+    render(<SetupGuide config={{ ...BLANK_CONFIG, proxyHost: '' }} onClose={vi.fn()} />)
     expect(screen.getByText(/no proxy address is configured/i)).toBeInTheDocument()
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
   })

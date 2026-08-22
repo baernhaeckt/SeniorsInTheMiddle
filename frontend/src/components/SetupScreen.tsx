@@ -93,13 +93,13 @@ export function SetupScreen({ initial, onSave, onCancel }: SetupScreenProps) {
 
           {draft.source === 'ws' && (
             <Input
-              id="wsUrl"
-              label="WebSocket URL"
-              value={draft.wsUrl}
-              placeholder={PLACEHOLDERS.wsUrl}
-              error={errors.wsUrl}
+              id="hubUrl"
+              label="Telemetry hub URL"
+              value={draft.hubUrl}
+              placeholder={PLACEHOLDERS.hubUrl}
+              error={errors.hubUrl}
               onChange={(value) => {
-                set('wsUrl', value)
+                set('hubUrl', value)
               }}
             />
           )}

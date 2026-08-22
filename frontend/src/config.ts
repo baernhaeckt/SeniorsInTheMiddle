@@ -11,8 +11,11 @@ export const FeedSourceSchema = v.picklist(['ws', 'demo'])
 export const RuntimeConfigSchema = v.object({
   /** Where telemetry comes from: the real proxy, or the built-in demo feed. */
   source: FeedSourceSchema,
-  /** WebSocket endpoint of the proxy telemetry stream. Used when source is ws. */
-  wsUrl: v.string(),
+  /**
+   * The proxy's telemetry hub. An http(s) address even though it ends up as a socket:
+   * that is the address SignalR is given, and it converts it itself.
+   */
+  hubUrl: v.string(),
   /** What someone types into a device's proxy field. */
   proxyHost: v.string(),
   proxyPort: v.string(),
@@ -24,13 +27,22 @@ export const RuntimeConfigSchema = v.object({
 })
 export type RuntimeConfig = v.InferOutput<typeof RuntimeConfigSchema>
 
-export const STORAGE_KEY = 'sitm.config.v1'
+/**
+ * Bumped from v1, which stored a `wsUrl` pointing at a raw socket. Those configs cannot
+ * reach a hub, so they are better forgotten than half-migrated.
+ */
+export const STORAGE_KEY = 'sitm.config.v2'
 
+/**
+ * What a fresh install starts with: a proxy running on this machine, which is what
+ * `docker compose up` in `integration/` gives you. Certificate and PAC URLs are left
+ * empty on purpose — they derive from the address, so they stay right if it changes.
+ */
 export const BLANK_CONFIG: RuntimeConfig = {
   source: 'ws',
-  wsUrl: '',
-  proxyHost: '',
-  proxyPort: '8888',
+  hubUrl: 'http://localhost:8080/hub/telemetry',
+  proxyHost: 'localhost',
+  proxyPort: '8080',
   networkName: '',
   caUrl: '',
   pacUrl: '',
@@ -38,12 +50,12 @@ export const BLANK_CONFIG: RuntimeConfig = {
 
 /** Shown as placeholders in the setup form, never as values. */
 export const PLACEHOLDERS: Record<Exclude<keyof RuntimeConfig, 'source'>, string> = {
-  wsUrl: 'ws://proxy.sitm.local:5080/stream',
+  hubUrl: 'http://proxy.sitm.local:8080/hub/telemetry',
   proxyHost: 'proxy.sitm.local',
-  proxyPort: '8888',
+  proxyPort: '8080',
   networkName: 'SITM-Guest',
-  caUrl: 'http://proxy.sitm.local:8888/ca.crt',
-  pacUrl: 'http://proxy.sitm.local:8888/proxy.pac',
+  caUrl: 'http://proxy.sitm.local:8080/ca.crt',
+  pacUrl: 'http://proxy.sitm.local:8080/proxy.pac',
 }
 
 export function proxyAddressOf(config: RuntimeConfig): string {
@@ -78,11 +90,11 @@ export function validate(config: RuntimeConfig): ConfigErrors {
   const proxyRequired = config.source === 'ws'
 
   if (config.source === 'ws') {
-    const url = config.wsUrl.trim()
+    const url = config.hubUrl.trim()
     if (!url) {
-      errors.wsUrl = 'Needed to reach the proxy. Pick the demo feed to run without one.'
-    } else if (!isUrl(url, ['ws:', 'wss:'])) {
-      errors.wsUrl = 'Must start with ws:// or wss://'
+      errors.hubUrl = 'Needed to reach the proxy. Pick the demo feed to run without one.'
+    } else if (!isUrl(url, ['http:', 'https:'])) {
+      errors.hubUrl = 'Must start with http:// or https://'
     }
   }
 
@@ -127,7 +139,7 @@ function isUrl(value: string, protocols: string[]): boolean {
 export function normalize(config: RuntimeConfig): RuntimeConfig {
   return {
     source: config.source,
-    wsUrl: config.wsUrl.trim(),
+    hubUrl: config.hubUrl.trim(),
     proxyHost: config.proxyHost.trim(),
     proxyPort: config.proxyPort.trim(),
     networkName: config.networkName.trim(),

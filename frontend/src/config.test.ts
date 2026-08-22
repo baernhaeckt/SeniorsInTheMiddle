@@ -14,9 +14,9 @@ import {
 
 const LIVE: RuntimeConfig = {
   source: 'ws',
-  wsUrl: 'ws://proxy:5080/stream',
+  hubUrl: 'http://proxy:8080/hub/telemetry',
   proxyHost: 'proxy',
-  proxyPort: '8888',
+  proxyPort: '8080',
   networkName: '',
   caUrl: '',
   pacUrl: '',
@@ -37,13 +37,22 @@ describe('validate', () => {
     expect(validate(LIVE)).toEqual({})
   })
 
-  it('requires a ws url and proxy address for the live source', () => {
-    const errors = validate({ ...LIVE, wsUrl: '', proxyHost: '', proxyPort: '' })
-    expect(Object.keys(errors).sort()).toEqual(['proxyHost', 'proxyPort', 'wsUrl'])
+  it('ships a default that works against a proxy on this machine', () => {
+    // A fresh install should reach `docker compose up` in integration/ with no typing.
+    expect(validate(BLANK_CONFIG)).toEqual({})
+    expect(BLANK_CONFIG.hubUrl).toBe('http://localhost:8080/hub/telemetry')
+    expect(caUrlOf(BLANK_CONFIG)).toBe('http://localhost:8080/ca.crt')
+    expect(pacUrlOf(BLANK_CONFIG)).toBe('http://localhost:8080/proxy.pac')
+  })
+
+  it('requires a hub url and proxy address for the live source', () => {
+    const errors = validate({ ...LIVE, hubUrl: '', proxyHost: '', proxyPort: '' })
+    expect(Object.keys(errors).sort()).toEqual(['hubUrl', 'proxyHost', 'proxyPort'])
   })
 
   it('rejects the wrong url scheme', () => {
-    expect(validate({ ...LIVE, wsUrl: 'http://x' }).wsUrl).toMatch(/ws:\/\//)
+    // A hub address is an http url even though the client turns it into a socket.
+    expect(validate({ ...LIVE, hubUrl: 'ws://x' }).hubUrl).toMatch(/http:\/\//)
     expect(validate({ ...LIVE, caUrl: 'ftp://x' }).caUrl).toMatch(/http/)
     expect(validate({ ...LIVE, pacUrl: 'nope' }).pacUrl).toMatch(/http/)
   })
@@ -67,13 +76,18 @@ describe('validate', () => {
 
 describe('normalize and derived urls', () => {
   it('trims every field', () => {
-    const config = normalize({ ...LIVE, wsUrl: ' ws://x ', proxyHost: ' h ', networkName: ' n ' })
-    expect(config).toMatchObject({ wsUrl: 'ws://x', proxyHost: 'h', networkName: 'n' })
+    const config = normalize({
+      ...LIVE,
+      hubUrl: ' http://x/hub ',
+      proxyHost: ' h ',
+      networkName: ' n ',
+    })
+    expect(config).toMatchObject({ hubUrl: 'http://x/hub', proxyHost: 'h', networkName: 'n' })
   })
 
   it('derives certificate and PAC urls unless given', () => {
-    expect(caUrlOf(LIVE)).toBe('http://proxy:8888/ca.crt')
-    expect(pacUrlOf(LIVE)).toBe('http://proxy:8888/proxy.pac')
+    expect(caUrlOf(LIVE)).toBe('http://proxy:8080/ca.crt')
+    expect(pacUrlOf(LIVE)).toBe('http://proxy:8080/proxy.pac')
     expect(caUrlOf({ ...LIVE, caUrl: 'https://c' })).toBe('https://c')
     expect(pacUrlOf({ ...LIVE, pacUrl: ' https://p ' })).toBe('https://p')
   })
@@ -83,7 +97,7 @@ describe('coerceConfig', () => {
   it('falls back per field rather than throwing the whole config away', () => {
     const config = coerceConfig({
       source: 'demo',
-      wsUrl: 42,
+      hubUrl: 42,
       proxyHost: 'h',
       proxyPort: null,
       extra: true,
@@ -108,8 +122,10 @@ describe('loadConfig / saveConfig', () => {
   it('returns null for nothing stored, broken JSON, or a config that fails validation', () => {
     expect(loadConfig(memoryStorage())).toBeNull()
     expect(loadConfig(memoryStorage({ [STORAGE_KEY]: '{nope' }))).toBeNull()
-    const incomplete = memoryStorage({ [STORAGE_KEY]: JSON.stringify({ source: 'ws' }) })
-    expect(loadConfig(incomplete)).toBeNull()
+    const badHost = memoryStorage({
+      [STORAGE_KEY]: JSON.stringify({ source: 'ws', proxyHost: 'bad host' }),
+    })
+    expect(loadConfig(badHost)).toBeNull()
   })
 
   it('salvages a partially corrupt stored config when what is left validates', () => {
