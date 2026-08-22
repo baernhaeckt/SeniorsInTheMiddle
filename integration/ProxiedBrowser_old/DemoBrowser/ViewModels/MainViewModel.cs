@@ -1,29 +1,26 @@
 using System.Collections.ObjectModel;
 using System.Net;
+using DemoBrowser.Models;
 using DemoBrowser.Services;
+using Microsoft.Web.WebView2.Core;
 
 namespace DemoBrowser.ViewModels;
 
 /// <summary>Top-level state for the main window: the tab collection, the active tab and the toolbar commands.</summary>
 public sealed class MainViewModel : ObservableObject
 {
-    private readonly BrowserEnvironment _environment;
+    private readonly CoreWebView2Environment _environment;
     private readonly CertificateService _certificateService;
     private readonly SettingsService _settingsService;
     private TabViewModel? _activeTab;
     private string _addressText = "";
     private string? _warningMessage;
 
-    public MainViewModel(
-        BrowserEnvironment environment,
-        CertificateService certificateService,
-        SettingsService settingsService,
-        ProxyDiagnostics diagnostics)
+    public MainViewModel(CoreWebView2Environment environment, CertificateService certificateService, SettingsService settingsService)
     {
         _environment = environment;
         _certificateService = certificateService;
         _settingsService = settingsService;
-        Diagnostics = diagnostics;
 
         BackCommand = new RelayCommand(() => ActiveTab?.GoBack(), () => ActiveTab?.CanGoBack == true);
         ForwardCommand = new RelayCommand(() => ActiveTab?.GoForward(), () => ActiveTab?.CanGoForward == true);
@@ -47,19 +44,9 @@ public sealed class MainViewModel : ObservableObject
         CloseTabCommand = new RelayCommand(p => CloseTab(p as TabViewModel));
         ActivateTabCommand = new RelayCommand(p => ActiveTab = p as TabViewModel ?? ActiveTab);
         NavigateCommand = new RelayCommand(NavigateFromAddressBar);
-        DismissWarningCommand = new RelayCommand(() => WarningMessage = null);
     }
 
     public ObservableCollection<TabViewModel> Tabs { get; } = [];
-
-    /// <summary>The proxy/certificate log shown by <see cref="Views.DiagnosticsWindow"/> (Ctrl+Shift+D).</summary>
-    public ProxyDiagnostics Diagnostics { get; }
-
-    /// <summary>The engine the tabs run on; the diagnostics window reads the switches it was started with.</summary>
-    public BrowserEnvironment Environment => _environment;
-
-    /// <summary>Holds the proxy CA the diagnostics window reports on.</summary>
-    public CertificateService CertificateService => _certificateService;
 
     /// <summary>Raised when the last tab is closed; the window closes the application.</summary>
     public event Action? LastTabClosed;
@@ -94,17 +81,11 @@ public sealed class MainViewModel : ObservableObject
 
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsActiveTabLoading));
-            OnPropertyChanged(nameof(ActiveStatusText));
             RelayCommand.RaiseCanExecuteChanged();
         }
     }
 
     public bool IsActiveTabLoading => ActiveTab?.IsLoading == true;
-
-    /// <summary>Status-bar text of the active tab (link under the mouse etc.).</summary>
-    public string ActiveStatusText => ActiveTab?.StatusText ?? "";
-
-    public bool HasStatusText => !string.IsNullOrEmpty(ActiveStatusText);
 
     /// <summary>Two-way bound to the address bar TextBox.</summary>
     public string AddressText
@@ -142,9 +123,9 @@ public sealed class MainViewModel : ObservableObject
 
     public RelayCommand NavigateCommand { get; }
 
-    public RelayCommand DismissWarningCommand { get; }
+    public RelayCommand DismissWarningCommand => new(() => WarningMessage = null);
 
-    /// <summary>Creates a tab, adds it to the collection (the window adds its browser control to the host grid) and starts navigation.</summary>
+    /// <summary>Creates a tab, adds it to the collection (the window adds its WebView2 to the host grid) and starts navigation.</summary>
     public async Task<TabViewModel> OpenTabAsync(string url, bool activate)
     {
         var tab = new TabViewModel(_certificateService);
@@ -206,7 +187,7 @@ public sealed class MainViewModel : ObservableObject
 
     /// <summary>
     /// Absolute URI → as-is; bare host (contains a dot, no spaces) → https:// prefixed;
-    /// anything else → Google search. (<c>chrome://</c> is Chromium's internal scheme, WebView2's is <c>edge://</c>.)
+    /// anything else → Google search.
     /// </summary>
     public static string? ResolveAddress(string? input)
     {
@@ -217,7 +198,7 @@ public sealed class MainViewModel : ObservableObject
         }
 
         if (Uri.TryCreate(text, UriKind.Absolute, out var absolute) && !string.IsNullOrEmpty(absolute.Scheme)
-            && (absolute.Scheme is "http" or "https" or "file" or "about" or "chrome" || text.Contains("://", StringComparison.Ordinal)))
+            && (absolute.Scheme is "http" or "https" or "file" or "about" or "edge" || text.Contains("://", StringComparison.Ordinal)))
         {
             return absolute.ToString();
         }
@@ -230,17 +211,14 @@ public sealed class MainViewModel : ObservableObject
         return "https://www.google.com/search?q=" + WebUtility.UrlEncode(text);
     }
 
-    /// <summary>Disposes every tab; the returned task completes once CEF has destroyed all their native browsers.</summary>
-    public Task DisposeAllTabs()
+    public void DisposeAllTabs()
     {
-        var tabs = Tabs.ToList();
-        foreach (var tab in tabs)
+        foreach (var tab in Tabs.ToList())
         {
             tab.Dispose();
         }
 
         Tabs.Clear();
-        return Task.WhenAll(tabs.Select(t => t.BrowserClosed));
     }
 
     private void OnActiveTabPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -252,10 +230,6 @@ public sealed class MainViewModel : ObservableObject
                 break;
             case nameof(TabViewModel.IsLoading):
                 OnPropertyChanged(nameof(IsActiveTabLoading));
-                break;
-            case nameof(TabViewModel.StatusText):
-                OnPropertyChanged(nameof(ActiveStatusText));
-                OnPropertyChanged(nameof(HasStatusText));
                 break;
         }
     }

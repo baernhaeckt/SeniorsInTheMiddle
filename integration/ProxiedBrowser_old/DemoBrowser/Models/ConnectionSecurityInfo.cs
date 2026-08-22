@@ -4,7 +4,7 @@ namespace DemoBrowser.Models;
 
 /// <summary>
 /// Snapshot of the active page's connection security, populated from the DevTools
-/// <c>Security.visibleSecurityStateChanged</c> event (the only way Chromium/CEF exposes the TLS
+/// <c>Security.visibleSecurityStateChanged</c> event (the only way WebView2 exposes the TLS
 /// details of a successful connection).
 /// </summary>
 public sealed class ConnectionSecurityInfo

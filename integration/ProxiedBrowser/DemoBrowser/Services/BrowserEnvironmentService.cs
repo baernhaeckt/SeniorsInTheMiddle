@@ -1,39 +1,76 @@
-using System.IO;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using DemoBrowser.Models;
-using Microsoft.Web.WebView2.Core;
+using Xilium.CefGlue;
+using Xilium.CefGlue.Avalonia;
+using Xilium.CefGlue.Common;
 
 namespace DemoBrowser.Services;
 
 /// <summary>
-/// Owns the single <see cref="CoreWebView2Environment"/> shared by every tab.
+/// Describes the single, process-wide Chromium (CEF) engine instance every tab shares.
+/// The CEF equivalent of WebView2's <c>CoreWebView2Environment</c>.
+/// </summary>
+public sealed class BrowserEnvironment
+{
+    internal BrowserEnvironment(AppSettings settings, string browserArguments, string chromeVersion)
+    {
+        Settings = settings;
+        BrowserArguments = browserArguments;
+        ChromeVersion = chromeVersion;
+    }
+
+    /// <summary>The settings the engine was started with (a snapshot; later edits need a restart).</summary>
+    public AppSettings Settings { get; }
+
+    /// <summary>The Chromium switches passed to the engine, for display/diagnostics.</summary>
+    public string BrowserArguments { get; }
+
+    public string ChromeVersion { get; }
+}
+
+/// <summary>
+/// Owns the single CEF runtime shared by every tab.
 ///
-/// WHY one environment: all tabs share the same UserDataFolder, and therefore the same cookies,
+/// WHY one environment: all tabs share the same cache path, and therefore the same cookies,
 /// session storage and cache, across tabs. The folder is wiped on every start and on exit, so nothing
 /// survives a restart: each launch of the demo browser is a clean profile.
 ///
 /// WHY the proxy is an environment-time argument: Chromium reads <c>--proxy-server</c> only from the
-/// command line of the browser process, which WebView2 launches when the environment is created.
-/// There is no API to change the proxy on a live environment, so proxy settings changed in the
+/// command line of the browser process, which CEF configures when the runtime is initialised (once per
+/// process). There is no API to change the proxy on a live runtime, so proxy settings changed in the
 /// settings dialog only take effect after restarting the application.
 /// </summary>
 public sealed class BrowserEnvironmentService
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private Task<CoreWebView2Environment>? _creation;
+    private Task<BrowserEnvironment>? _creation;
 
-    public CoreWebView2Environment? Environment { get; private set; }
+    public BrowserEnvironment? Environment { get; private set; }
 
-    /// <summary>PID of the shared browser process; reported by the first tab once its CoreWebView2 is up.</summary>
-    public static uint? BrowserProcessId { get; private set; }
+    /// <summary>
+    /// With CEF the browser process is this process (only renderers/GPU run in the helper executable),
+    /// so the PID is simply our own. Kept for parity with the WebView2 build.
+    /// </summary>
+    public static int BrowserProcessId => System.Environment.ProcessId;
 
-    public static void RegisterBrowserProcess(uint processId) => BrowserProcessId ??= processId;
-
-    /// <summary>Returns the installed Evergreen runtime version, or <c>null</c> if no runtime is available.</summary>
+    /// <summary>
+    /// Returns the bundled Chromium version, or <c>null</c> if the CEF runtime (libcef + helper process)
+    /// cannot be loaded from the application folder.
+    /// </summary>
     public static string? GetInstalledRuntimeVersion()
     {
         try
         {
-            return CoreWebView2Environment.GetAvailableBrowserVersionString();
+            var helper = Path.Combine(AppContext.BaseDirectory, "CefGlueBrowserProcess",
+                "Xilium.CefGlue.BrowserProcess" + (OperatingSystem.IsWindows() ? ".exe" : ""));
+            if (!File.Exists(helper))
+            {
+                return null;
+            }
+
+            CefRuntime.Load();
+            return CefRuntime.ChromeVersion;
         }
         catch (Exception)
         {
@@ -42,23 +79,38 @@ public sealed class BrowserEnvironmentService
     }
 
     /// <summary>
-    /// Builds the Chromium switches for the proxy. Values are intentionally NOT quoted: the string is
-    /// split on whitespace and literal quotes would be passed through to Chromium verbatim.
+    /// Builds the Chromium switches for the proxy. Values are intentionally NOT quoted: they are
+    /// passed as individual switches and literal quotes would be passed through to Chromium verbatim.
     /// </summary>
-    public static string BuildBrowserArguments(AppSettings settings)
+    public static KeyValuePair<string, string>[] BuildBrowserSwitches(AppSettings settings)
     {
-        var scheme = string.Equals(settings.ProxyScheme, "https", StringComparison.OrdinalIgnoreCase) ? "https" : "http";
-        var args = $"--proxy-server={scheme}://{settings.ProxyHost.Trim()}:{settings.ProxyPort}";
-        if (!string.IsNullOrWhiteSpace(settings.ProxyBypassList))
+        if (!settings.UseProxy)
         {
-            args += $" --proxy-bypass-list={settings.ProxyBypassList.Trim()}";
+            // Direct connection. Without --no-proxy-server Chromium would silently fall back to the Windows/macOS
+            // system proxy configuration, which is not what "proxy off" means for this demo.
+            return [new("no-proxy-server", "")];
         }
 
-        return args;
+        var scheme = string.Equals(settings.ProxyScheme, "https", StringComparison.OrdinalIgnoreCase) ? "https" : "http";
+        var switches = new List<KeyValuePair<string, string>>
+        {
+            new("proxy-server", $"{scheme}://{settings.ProxyHost.Trim()}:{settings.ProxyPort}"),
+        };
+        if (!string.IsNullOrWhiteSpace(settings.ProxyBypassList))
+        {
+            switches.Add(new("proxy-bypass-list", settings.ProxyBypassList.Trim()));
+        }
+
+        return [.. switches];
     }
 
+    /// <summary>Same switches as a single command-line string (what the WebView2 build passes verbatim).</summary>
+    public static string BuildBrowserArguments(AppSettings settings) =>
+        string.Join(' ', BuildBrowserSwitches(settings)
+            .Select(s => s.Value.Length == 0 ? $"--{s.Key}" : $"--{s.Key}={s.Value}"));
+
     /// <summary>Creates the environment exactly once; concurrent and repeated callers share the same cached task.</summary>
-    public async Task<CoreWebView2Environment> GetOrCreateAsync(AppSettings settings)
+    public async Task<BrowserEnvironment> GetOrCreateAsync(AppSettings settings)
     {
         if (_creation is null)
         {
@@ -76,42 +128,81 @@ public sealed class BrowserEnvironmentService
         return await _creation.ConfigureAwait(true);
     }
 
-    /// <summary>Blocks (bounded) until the shared browser process has exited, so its profile files are unlocked.</summary>
-    public void WaitForBrowserProcessExit(TimeSpan timeout)
+    /// <summary>
+    /// Shuts the engine down so its profile files are unlocked. Must run on the main thread after the UI loop has
+    /// ended and after every browser is closed (<c>MainWindow</c> waits for that before it lets itself close).
+    /// CefGlue's own ProcessExit hook calls CefShutdown again later; CEF ignores the second call.
+    /// </summary>
+    public void ShutdownBrowserEngine()
     {
-        if (BrowserProcessId is not { } pid)
+        if (Environment is null || !CefRuntime.IsInitialized)
         {
             return;
         }
 
         try
         {
-            using var process = System.Diagnostics.Process.GetProcessById((int)pid);
-            process.WaitForExit((int)timeout.TotalMilliseconds);
+            CefRuntime.Shutdown();
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        catch (Exception ex) when (ex is InvalidOperationException or CefRuntimeException)
         {
-            // Already gone (or inaccessible): nothing to wait for.
+            // Already shut down: nothing to wait for.
         }
     }
 
-    private async Task<CoreWebView2Environment> CreateAsync(AppSettings settings)
+    private Task<BrowserEnvironment> CreateAsync(AppSettings settings)
     {
         // Fresh profile on every launch: no history, cookies or cache from a previous run.
         AppPaths.WipeBrowserData();
         Directory.CreateDirectory(AppPaths.UserDataFolder);
 
-        var options = new CoreWebView2EnvironmentOptions
+        var cefSettings = new CefSettings
         {
-            AdditionalBrowserArguments = BuildBrowserArguments(settings),
+            RootCachePath = AppPaths.UserDataFolder,
+            CachePath = AppPaths.UserDataFolder,
+            PersistSessionCookies = false,
+            LogSeverity = CefLogSeverity.Warning,
+            LogFile = Path.Combine(AppPaths.RootFolder, "cef.log"),
+            WindowlessRenderingEnabled = false,
         };
 
-        var environment = await CoreWebView2Environment.CreateAsync(
-            browserExecutableFolder: null,
-            userDataFolder: AppPaths.UserDataFolder,
-            options: options).ConfigureAwait(true);
+        // CefGlue defers the real CefInitialize until the first browser control is created. Force it now so
+        // a broken runtime surfaces here (on the splash, like the WebView2 build) and not inside the first tab.
+        CefRuntimeLoader.Initialize(cefSettings, BuildBrowserSwitches(settings));
+        ForceRuntimeLoad();
 
+        var environment = new BrowserEnvironment(settings.Clone(), BuildBrowserArguments(settings), CefRuntime.ChromeVersion);
         Environment = environment;
-        return environment;
+        return Task.FromResult(environment);
+    }
+
+    private static void ForceRuntimeLoad()
+    {
+        if (OperatingSystem.IsMacOS())
+        {
+            // On macOS CefGlue wires its Avalonia message-pump handler in AvaloniaCefBrowser's type initialiser.
+            RuntimeHelpers.RunClassConstructor(typeof(AvaloniaCefBrowser).TypeHandle);
+        }
+
+        if (CefRuntimeLoader.IsLoaded)
+        {
+            return;
+        }
+
+        // Windows/Linux: CefGlue loads lazily from the browser constructor via an internal overload.
+        var load = typeof(CefRuntimeLoader).GetMethod("Load", BindingFlags.Static | BindingFlags.NonPublic);
+        if (load is null)
+        {
+            return;
+        }
+
+        try
+        {
+            load.Invoke(null, [null]);
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            throw ex.InnerException;
+        }
     }
 }

@@ -1,47 +1,74 @@
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using System.Text.Json;
-using System.Windows;
+using Avalonia.Threading;
 using DemoBrowser.Models;
 using DemoBrowser.Services;
-using Microsoft.Web.WebView2.Core;
-using Microsoft.Web.WebView2.Wpf;
+using Xilium.CefGlue;
+using Xilium.CefGlue.Common.Events;
+using Xilium.CefGlue.Common.Handlers;
 
 namespace DemoBrowser.ViewModels;
 
 /// <summary>
-/// One browser tab. Owns its <see cref="WebView2"/> for the tab's whole lifetime: the control is created
-/// exactly once, never re-parented, and only its <see cref="UIElement.Visibility"/> is toggled when the
-/// active tab changes. Hosting WebView2 in a TabControl DataTemplate would re-create the visual tree on
-/// every switch and destroy the CoreWebView2, so that is deliberately avoided.
+/// One browser tab. Owns its <see cref="TabBrowser"/> for the tab's whole lifetime: the control is created
+/// exactly once, never re-parented, and only its <c>IsVisible</c> is toggled when the active tab changes.
+/// Hosting the browser in a TabControl DataTemplate would re-create the visual tree on every switch and
+/// destroy the native CEF browser, so that is deliberately avoided.
+///
+/// CEF raises its callbacks on CEF threads; every property change is marshalled to the Avalonia UI thread.
 /// </summary>
 public sealed class TabViewModel : ObservableObject, IDisposable
 {
     private readonly CertificateService _certificateService;
+    private readonly TaskCompletionSource _initialized = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private string _title = "New Tab";
     private string _source = "";
+    private string _statusText = "";
     private bool _isActive;
     private bool _isLoading;
     private bool _canGoBack;
     private bool _canGoForward;
     private bool _disposed;
-    private bool _lastCertErrorTrustedViaProxy;
+    private volatile bool _lastCertErrorTrustedViaProxy;
+    private IReadOnlyList<string> _lastCertErrorIssues = [];
+    private IReadOnlyList<X509Certificate2> _lastCertErrorChain = [];
     private ConnectionSecurityInfo _securityInfo = new();
+    private CefRegistration? _devToolsRegistration;
+
+    private const int EnableNetworkMessageId = 1;
 
     public TabViewModel(CertificateService certificateService)
     {
         _certificateService = certificateService;
-        WebView = new WebView2
+        WebView = new TabBrowser
         {
-            Visibility = Visibility.Collapsed,
+            IsVisible = false,
+            // Handlers must be in place before the native browser is created, so the very first
+            // navigation's certificate error is already covered.
+            RequestHandler = new TabRequestHandler(this),
+            LifeSpanHandler = new TabLifeSpanHandler(this),
         };
-        WebView.CoreWebView2InitializationCompleted += OnCoreWebView2InitializationCompleted;
-        WebView.NavigationStarting += (_, _) => IsLoading = true;
-        WebView.NavigationCompleted += OnNavigationCompleted;
-        WebView.SourceChanged += (_, _) => SyncSource();
+        WebView.BrowserInitialized += OnBrowserInitialized;
+        WebView.LoadStart += OnLoadStart;
+        WebView.LoadEnd += OnLoadEnd;
+        WebView.LoadingStateChange += OnLoadingStateChange;
+        WebView.AddressChanged += (_, url) => Post(() => SyncSource(url));
+        WebView.TitleChanged += (_, _) => Post(UpdateTitle);
+        WebView.StatusMessage += (_, text) => Post(() => StatusText = text ?? "");
     }
 
-    public WebView2 WebView { get; }
+    public TabBrowser WebView { get; }
+
+    /// <summary>
+    /// Completes once CEF has fully destroyed the native browser (<c>OnBeforeClose</c>) after <see cref="Dispose"/>.
+    /// Closing is asynchronous and needs a running UI message loop, so the window waits for this before the
+    /// process shuts the engine down — the CEF counterpart of waiting for WebView2's browser process to exit.
+    /// </summary>
+    public Task BrowserClosed => _closed.Task;
 
     /// <summary>Raised when the page asks for a new window (target=_blank); the host opens a new tab.</summary>
     public event Action<TabViewModel, string>? NewTabRequested;
@@ -52,11 +79,18 @@ public sealed class TabViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _title, value);
     }
 
-    /// <summary>Current URL of the tab as a string (kept in sync with the WebView2 Source).</summary>
+    /// <summary>Current URL of the tab as a string (kept in sync with the browser's main-frame URL).</summary>
     public string Source
     {
         get => _source;
         private set => SetProperty(ref _source, value);
+    }
+
+    /// <summary>Status-bar text (link target under the mouse, loading hints) as reported by Chromium.</summary>
+    public string StatusText
+    {
+        get => _statusText;
+        private set => SetProperty(ref _statusText, value);
     }
 
     public bool IsActive
@@ -66,7 +100,7 @@ public sealed class TabViewModel : ObservableObject, IDisposable
         {
             if (SetProperty(ref _isActive, value))
             {
-                WebView.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+                WebView.IsVisible = value;
             }
         }
     }
@@ -113,31 +147,31 @@ public sealed class TabViewModel : ObservableObject, IDisposable
     };
 
     /// <summary>
-    /// Initialises the CoreWebView2 against the single shared environment and navigates to <paramref name="initialUrl"/>.
-    /// The certificate handler is attached in <see cref="OnCoreWebView2InitializationCompleted"/>, which runs before
-    /// this method continues, so the very first navigation is already covered.
+    /// Queues the first navigation and waits until the native browser exists. The browser is created by CEF as
+    /// soon as the control is laid out with a size; the initial URL is loaded right after creation. The
+    /// certificate handler is attached before creation, so the very first navigation is already covered.
     /// </summary>
-    public async Task InitializeAsync(CoreWebView2Environment environment, string initialUrl)
+    public async Task InitializeAsync(BrowserEnvironment environment, string initialUrl)
     {
-        await WebView.EnsureCoreWebView2Async(environment);
+        _ = environment; // one process-wide engine: every tab implicitly uses it
+        Navigate(initialUrl);
+        await _initialized.Task;
         if (_disposed)
         {
             return;
         }
-
-        Navigate(initialUrl);
     }
 
     public void Navigate(string url)
     {
-        if (WebView.CoreWebView2 is null || string.IsNullOrWhiteSpace(url))
+        if (_disposed || string.IsNullOrWhiteSpace(url))
         {
             return;
         }
 
         try
         {
-            WebView.CoreWebView2.Navigate(url);
+            WebView.Address = url;
         }
         catch (ArgumentException)
         {
@@ -147,147 +181,188 @@ public sealed class TabViewModel : ObservableObject, IDisposable
 
     public void GoBack()
     {
-        if (WebView.CoreWebView2?.CanGoBack == true)
+        if (WebView.CanGoBack)
         {
-            WebView.CoreWebView2.GoBack();
+            WebView.GoBack();
         }
     }
 
     public void GoForward()
     {
-        if (WebView.CoreWebView2?.CanGoForward == true)
+        if (WebView.CanGoForward)
         {
-            WebView.CoreWebView2.GoForward();
+            WebView.GoForward();
         }
     }
 
-    public void Reload() => WebView.CoreWebView2?.Reload();
-
-    public void Stop() => WebView.CoreWebView2?.Stop();
-
-    private void OnCoreWebView2InitializationCompleted(object? sender, CoreWebView2InitializationCompletedEventArgs e)
+    public void Reload()
     {
-        if (!e.IsSuccess || WebView.CoreWebView2 is null)
+        if (WebView.Core is not null)
         {
-            Title = "Failed to initialise";
+            WebView.Reload();
+        }
+    }
+
+    public void Stop() => WebView.Core?.StopLoad();
+
+    private void OnBrowserInitialized()
+    {
+        var core = WebView.Core;
+        if (core is null)
+        {
+            Post(() => Title = "Failed to initialise");
+            _initialized.TrySetResult();
             return;
         }
 
-        var core = WebView.CoreWebView2;
-        BrowserEnvironmentService.RegisterBrowserProcess(core.BrowserProcessId);
-
-        // Must be subscribed BEFORE the first navigation, otherwise that navigation's certificate error is missed.
-        core.ServerCertificateErrorDetected += (_, args) =>
-            _lastCertErrorTrustedViaProxy = _certificateService.HandleServerCertificateError(args);
-
-        core.DocumentTitleChanged += (_, _) => UpdateTitle();
-        core.HistoryChanged += (_, _) => UpdateHistoryState();
-        core.NewWindowRequested += (_, args) =>
-        {
-            args.Handled = true;
-            NewTabRequested?.Invoke(this, args.Uri);
-        };
-        core.Settings.IsStatusBarEnabled = true;
-
         // TLS details of successful connections are only available through the DevTools protocol.
-        core.GetDevToolsProtocolEventReceiver("Security.visibleSecurityStateChanged").DevToolsProtocolEventReceived +=
-            (_, args) => OnVisibleSecurityStateChanged(args.ParameterObjectAsJson);
-        _ = EnableSecurityDomainAsync(core);
+        TabBrowser.RunOnCefUiThread(() =>
+        {
+            try
+            {
+                var host = core.GetHost();
+                _devToolsRegistration = host.AddDevToolsMessageObserver(new DevToolsObserver(this));
+                SendDevToolsMessage(host, $"{{\"id\":{EnableNetworkMessageId},\"method\":\"Network.enable\"}}");
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or CefRuntimeException or ObjectDisposedException)
+            {
+                // DevTools unavailable: the lock popup simply shows less detail.
+            }
+        });
+
+        _initialized.TrySetResult();
     }
 
-    private static async Task EnableSecurityDomainAsync(CoreWebView2 core)
+    private static void SendDevToolsMessage(CefBrowserHost host, string json)
     {
+        var message = Encoding.UTF8.GetBytes(json);
+        var buffer = Marshal.AllocHGlobal(message.Length);
         try
         {
-            await core.CallDevToolsProtocolMethodAsync("Security.enable", "{}");
+            Marshal.Copy(message, 0, buffer, message.Length);
+            host.SendDevToolsMessage(buffer, message.Length);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException)
+        finally
         {
-            // DevTools unavailable: the lock popup simply shows less detail.
+            Marshal.FreeHGlobal(buffer);
         }
     }
 
-    /// <summary>Parses the CDP <c>Security.VisibleSecurityState</c> payload into <see cref="SecurityInfo"/>.</summary>
-    private void OnVisibleSecurityStateChanged(string json)
+    /// <summary>
+    /// Parses the CDP <c>Network.responseReceived</c> payload of the main document into <see cref="SecurityInfo"/>
+    /// and asks for the certificate chain of that origin.
+    ///
+    /// WHY the Network domain: the WebView2 build reads <c>Security.visibleSecurityStateChanged</c>, but CEF's
+    /// runtime never emits the Security domain (its events simply never arrive, while other domains do). The
+    /// Network domain carries the same information — <c>securityState</c> plus <c>securityDetails</c> with the
+    /// TLS protocol, key exchange and cipher — for every response, including the main document.
+    /// </summary>
+    private void OnDocumentResponseReceived(string json)
     {
         try
         {
             using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty("visibleSecurityState", out var state))
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("type", out var type) || type.GetString() != "Document"
+                || !root.TryGetProperty("response", out var response))
             {
                 return;
             }
 
-            var chain = new List<X509Certificate2>();
-            string protocol = "", keyExchange = "", cipher = "";
-            if (state.TryGetProperty("certificateSecurityState", out var cert))
+            var url = response.TryGetProperty("url", out var u) ? u.GetString() ?? "" : "";
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
             {
-                protocol = cert.TryGetProperty("protocol", out var p) ? p.GetString() ?? "" : "";
-                keyExchange = cert.TryGetProperty("keyExchange", out var k) ? k.GetString() ?? "" : "";
-                cipher = cert.TryGetProperty("cipher", out var c) ? c.GetString() ?? "" : "";
-                if (cert.TryGetProperty("certificate", out var certs) && certs.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var entry in certs.EnumerateArray())
-                    {
-                        var b64 = entry.GetString();
-                        if (string.IsNullOrEmpty(b64))
-                        {
-                            continue;
-                        }
+                return;
+            }
 
-                        try
-                        {
-                            chain.Add(X509CertificateLoader.LoadCertificate(Convert.FromBase64String(b64)));
-                        }
-                        catch (Exception ex) when (ex is CryptographicException or FormatException)
-                        {
-                        }
-                    }
+            string protocol = "", keyExchange = "", cipher = "";
+            if (response.TryGetProperty("securityDetails", out var details))
+            {
+                protocol = details.TryGetProperty("protocol", out var p) ? p.GetString() ?? "" : "";
+                cipher = details.TryGetProperty("cipher", out var c) ? c.GetString() ?? "" : "";
+                keyExchange = details.TryGetProperty("keyExchange", out var k) ? k.GetString() ?? "" : "";
+                if (string.IsNullOrEmpty(keyExchange) && details.TryGetProperty("keyExchangeGroup", out var g))
+                {
+                    // TLS 1.3 has no separate key exchange algorithm; Chromium reports only the group.
+                    keyExchange = g.GetString() ?? "";
                 }
             }
 
-            var issues = new List<string>();
-            if (state.TryGetProperty("securityStateIssueIds", out var ids) && ids.ValueKind == JsonValueKind.Array)
-            {
-                issues.AddRange(ids.EnumerateArray().Select(i => i.GetString() ?? "").Where(i => i.Length > 0));
-            }
-
-            var host = Uri.TryCreate(Source, UriKind.Absolute, out var uri) ? uri.Host : "";
             var previous = SecurityInfo;
+            var chain = _lastCertErrorChain;
             SecurityInfo = new ConnectionSecurityInfo
             {
-                Host = host,
-                SecurityState = state.TryGetProperty("securityState", out var s) ? s.GetString() ?? "" : "",
+                Host = uri.Host,
+                SecurityState = response.TryGetProperty("securityState", out var s) ? s.GetString() ?? "" : "",
                 Protocol = protocol,
                 KeyExchange = keyExchange,
                 Cipher = cipher,
                 Chain = chain,
-                Issues = issues,
+                Issues = _lastCertErrorIssues,
                 TrustedViaProxyCa = _lastCertErrorTrustedViaProxy || _certificateService.ChainsToProxyCa(chain),
             };
-            DisposeChain(previous);
+            if (!ReferenceEquals(previous.Chain, chain))
+            {
+                DisposeChain(previous);
+            }
+
         }
         catch (JsonException)
         {
         }
     }
 
-    private void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+    private void OnLoadStart(object sender, LoadStartEventArgs e)
     {
-        IsLoading = false;
-        SyncSource();
-        UpdateTitle();
-        UpdateHistoryState();
+        if (e.Frame.IsMain && !e.Frame.Browser.IsPopup)
+        {
+            Post(() => IsLoading = true);
+        }
     }
 
-    private void SyncSource()
+    private void OnLoadEnd(object sender, LoadEndEventArgs e)
     {
-        var uri = WebView.Source;
-        var newSource = uri is null || uri.ToString() == "about:blank" ? "" : uri.ToString();
+        if (!e.Frame.IsMain || e.Frame.Browser.IsPopup)
+        {
+            return;
+        }
+
+        var url = e.Frame.Url;
+        Post(() =>
+        {
+            IsLoading = false;
+            SyncSource(url);
+            UpdateTitle();
+            UpdateHistoryState();
+        });
+    }
+
+    /// <summary>CEF reports loading + history state together; this covers NavigationStarting/Completed and HistoryChanged.</summary>
+    private void OnLoadingStateChange(object sender, LoadingStateChangeEventArgs e)
+    {
+        var url = WebView.Core?.GetMainFrame()?.Url;
+        Post(() =>
+        {
+            IsLoading = e.IsLoading;
+            CanGoBack = e.CanGoBack;
+            CanGoForward = e.CanGoForward;
+            RelayCommand.RaiseCanExecuteChanged();
+            if (!e.IsLoading)
+            {
+                SyncSource(url);
+                UpdateTitle();
+            }
+        });
+    }
+
+    private void SyncSource(string? url)
+    {
+        var newSource = url is null || url == "about:blank" ? "" : url;
         if (newSource != Source)
         {
             // New document: forget the previous page's trust decision and glyph.
             _lastCertErrorTrustedViaProxy = false;
+            _lastCertErrorIssues = [];
             Source = newSource;
             OnPropertyChanged(nameof(SecurityGlyph));
         }
@@ -298,7 +373,7 @@ public sealed class TabViewModel : ObservableObject, IDisposable
     /// <summary>Title fallback chain: document title → host → "New Tab".</summary>
     private void UpdateTitle()
     {
-        var docTitle = WebView.CoreWebView2?.DocumentTitle;
+        var docTitle = WebView.Title;
         if (!string.IsNullOrWhiteSpace(docTitle))
         {
             Title = docTitle;
@@ -316,9 +391,23 @@ public sealed class TabViewModel : ObservableObject, IDisposable
 
     private void UpdateHistoryState()
     {
-        CanGoBack = WebView.CoreWebView2?.CanGoBack ?? false;
-        CanGoForward = WebView.CoreWebView2?.CanGoForward ?? false;
+        CanGoBack = WebView.CanGoBack;
+        CanGoForward = WebView.CanGoForward;
         RelayCommand.RaiseCanExecuteChanged();
+    }
+
+    /// <summary>Stores the chain of the latest certificate error, disposing the previous one if unused.</summary>
+    private void ReplaceCertErrorChain(IReadOnlyList<X509Certificate2> chain)
+    {
+        var previous = _lastCertErrorChain;
+        _lastCertErrorChain = chain;
+        if (!ReferenceEquals(previous, SecurityInfo.Chain))
+        {
+            foreach (var cert in previous)
+            {
+                cert.Dispose();
+            }
+        }
     }
 
     private static void DisposeChain(ConnectionSecurityInfo info)
@@ -329,7 +418,30 @@ public sealed class TabViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>Disposes the WebView2 (and its CoreWebView2) when the tab is closed.</summary>
+    private void Post(Action action)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            action();
+        }
+        else
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (!_disposed)
+                {
+                    action();
+                }
+            });
+        }
+    }
+
+    /// <summary>Disposes the browser control (and its native CEF browser) when the tab is closed.</summary>
     public void Dispose()
     {
         if (_disposed)
@@ -338,7 +450,135 @@ public sealed class TabViewModel : ObservableObject, IDisposable
         }
 
         _disposed = true;
+        _initialized.TrySetResult();
+        ReplaceCertErrorChain([]);
         DisposeChain(SecurityInfo);
+        _devToolsRegistration?.Dispose();
+        _devToolsRegistration = null;
+        var hadBrowser = WebView.Core is not null;
         WebView.Dispose();
+        if (!hadBrowser)
+        {
+            // No native browser was ever created, so CEF will never report OnBeforeClose for it.
+            _closed.TrySetResult();
+        }
+    }
+
+    /// <summary>
+    /// The CEF counterpart of WebView2's <c>ServerCertificateErrorDetected</c>: called (on a CEF thread) for every
+    /// certificate Chromium cannot validate itself — with the MITM proxy that is every HTTPS site.
+    /// </summary>
+    private sealed class TabRequestHandler(TabViewModel owner) : RequestHandler
+    {
+        protected override bool OnCertificateError(CefBrowser browser, CefErrorCode certError, string requestUrl, CefSslInfo sslInfo, CefCallback callback)
+        {
+            var (trusted, chain) = owner._certificateService.HandleServerCertificateError(sslInfo, callback);
+            owner._lastCertErrorTrustedViaProxy = trusted;
+            owner._lastCertErrorIssues = trusted ? [] : DescribeCertStatus(sslInfo?.CertStatus ?? CefCertStatus.None, certError);
+            owner.ReplaceCertErrorChain(chain);
+            return trusted;
+        }
+
+        /// <summary>
+        /// Human-readable reasons a certificate was rejected — the equivalent of the Security domain's
+        /// <c>securityStateIssueIds</c> the WebView2 build shows in the lock popup.
+        /// </summary>
+        private static string[] DescribeCertStatus(CefCertStatus status, CefErrorCode error)
+        {
+            var issues = new List<string>();
+            foreach (var (flag, text) in CertStatusText)
+            {
+                if (status.HasFlag(flag))
+                {
+                    issues.Add(text);
+                }
+            }
+
+            if (issues.Count == 0)
+            {
+                issues.Add(error.ToString());
+            }
+
+            return [.. issues];
+        }
+
+        private static readonly (CefCertStatus Flag, string Text)[] CertStatusText =
+        [
+            (CefCertStatus.CommonNameInvalid, "certificate name does not match the site"),
+            (CefCertStatus.DateInvalid, "certificate is expired or not yet valid"),
+            (CefCertStatus.AuthorityInvalid, "issuer is not trusted"),
+            (CefCertStatus.Revoked, "certificate is revoked"),
+            (CefCertStatus.Invalid, "certificate is malformed"),
+            (CefCertStatus.WeakSignatureAlgorithm, "weak signature algorithm"),
+            (CefCertStatus.WeakKey, "weak key"),
+            (CefCertStatus.NameConstraintViolation, "name constraint violation"),
+            (CefCertStatus.ValidityTooLong, "validity period too long"),
+            (CefCertStatus.NonUniqueName, "non-unique host name"),
+            (CefCertStatus.PinnedKeyMissing, "expected public key pin missing"),
+            (CefCertStatus.Sha1SignaturePresent, "SHA-1 signature present"),
+            (CefCertStatus.CTComplianceFailed, "certificate transparency requirements not met"),
+        ];
+    }
+
+    /// <summary>The CEF counterpart of WebView2's <c>NewWindowRequested</c>: popups are redirected into a new tab.</summary>
+    private sealed class TabLifeSpanHandler(TabViewModel owner) : LifeSpanHandler
+    {
+        protected override bool OnBeforePopup(CefBrowser browser, CefFrame frame, string targetUrl, string targetFrameName,
+            CefWindowOpenDisposition targetDisposition, bool userGesture, CefPopupFeatures popupFeatures, CefWindowInfo windowInfo,
+            ref CefClient client, CefBrowserSettings settings, ref CefDictionaryValue extraInfo, ref bool noJavascriptAccess)
+        {
+            var url = targetUrl;
+            owner.Post(() => owner.NewTabRequested?.Invoke(owner, url));
+            return true; // handled: no native popup window
+        }
+
+        protected override void OnBeforeClose(CefBrowser browser)
+        {
+            if (!browser.IsPopup)
+            {
+                owner._closed.TrySetResult();
+            }
+
+            base.OnBeforeClose(browser);
+        }
+    }
+
+    /// <summary>
+    /// Receives DevTools protocol traffic: the <c>Network.responseReceived</c> event (TLS parameters of the main
+    /// document) and the result of the <c>Network.getCertificate</c> call (the PEM chain).
+    /// </summary>
+    private sealed class DevToolsObserver(TabViewModel owner) : CefDevToolsMessageObserver
+    {
+        protected override bool OnDevToolsMessage(CefBrowser browser, IntPtr message, int messageSize) => false;
+
+        protected override void OnDevToolsMethodResult(CefBrowser browser, int messageId, bool success, IntPtr result, int resultSize)
+        {
+        }
+
+        protected override void OnDevToolsEvent(CefBrowser browser, string method, IntPtr parameters, int parametersSize)
+        {
+            if (method != "Network.responseReceived" || parameters == IntPtr.Zero || parametersSize <= 0)
+            {
+                return;
+            }
+
+            var json = ReadUtf8(parameters, parametersSize);
+            owner.Post(() => owner.OnDocumentResponseReceived(json));
+        }
+
+        protected override void OnDevToolsAgentAttached(CefBrowser browser)
+        {
+        }
+
+        protected override void OnDevToolsAgentDetached(CefBrowser browser)
+        {
+        }
+
+        private static string ReadUtf8(IntPtr pointer, int size)
+        {
+            var bytes = new byte[size];
+            Marshal.Copy(pointer, bytes, 0, size);
+            return Encoding.UTF8.GetString(bytes);
+        }
     }
 }

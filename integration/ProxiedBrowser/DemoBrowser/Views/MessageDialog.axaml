@@ -1,0 +1,38 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="DemoBrowser.Views.MessageDialog"
+        Title="Demo Browser"
+        Icon="avares://DemoBrowser/Assets/shield-256.png"
+        Width="480"
+        SizeToContent="Height"
+        CanResize="False"
+        SystemDecorations="None"
+        Background="{StaticResource ChromeBrush}"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        Topmost="True">
+
+    <Grid RowDefinitions="44,*">
+        <!-- Title bar -->
+        <Grid Grid.Row="0" Background="{StaticResource ChromeGradient}" PointerPressed="OnTitleBarPointerPressed">
+            <StackPanel Orientation="Horizontal" Margin="14,0" VerticalAlignment="Center">
+                <TextBlock x:Name="HeaderGlyph" Text="ℹ" Foreground="{StaticResource TextBrush}" FontSize="14" VerticalAlignment="Center" />
+                <TextBlock x:Name="HeaderTitle" Text="Demo Browser" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" FontSize="13"
+                           Margin="8,0,0,0" VerticalAlignment="Center" />
+            </StackPanel>
+            <Button Classes="caption close" Content="✕" HorizontalAlignment="Right" Height="44" Click="OnCloseClick" />
+        </Grid>
+
+        <Grid Grid.Row="1" Margin="20,18,20,18" RowDefinitions="Auto,Auto">
+            <DockPanel Grid.Row="0">
+                <Border DockPanel.Dock="Left" Width="38" Height="38" CornerRadius="19" x:Name="Badge" Background="{StaticResource AccentBrush}"
+                        Margin="0,0,14,0" VerticalAlignment="Top">
+                    <TextBlock x:Name="BadgeGlyph" Text="ℹ" FontSize="17" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="White" />
+                </Border>
+                <TextBlock x:Name="MessageText" TextWrapping="Wrap" Foreground="{StaticResource TextBrush}" FontSize="13" VerticalAlignment="Center" />
+            </DockPanel>
+            <Button Grid.Row="1" Classes="primary" Content="OK" Width="90" HorizontalAlignment="Right" Margin="0,18,0,0"
+                    IsDefault="True" IsCancel="True" Click="OnCloseClick" x:Name="OkButton" />
+        </Grid>
+    </Grid>
+</Window>

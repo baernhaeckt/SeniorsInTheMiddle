@@ -1,0 +1,87 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="DemoBrowser.Views.SettingsWindow"
+        Title="Settings"
+        Icon="avares://DemoBrowser/Assets/shield-256.png"
+        Width="560"
+        SizeToContent="Height"
+        CanResize="False"
+        SystemDecorations="None"
+        Background="{StaticResource ChromeBrush}"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Window.Styles>
+        <Style Selector="TextBlock.label">
+            <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,16,10" />
+        </Style>
+        <Style Selector="TextBox">
+            <Setter Property="Margin" Value="0,0,0,10" />
+            <Setter Property="Padding" Value="10,6" />
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="Margin" Value="0,0,0,10" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="44,*">
+        <!-- Title bar -->
+        <Grid Grid.Row="0" Background="{StaticResource ChromeGradient}" PointerPressed="OnTitleBarPointerPressed">
+            <StackPanel Orientation="Horizontal" Margin="14,0" VerticalAlignment="Center">
+                <TextBlock Text="⚙" Foreground="{StaticResource TextBrush}" FontSize="14" VerticalAlignment="Center" />
+                <TextBlock Text="Settings" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" FontSize="13" Margin="8,0,0,0" VerticalAlignment="Center" />
+            </StackPanel>
+            <Button Classes="caption close" Content="✕" HorizontalAlignment="Right" Height="44" IsCancel="True" Click="OnCancelClick" />
+        </Grid>
+
+        <Grid Grid.Row="2" Margin="20,18,20,18" ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+
+            <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Text="PROXY" Foreground="{StaticResource AccentBrush}"
+                       FontSize="11" FontWeight="Bold" Margin="0,0,0,10" />
+
+            <CheckBox Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" x:Name="UseProxyBox" Content="Route traffic through the proxy"
+                      Foreground="{StaticResource TextBrush}" FontSize="12" Margin="0,0,0,10"
+                      ToolTip.Tip="Off: connect directly (--no-proxy-server) and skip the CA download. The proxy settings below are then ignored." />
+
+            <TextBlock Grid.Row="2" Grid.Column="0" Classes="label" Text="Scheme" />
+            <ComboBox Grid.Row="2" Grid.Column="1" x:Name="SchemeBox" IsEnabled="{Binding #UseProxyBox.IsChecked}" HorizontalAlignment="Left" Width="120" SelectionChanged="OnSchemeChanged">
+                <ComboBoxItem Content="http" />
+                <ComboBoxItem Content="https" />
+            </ComboBox>
+
+            <TextBlock Grid.Row="3" Grid.Column="0" Classes="label" Text="Host" />
+            <TextBox Grid.Row="3" Grid.Column="1" x:Name="HostBox" IsEnabled="{Binding #UseProxyBox.IsChecked}" Classes="pill" />
+
+            <TextBlock Grid.Row="4" Grid.Column="0" Classes="label" Text="Port" />
+            <TextBox Grid.Row="4" Grid.Column="1" x:Name="PortBox" IsEnabled="{Binding #UseProxyBox.IsChecked}" Classes="pill" HorizontalAlignment="Left" Width="120" />
+
+            <TextBlock Grid.Row="5" Grid.Column="0" Classes="label" Text="Bypass list" />
+            <TextBox Grid.Row="5" Grid.Column="1" x:Name="BypassBox" IsEnabled="{Binding #UseProxyBox.IsChecked}" Classes="pill"
+                     ToolTip.Tip="Chromium --proxy-bypass-list syntax, e.g. localhost;*.corp.example.com. Leave empty for none." />
+
+            <TextBlock Grid.Row="6" Grid.Column="0" Classes="label" Text="CA certificate URL" />
+            <TextBox Grid.Row="6" Grid.Column="1" x:Name="CaUrlBox" IsEnabled="{Binding #UseProxyBox.IsChecked}" Classes="pill" />
+
+            <TextBlock Grid.Row="7" Grid.Column="0" Classes="label" Text="Start page" />
+            <TextBox Grid.Row="7" Grid.Column="1" x:Name="StartPageBox" Classes="pill" />
+
+            <Border Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" Background="#14FFFFFF" CornerRadius="8" Padding="12,8" Margin="0,4,0,16">
+                <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextMutedBrush}" FontSize="12"
+                           Text="Proxy and CA settings are read once when the browser engine starts. Changes take effect after restarting the application." />
+            </Border>
+
+            <DockPanel Grid.Row="9" Grid.Column="0" Grid.ColumnSpan="2">
+                <Button DockPanel.Dock="Left" Classes="ghost" Content="Reset to defaults" Click="OnResetClick" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Classes="ghost" Content="Cancel" Width="90" Margin="0,0,8,0" IsCancel="True" Click="OnCancelClick" />
+                    <Button Classes="primary" Content="Save" Width="90" IsDefault="True" Click="OnSaveClick" />
+                </StackPanel>
+            </DockPanel>
+        </Grid>
+    </Grid>
+</Window>

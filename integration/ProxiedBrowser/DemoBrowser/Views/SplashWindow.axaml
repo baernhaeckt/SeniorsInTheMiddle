@@ -1,0 +1,174 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="DemoBrowser.Views.SplashWindow"
+        Title="Demo Browser"
+        Width="460"
+        Height="320"
+        SystemDecorations="None"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent"
+        CanResize="False"
+        ShowInTaskbar="True"
+        Topmost="True"
+        WindowStartupLocation="CenterScreen">
+
+    <!-- Shield pulse, rotating halos, drifting gradient and a sweeping progress bar (all looping) -->
+    <Window.Styles>
+        <Style Selector="Ellipse.halo1">
+            <Style.Animations>
+                <Animation Duration="0:0:6" IterationCount="INFINITE">
+                    <KeyFrame Cue="0%"><Setter Property="RotateTransform.Angle" Value="0" /></KeyFrame>
+                    <KeyFrame Cue="100%"><Setter Property="RotateTransform.Angle" Value="360" /></KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <Style Selector="Ellipse.halo2">
+            <Style.Animations>
+                <Animation Duration="0:0:9" IterationCount="INFINITE">
+                    <KeyFrame Cue="0%"><Setter Property="RotateTransform.Angle" Value="360" /></KeyFrame>
+                    <KeyFrame Cue="100%"><Setter Property="RotateTransform.Angle" Value="0" /></KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <Style Selector="Viewbox.shield">
+            <Style.Animations>
+                <Animation Duration="0:0:1.4" IterationCount="INFINITE" PlaybackDirection="Alternate" Easing="SineEaseInOut">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="ScaleTransform.ScaleX" Value="1" />
+                        <Setter Property="ScaleTransform.ScaleY" Value="1" />
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="ScaleTransform.ScaleX" Value="1.06" />
+                        <Setter Property="ScaleTransform.ScaleY" Value="1.06" />
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <Style Selector="Ellipse.glow">
+            <Style.Animations>
+                <Animation Duration="0:0:1.4" IterationCount="INFINITE" PlaybackDirection="Alternate" Easing="SineEaseInOut">
+                    <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0.35" /></KeyFrame>
+                    <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0.9" /></KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <Style Selector="Rectangle.sweep">
+            <Style.Animations>
+                <Animation Duration="0:0:1.6" IterationCount="INFINITE" Easing="QuadraticEaseInOut">
+                    <KeyFrame Cue="0%"><Setter Property="TranslateTransform.X" Value="-160" /></KeyFrame>
+                    <KeyFrame Cue="100%"><Setter Property="TranslateTransform.X" Value="420" /></KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <Style Selector="Border.drift">
+            <Style.Animations>
+                <Animation Duration="0:0:5" IterationCount="INFINITE" PlaybackDirection="Alternate">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="Background">
+                            <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                                <GradientStop Color="#FF0D1216" Offset="0" />
+                                <GradientStop Color="#FF0C2A2B" Offset="0.55" />
+                                <GradientStop Color="#FF225851" Offset="1" />
+                            </LinearGradientBrush>
+                        </Setter>
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="Background">
+                            <LinearGradientBrush StartPoint="100%,0%" EndPoint="0%,100%">
+                                <GradientStop Color="#FF0D1216" Offset="0" />
+                                <GradientStop Color="#FF0C2A2B" Offset="0.55" />
+                                <GradientStop Color="#FF225851" Offset="1" />
+                            </LinearGradientBrush>
+                        </Setter>
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+    </Window.Styles>
+
+    <Border x:Name="Root" Classes="drift" CornerRadius="18" Margin="16" RenderTransformOrigin="50%,50%" ClipToBounds="False"
+            BoxShadow="0 0 28 0 #99000000" Opacity="0">
+        <Border.RenderTransform>
+            <ScaleTransform />
+        </Border.RenderTransform>
+        <Border.Background>
+            <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Color="#FF0D1216" Offset="0" />
+                <GradientStop Color="#FF0C2A2B" Offset="0.55" />
+                <GradientStop Color="#FF225851" Offset="1" />
+            </LinearGradientBrush>
+        </Border.Background>
+
+        <Grid RowDefinitions="*,Auto,Auto">
+
+            <!-- Emblem -->
+            <Grid Grid.Row="0" Width="150" Height="150" Margin="0,24,0,0">
+                <!-- Outer glow -->
+                <Ellipse Classes="glow" Width="140" Height="140" Opacity="0.5">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#66288879" Offset="0" />
+                            <GradientStop Color="#0038B5EE" Offset="1" />
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                </Ellipse>
+
+                <!-- Rotating dashed halos -->
+                <Ellipse Classes="halo1" Width="130" Height="130" StrokeThickness="1.5" StrokeDashArray="6,10" Opacity="0.7" RenderTransformOrigin="50%,50%">
+                    <Ellipse.Stroke>
+                        <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                            <GradientStop Color="#FF288879" Offset="0" />
+                            <GradientStop Color="#FF38B5EE" Offset="1" />
+                        </LinearGradientBrush>
+                    </Ellipse.Stroke>
+                    <Ellipse.RenderTransform>
+                        <RotateTransform />
+                    </Ellipse.RenderTransform>
+                </Ellipse>
+                <Ellipse Classes="halo2" Width="108" Height="108" StrokeThickness="1" StrokeDashArray="2,6" Opacity="0.45" Stroke="#FF8A3D56" RenderTransformOrigin="50%,50%">
+                    <Ellipse.RenderTransform>
+                        <RotateTransform />
+                    </Ellipse.RenderTransform>
+                </Ellipse>
+
+                <!-- Shield (same geometry as the frontend icon) -->
+                <Viewbox Classes="shield" Width="64" Height="64" RenderTransformOrigin="50%,50%">
+                    <Viewbox.RenderTransform>
+                        <ScaleTransform />
+                    </Viewbox.RenderTransform>
+                    <Canvas Width="32" Height="32">
+                        <Path Data="{StaticResource ShieldGeometry}" Fill="{StaticResource ShieldFillBrush}"
+                              Stroke="{StaticResource ShieldStrokeBrush}" StrokeThickness="2" StrokeJoin="Round" />
+                        <Path Data="{StaticResource ShieldRightGeometry}" Fill="#FF38B5EE" Opacity="0.18" />
+                        <Rectangle Canvas.Left="11" Canvas.Top="14" Width="10" Height="4" RadiusX="1" RadiusY="1" Fill="{StaticResource ShieldBarBrush}" />
+                    </Canvas>
+                </Viewbox>
+            </Grid>
+
+            <!-- Wordmark + status -->
+            <StackPanel Grid.Row="1" HorizontalAlignment="Center" Margin="0,8,0,0">
+                <TextBlock Text="Seniors in the Middle" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" HorizontalAlignment="Center" />
+                <TextBlock Text="PII PROXY BROWSER" FontSize="10" FontWeight="Bold" LetterSpacing="1.2" Foreground="{StaticResource AccentBrush}"
+                           HorizontalAlignment="Center" Margin="0,2,0,0" />
+                <TextBlock x:Name="StatusText" Text="Starting…" FontSize="12" Foreground="{StaticResource TextMutedBrush}" HorizontalAlignment="Center" Margin="0,14,0,0" />
+            </StackPanel>
+
+            <!-- Sweeping progress line -->
+            <Border Grid.Row="2" Height="3" Margin="28,16,28,22" CornerRadius="2" Background="#22FFFFFF" ClipToBounds="True">
+                <Rectangle Classes="sweep" Width="160" HorizontalAlignment="Left" RadiusX="2" RadiusY="2">
+                    <Rectangle.Fill>
+                        <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+                            <GradientStop Color="#00288879" Offset="0" />
+                            <GradientStop Color="#FF288879" Offset="0.5" />
+                            <GradientStop Color="#FF38B5EE" Offset="0.8" />
+                            <GradientStop Color="#0038B5EE" Offset="1" />
+                        </LinearGradientBrush>
+                    </Rectangle.Fill>
+                    <Rectangle.RenderTransform>
+                        <TranslateTransform />
+                    </Rectangle.RenderTransform>
+                </Rectangle>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

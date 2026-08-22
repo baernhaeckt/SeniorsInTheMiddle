@@ -1,0 +1,71 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="DemoBrowser.Views.DiagnosticsWindow"
+        Title="Proxy diagnostics"
+        Icon="avares://DemoBrowser/Assets/shield-256.png"
+        Width="960"
+        Height="620"
+        MinWidth="640"
+        MinHeight="360"
+        Background="{StaticResource ChromeBrush}"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        SystemDecorations="None">
+
+    <Grid RowDefinitions="44,Auto,*,Auto">
+
+        <!-- Title bar -->
+        <Grid Grid.Row="0" Background="{StaticResource ChromeGradient}" PointerPressed="OnTitleBarPointerPressed">
+            <StackPanel Orientation="Horizontal" Margin="14,0" VerticalAlignment="Center">
+                <TextBlock Text="🛠" Foreground="{StaticResource TextBrush}" FontSize="14" VerticalAlignment="Center" />
+                <TextBlock Text="Proxy diagnostics" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold"
+                           FontSize="13" Margin="8,0,0,0" VerticalAlignment="Center" />
+            </StackPanel>
+            <Button Classes="caption close" Content="✕" HorizontalAlignment="Right" Height="44" IsCancel="True" Click="OnCloseClick" />
+        </Grid>
+
+        <!-- Current state -->
+        <Border Grid.Row="1" Background="#14FFFFFF" CornerRadius="8" Padding="12,10" Margin="16,14,16,0">
+            <StackPanel>
+                <TextBlock x:Name="SummaryText" TextWrapping="Wrap" FontFamily="Consolas,Menlo,monospace"
+                           FontSize="12" Foreground="{StaticResource TextBrush}" />
+                <TextBlock x:Name="HintText" TextWrapping="Wrap" FontSize="12" Margin="0,8,0,0"
+                           Foreground="{StaticResource TextMutedBrush}" IsVisible="False" />
+            </StackPanel>
+        </Border>
+
+        <!-- Event log -->
+        <Border Grid.Row="2" Margin="16,12,16,0" CornerRadius="8" ClipToBounds="True" Background="#0DFFFFFF">
+            <ScrollViewer x:Name="LogScroller" HorizontalScrollBarVisibility="Auto">
+                <ItemsControl x:Name="LogItems" Margin="10,8">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="0,0,0,7">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding TimeText}" FontFamily="Consolas,Menlo,monospace" FontSize="11"
+                                               Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Text="{Binding Category}" FontFamily="Consolas,Menlo,monospace" FontSize="11"
+                                               Margin="10,0,0,0" Width="86" Foreground="{StaticResource AccentBrush}" />
+                                    <TextBlock Text="{Binding Message}" FontSize="12" TextWrapping="Wrap"
+                                               Foreground="{Binding Brush}" />
+                                </StackPanel>
+                                <TextBlock Text="{Binding Detail}" FontFamily="Consolas,Menlo,monospace" FontSize="11"
+                                           Margin="96,3,0,0" Foreground="{StaticResource TextMutedBrush}"
+                                           IsVisible="{Binding HasDetail}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+
+        <!-- Actions -->
+        <DockPanel Grid.Row="3" Margin="16,14,16,16">
+            <Button DockPanel.Dock="Left" Classes="ghost" Content="Clear" Click="OnClearClick" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Classes="ghost" Content="Copy all" Width="110" Margin="0,0,8,0" Click="OnCopyClick" />
+                <Button Classes="primary" Content="Close" Width="90" IsDefault="True" Click="OnCloseClick" />
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</Window>

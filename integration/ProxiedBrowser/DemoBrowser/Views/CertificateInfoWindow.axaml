@@ -1,0 +1,150 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="DemoBrowser.Views.CertificateInfoWindow"
+        Title="Connection security"
+        Icon="avares://DemoBrowser/Assets/shield-256.png"
+        Width="640"
+        Height="560"
+        MinWidth="520"
+        MinHeight="420"
+        Background="{StaticResource ChromeBrush}"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        ExtendClientAreaTitleBarHeightHint="44">
+
+    <Window.Styles>
+        <Style Selector="TextBlock.key">
+            <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Margin" Value="0,0,14,6" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+        <Style Selector="TextBlock.value">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="TextBlock.mono">
+            <Setter Property="FontFamily" Value="Menlo, Cascadia Mono, Consolas, Courier New, monospace" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+        <Style Selector="TextBlock.section">
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+        <Style Selector="ListBox.chain ListBoxItem">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Name="Bd" Background="Transparent" CornerRadius="6" Padding="10,6" Margin="0,1">
+                        <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="ListBox.chain ListBoxItem:pointerover /template/ Border#Bd">
+            <Setter Property="Background" Value="#14FFFFFF" />
+        </Style>
+        <Style Selector="ListBox.chain ListBoxItem:selected /template/ Border#Bd">
+            <Setter Property="Background" Value="{StaticResource SurfaceHoverBrush}" />
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="44,Auto,*,Auto">
+
+        <!-- Title bar -->
+        <Grid Grid.Row="0" Background="{StaticResource ChromeGradient}" PointerPressed="OnTitleBarPointerPressed">
+            <StackPanel Orientation="Horizontal" Margin="14,0" VerticalAlignment="Center">
+                <TextBlock x:Name="HeaderGlyph" Text="🔒" Foreground="{StaticResource TextBrush}" FontSize="14" VerticalAlignment="Center" />
+                <TextBlock x:Name="HeaderHost" Text="Connection security" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" FontSize="13"
+                           Margin="8,0,0,0" VerticalAlignment="Center" />
+            </StackPanel>
+            <Button Classes="caption close" Content="✕" HorizontalAlignment="Right" Height="44" IsCancel="True" Click="OnCloseClick" />
+        </Grid>
+
+        <!-- Summary card -->
+        <Border Grid.Row="1" Margin="20,16,20,0" CornerRadius="10" Padding="14,12" x:Name="SummaryCard" Background="#14FFFFFF">
+            <DockPanel>
+                <Border DockPanel.Dock="Left" Width="38" Height="38" CornerRadius="19" x:Name="SummaryBadge" Background="{StaticResource AccentBrush}" Margin="0,0,12,0">
+                    <TextBlock x:Name="SummaryGlyph" Text="🔒" FontSize="17" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="White" />
+                </Border>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock x:Name="SummaryTitle" Text="Connection is secure" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+                    <TextBlock x:Name="SummaryDetail" FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,2,0,0" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Details: chain on the left, selected certificate on the right -->
+        <Grid Grid.Row="2" Margin="20,14,20,0" ColumnDefinitions="220,14,*">
+
+            <DockPanel Grid.Column="0">
+                <TextBlock DockPanel.Dock="Top" Classes="section" Text="CONNECTION" />
+                <Border DockPanel.Dock="Top" Background="#0DFFFFFF" CornerRadius="8" Padding="10,8" Margin="0,0,0,14">
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Classes="key" Text="Protocol" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" Classes="value" x:Name="ProtocolText" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Classes="key" Text="Key exchange" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Classes="value" x:Name="KeyExchangeText" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Classes="key" Text="Cipher" Margin="0,0,14,0" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Classes="value" x:Name="CipherText" Margin="0" />
+                    </Grid>
+                </Border>
+                <TextBlock DockPanel.Dock="Top" Classes="section" Text="CERTIFICATE CHAIN" />
+                <ListBox x:Name="ChainList" Classes="chain" Background="#0DFFFFFF" BorderThickness="0" CornerRadius="8"
+                         SelectionChanged="OnChainSelectionChanged" Padding="4">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel>
+                                <TextBlock Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis" Foreground="{StaticResource TextBrush}" />
+                                <TextBlock Text="{Binding Role}" FontSize="10" Foreground="{StaticResource TextMutedBrush}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+
+            <Border Grid.Column="2" Background="#0DFFFFFF" CornerRadius="8" Padding="14,12">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="DetailPanel">
+                        <TextBlock Classes="section" Text="CERTIFICATE" />
+                        <TextBlock x:Name="NoCertText" Classes="value" Foreground="{StaticResource TextMutedBrush}"
+                                   Text="No certificate is available for this page." />
+                        <Grid x:Name="CertGrid" ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Classes="key" Text="Subject" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Classes="value" x:Name="SubjectText" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Classes="key" Text="Issuer" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Classes="value" x:Name="IssuerText" />
+                            <TextBlock Grid.Row="2" Grid.Column="0" Classes="key" Text="Alt. names" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" Classes="value" x:Name="SanText" />
+                            <TextBlock Grid.Row="3" Grid.Column="0" Classes="key" Text="Valid from" />
+                            <TextBlock Grid.Row="3" Grid.Column="1" Classes="value" x:Name="ValidFromText" />
+                            <TextBlock Grid.Row="4" Grid.Column="0" Classes="key" Text="Valid to" />
+                            <TextBlock Grid.Row="4" Grid.Column="1" Classes="value" x:Name="ValidToText" />
+                            <TextBlock Grid.Row="5" Grid.Column="0" Classes="key" Text="Public key" />
+                            <TextBlock Grid.Row="5" Grid.Column="1" Classes="value" x:Name="KeyText" />
+                            <TextBlock Grid.Row="6" Grid.Column="0" Classes="key" Text="Signature" />
+                            <TextBlock Grid.Row="6" Grid.Column="1" Classes="value" x:Name="SignatureText" />
+                            <TextBlock Grid.Row="7" Grid.Column="0" Classes="key" Text="Serial" />
+                            <TextBlock Grid.Row="7" Grid.Column="1" Classes="value mono" x:Name="SerialText" />
+                            <TextBlock Grid.Row="8" Grid.Column="0" Classes="key" Text="SHA-256" />
+                            <TextBlock Grid.Row="8" Grid.Column="1" Classes="value mono" x:Name="FingerprintText" />
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <!-- Footer -->
+        <DockPanel Grid.Row="3" Margin="20,14,20,18">
+            <Button DockPanel.Dock="Left" Classes="ghost" Content="Copy PEM" Click="OnCopyPemClick" x:Name="CopyButton" />
+            <Button Classes="primary" Content="Close" Width="90" HorizontalAlignment="Right" IsDefault="True" IsCancel="True" Click="OnCloseClick" />
+        </DockPanel>
+    </Grid>
+</Window>

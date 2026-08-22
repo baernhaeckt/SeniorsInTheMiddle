@@ -1,0 +1,165 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:DemoBrowser.ViewModels"
+        x:Class="DemoBrowser.MainWindow"
+        Title="Demo Browser"
+        Icon="avares://DemoBrowser/Assets/shield-256.png"
+        Width="1280"
+        Height="800"
+        MinWidth="800"
+        MinHeight="600"
+        Background="{StaticResource ChromeBrush}"
+        WindowStartupLocation="CenterScreen"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        ExtendClientAreaTitleBarHeightHint="40">
+
+    <!-- Custom chrome: the OS title bar is removed and the tab strip becomes the draggable caption area. -->
+    <Window.Styles>
+        <Style Selector="Button.tab">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="2,6,0,0" />
+            <Setter Property="MaxWidth" Value="200" />
+            <Setter Property="MinWidth" Value="90" />
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Grid>
+                        <Border Name="Bd" Background="{TemplateBinding Background}" CornerRadius="8,8,0,0" />
+                        <Border Name="Accent" Height="2" VerticalAlignment="Top" Margin="10,0" CornerRadius="1"
+                                Background="{StaticResource AccentGradient}" Opacity="0" />
+                        <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="Button.tab:pointerover /template/ Border#Bd">
+            <Setter Property="Background" Value="#14FFFFFF" />
+        </Style>
+        <Style Selector="Button.tab:pointerover">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        </Style>
+        <Style Selector="Button.tab.active /template/ Border#Bd">
+            <Setter Property="Background" Value="{StaticResource ToolbarBrush}" />
+        </Style>
+        <Style Selector="Button.tab.active /template/ Border#Accent">
+            <Setter Property="Opacity" Value="1" />
+        </Style>
+        <Style Selector="Button.tab.active">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        </Style>
+
+        <Style Selector="Button.tabclose">
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Margin" Value="4,0,6,0" />
+            <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+        </Style>
+    </Window.Styles>
+
+    <Border x:Name="RootBorder" Background="{StaticResource ChromeBrush}">
+        <Grid RowDefinitions="40,Auto,Auto,*,Auto">
+
+            <!-- Row 0: title bar = app badge + tab strip + caption buttons (all browser controls are elsewhere, see WebViewHost) -->
+            <Grid Grid.Row="0" Background="{StaticResource ChromeGradient}" ColumnDefinitions="Auto,*,Auto" PointerPressed="OnTitleBarPointerPressed">
+
+                <!-- App badge -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="12,0,8,0" VerticalAlignment="Center">
+                    <Viewbox Width="20" Height="20">
+                        <Canvas Width="32" Height="32">
+                            <Path Data="{StaticResource ShieldGeometry}" Fill="{StaticResource ShieldFillBrush}"
+                                  Stroke="{StaticResource ShieldStrokeBrush}" StrokeThickness="2" StrokeJoin="Round" />
+                            <Path Data="{StaticResource ShieldRightGeometry}" Fill="#FF38B5EE" Opacity="0.18" />
+                            <Rectangle Canvas.Left="11" Canvas.Top="14" Width="10" Height="4" RadiusX="1" RadiusY="1" Fill="{StaticResource ShieldBarBrush}" />
+                        </Canvas>
+                    </Viewbox>
+                    <TextBlock Text="Demo Browser" Foreground="{StaticResource TextMutedBrush}" FontWeight="SemiBold" FontSize="12"
+                               Margin="8,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <!-- Tabs + new tab button -->
+                <DockPanel Grid.Column="1" VerticalAlignment="Bottom">
+                    <Button DockPanel.Dock="Right" Classes="icon" Content="+" ToolTip.Tip="New tab (Ctrl+T / ⌘T)"
+                            Width="30" Height="30" Margin="4,0,0,4" Command="{Binding NewTabCommand}" />
+                    <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding Tabs}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:TabViewModel}">
+                                    <Button Classes="tab" Classes.active="{Binding IsActive}"
+                                            Command="{Binding $parent[Window].DataContext.ActivateTabCommand}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip.Tip="{Binding Source}">
+                                        <DockPanel LastChildFill="True">
+                                            <Button DockPanel.Dock="Right" Classes="icon tabclose" Content="✕" ToolTip.Tip="Close tab"
+                                                    Command="{Binding $parent[Window].DataContext.CloseTabCommand}"
+                                                    CommandParameter="{Binding}" />
+                                            <TextBlock Text="{Binding Title}" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </DockPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+
+                <!-- Caption buttons -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top">
+                    <Button Classes="caption" Content="─" ToolTip.Tip="Minimize" Click="OnMinimizeClick" />
+                    <Button x:Name="MaximizeButton" Classes="caption" Content="☐" ToolTip.Tip="Maximize" Click="OnMaximizeClick" />
+                    <Button Classes="caption close" Content="✕" ToolTip.Tip="Close" Click="OnCloseClick" />
+                </StackPanel>
+            </Grid>
+
+            <!-- Row 1: navigation toolbar -->
+            <Border Grid.Row="1" Background="{StaticResource ToolbarBrush}" Padding="8,6">
+                <DockPanel>
+                    <Button DockPanel.Dock="Left" Classes="icon" Content="←" ToolTip.Tip="Back" Command="{Binding BackCommand}" />
+                    <Button DockPanel.Dock="Left" Classes="icon" Content="→" ToolTip.Tip="Forward" Command="{Binding ForwardCommand}" />
+                    <Button DockPanel.Dock="Left" Classes="icon" ToolTip.Tip="Reload / Stop (F5)" Command="{Binding ReloadOrStopCommand}">
+                        <TextBlock x:Name="ReloadStopGlyph" Text="↻" />
+                    </Button>
+                    <Button DockPanel.Dock="Right" Classes="icon" Content="⚙" ToolTip.Tip="Settings" Click="OnSettingsClick" />
+                    <Button DockPanel.Dock="Right" Classes="icon" Content="🛠" ToolTip.Tip="Proxy diagnostics (Ctrl+Shift+D)" Click="OnDiagnosticsClick" />
+                    <Grid Margin="8,0">
+                        <TextBox x:Name="AddressBar" Classes="pill" Padding="30,5,12,5"
+                                 Text="{Binding AddressText, Mode=TwoWay}"
+                                 KeyDown="OnAddressBarKeyDown" GotFocus="OnAddressBarGotFocus" />
+                        <Button Classes="icon" Width="26" Height="24" FontSize="12" Margin="4,0,0,0"
+                                HorizontalAlignment="Left" VerticalAlignment="Center" ToolTip.Tip="View site information"
+                                Content="{Binding ActiveTab.SecurityGlyph, FallbackValue=◎}" Click="OnSecurityInfoClick" />
+                    </Grid>
+                </DockPanel>
+            </Border>
+
+            <!-- Row 2: non-blocking warning banner -->
+            <Border Grid.Row="2" Background="#FF4A3A12" BorderBrush="#FFB58A1E" BorderThickness="0,0,0,1" Padding="12,6"
+                    IsVisible="{Binding HasWarning}">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Classes="icon" Content="✕" ToolTip.Tip="Dismiss" Command="{Binding DismissWarningCommand}" />
+                    <TextBlock Text="⚠" DockPanel.Dock="Left" Foreground="#FFF2C14E" Margin="0,0,8,0" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding WarningMessage}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="#FFF7E3A6" />
+                </DockPanel>
+            </Border>
+
+            <!-- Row 3: all browser controls live here simultaneously; only IsVisible toggles on tab switch. -->
+            <Grid x:Name="WebViewHost" Grid.Row="3" Background="White" />
+
+            <!-- Row 4: status bar (Chromium's link/loading status; CEF has no built-in overlay like WebView2) -->
+            <Border Grid.Row="4" Background="{StaticResource ToolbarBrush}" Height="22" Padding="10,0">
+                <TextBlock Text="{Binding ActiveStatusText}" Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            </Border>
+        </Grid>
+    </Border>
+</Window>

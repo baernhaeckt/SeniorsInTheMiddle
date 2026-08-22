@@ -1,0 +1,200 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="DemoBrowser.App"
+             RequestedThemeVariant="Dark">
+
+    <Application.Resources>
+        <!-- Palette (project-wide, huemint): #0D1216 ink · #0C2A2B deep teal · #225851 teal · #288879 bright teal · #38B5EE cyan · #8A3D56 wine · #A5AFB4 / #949DA0 greys · #FFFFFF -->
+        <Color x:Key="ChromeTopColor">#FF0D1216</Color>
+        <Color x:Key="ChromeBottomColor">#FF0C2A2B</Color>
+        <SolidColorBrush x:Key="ChromeBrush" Color="#FF0C2A2B" />
+        <SolidColorBrush x:Key="ToolbarBrush" Color="#FF123B3A" />
+        <SolidColorBrush x:Key="SurfaceBrush" Color="#FF225851" />
+        <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#FF288879" />
+        <SolidColorBrush x:Key="BorderBrushSubtle" Color="#22FFFFFF" />
+        <SolidColorBrush x:Key="TextBrush" Color="#FFFFFFFF" />
+        <SolidColorBrush x:Key="TextMutedBrush" Color="#FFA5AFB4" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#FF288879" />
+        <SolidColorBrush x:Key="DangerBrush" Color="#FF8A3D56" />
+        <LinearGradientBrush x:Key="AccentGradient" StartPoint="0%,0%" EndPoint="100%,0%">
+            <GradientStop Color="#FF288879" Offset="0" />
+            <GradientStop Color="#FF38B5EE" Offset="1" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="ChromeGradient" StartPoint="0%,0%" EndPoint="0%,100%">
+            <GradientStop Color="#FF0D1216" Offset="0" />
+            <GradientStop Color="#FF0C2A2B" Offset="1" />
+        </LinearGradientBrush>
+
+        <!-- Shield geometry from the frontend's shield.svg -->
+        <StreamGeometry x:Key="ShieldGeometry">M16 2 4 7v9c0 7.2 5 12.4 12 14 7-1.6 12-6.8 12-14V7L16 2Z</StreamGeometry>
+        <StreamGeometry x:Key="ShieldRightGeometry">M16 2v28c7-1.6 12-6.8 12-14V7L16 2Z</StreamGeometry>
+        <SolidColorBrush x:Key="ShieldFillBrush" Color="#FF0D1216" />
+        <SolidColorBrush x:Key="ShieldStrokeBrush" Color="#FF3FB39C" />
+        <SolidColorBrush x:Key="ShieldBarBrush" Color="#FFD4708D" />
+
+        <!-- Dark text input / combo box colours for the Fluent theme, so dialogs stay consistent with the chrome -->
+        <SolidColorBrush x:Key="TextControlBackground" Color="#FF225851" />
+        <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#FF288879" />
+        <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#FF288879" />
+        <SolidColorBrush x:Key="TextControlBackgroundDisabled" Color="#FF225851" />
+        <SolidColorBrush x:Key="TextControlBorderBrush" Color="#22FFFFFF" />
+        <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#22FFFFFF" />
+        <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#FF288879" />
+        <SolidColorBrush x:Key="TextControlForeground" Color="#FFFFFFFF" />
+        <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="#FFFFFFFF" />
+        <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#FFFFFFFF" />
+        <SolidColorBrush x:Key="TextControlSelectionHighlightColor" Color="#FF288879" />
+        <SolidColorBrush x:Key="ComboBoxBackground" Color="#FF225851" />
+        <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#FF288879" />
+        <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#FF288879" />
+        <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#22FFFFFF" />
+        <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#22FFFFFF" />
+        <SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="#FF288879" />
+        <SolidColorBrush x:Key="ComboBoxForeground" Color="#FFFFFFFF" />
+        <SolidColorBrush x:Key="ComboBoxForegroundPointerOver" Color="#FFFFFFFF" />
+        <SolidColorBrush x:Key="ComboBoxForegroundPressed" Color="#FFFFFFFF" />
+        <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#FF123B3A" />
+        <SolidColorBrush x:Key="ComboBoxDropDownBorderBrush" Color="#22FFFFFF" />
+        <SolidColorBrush x:Key="ComboBoxDropDownGlyphForeground" Color="#FFA5AFB4" />
+        <SolidColorBrush x:Key="ComboBoxItemBackgroundPointerOver" Color="#FF288879" />
+        <SolidColorBrush x:Key="ComboBoxItemBackgroundSelected" Color="#FF288879" />
+        <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPointerOver" Color="#FF288879" />
+        <SolidColorBrush x:Key="ComboBoxItemForeground" Color="#FFFFFFFF" />
+        <SolidColorBrush x:Key="ComboBoxItemForegroundSelected" Color="#FFFFFFFF" />
+        <SolidColorBrush x:Key="ComboBoxItemForegroundPointerOver" Color="#FFFFFFFF" />
+        <SolidColorBrush x:Key="ComboBoxItemForegroundSelectedPointerOver" Color="#FFFFFFFF" />
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme />
+
+        <Style Selector="TextBox">
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="CaretBrush" Value="{StaticResource TextBrush}" />
+            <Setter Property="SelectionBrush" Value="{StaticResource AccentBrush}" />
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Padding" Value="10,5" />
+        </Style>
+        <Style Selector="ToolTip">
+            <Setter Property="Background" Value="{StaticResource ToolbarBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSubtle}" />
+        </Style>
+
+        <!-- Flat icon button used everywhere in the chrome -->
+        <Style Selector="Button.icon">
+            <Setter Property="Width" Value="34" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Margin" Value="1,0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Name="Bd" Background="{TemplateBinding Background}" CornerRadius="6">
+                        <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="Button.icon:pointerover /template/ Border#Bd">
+            <Setter Property="Background" Value="#1FFFFFFF" />
+        </Style>
+        <Style Selector="Button.icon:pressed /template/ Border#Bd">
+            <Setter Property="Background" Value="#33FFFFFF" />
+        </Style>
+        <Style Selector="Button.icon:disabled">
+            <Setter Property="Opacity" Value="0.3" />
+        </Style>
+
+        <!-- Window caption buttons (min / max / close) -->
+        <Style Selector="Button.caption">
+            <Setter Property="Width" Value="46" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Name="Bd" Background="{TemplateBinding Background}">
+                        <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="Button.caption:pointerover /template/ Border#Bd">
+            <Setter Property="Background" Value="#1FFFFFFF" />
+        </Style>
+        <Style Selector="Button.caption.close:pointerover /template/ Border#Bd">
+            <Setter Property="Background" Value="{StaticResource DangerBrush}" />
+        </Style>
+
+        <!-- Pill-shaped text input -->
+        <Style Selector="TextBox.pill">
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushSubtle}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="12,5" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
+        <!-- Accent-filled primary button and ghost secondary button for dialogs -->
+        <Style Selector="Button.primary">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Background" Value="{StaticResource AccentGradient}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="18,7" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Name="Bd" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="Button.primary:pointerover /template/ Border#Bd">
+            <Setter Property="Opacity" Value="0.88" />
+        </Style>
+        <Style Selector="Button.ghost">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="18,7" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{StaticResource BorderBrushSubtle}"
+                            BorderThickness="1" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="Button.ghost:pointerover /template/ Border#Bd">
+            <Setter Property="Background" Value="#1FFFFFFF" />
+        </Style>
+        <Style Selector="Button.ghost:disabled">
+            <Setter Property="Opacity" Value="0.4" />
+        </Style>
+    </Application.Styles>
+</Application>

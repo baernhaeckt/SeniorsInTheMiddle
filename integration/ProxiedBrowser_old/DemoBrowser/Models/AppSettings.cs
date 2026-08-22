@@ -6,12 +6,6 @@ namespace DemoBrowser.Models;
 public sealed class AppSettings
 {
     /// <summary>
-    /// <c>false</c> connects directly and skips both the proxy switches and the CA download, so the browser
-    /// works without a reachable backend. Every other proxy setting below is then ignored.
-    /// </summary>
-    public bool UseProxy { get; set; } = true;
-
-    /// <summary>
     /// "http" (plain HTTP CONNECT proxy, default port <see cref="DefaultHttpProxyPort"/>) or
     /// "https" (TLS-terminating proxy, default port <see cref="DefaultHttpsProxyPort"/>).
     /// </summary>
@@ -38,7 +32,6 @@ public sealed class AppSettings
 
     public AppSettings Clone() => new()
     {
-        UseProxy = UseProxy,
         ProxyScheme = ProxyScheme,
         ProxyHost = ProxyHost,
         ProxyPort = ProxyPort,

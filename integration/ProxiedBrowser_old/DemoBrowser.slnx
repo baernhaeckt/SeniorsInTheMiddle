@@ -1,4 +1,3 @@
 <Solution>
   <Project Path="DemoBrowser/DemoBrowser.csproj" />
-  <Project Path="DemoBrowser.Tests/DemoBrowser.Tests.csproj" />
 </Solution>

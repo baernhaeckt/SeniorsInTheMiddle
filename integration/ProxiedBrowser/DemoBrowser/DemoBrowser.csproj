@@ -2,27 +2,76 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <UseWPF>true</UseWPF>
     <LangVersion>14</LangVersion>
     <AssemblyName>DemoBrowser</AssemblyName>
     <RootNamespace>DemoBrowser</RootNamespace>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <PublishSingleFile>true</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- AVLN3001: MainWindow/SettingsWindow take their services via constructor, so the XAML runtime loader cannot instantiate them (not needed). -->
+    <NoWarn>$(NoWarn);AVLN3001</NoWarn>
+    <!-- CefGlue.Common's targets expect the target platform as a plain Windows-style platform name for local builds. -->
+    <Platforms>AnyCPU;x64</Platforms>
+  </PropertyGroup>
+
+  <!-- macOS application bundle written by Dotnet.Bundle (dotnet msbuild -t:BundleApp), see publish.sh -->
+  <PropertyGroup>
+    <CFBundleName>DemoBrowser</CFBundleName>
+    <CFBundleDisplayName>Demo Browser</CFBundleDisplayName>
+    <CFBundleIdentifier>ch.baernhaeckt.seniorsinthemiddle.demobrowser</CFBundleIdentifier>
+    <CFBundleVersion>1.0.0</CFBundleVersion>
+    <CFBundleShortVersionString>1.0.0</CFBundleShortVersionString>
+    <CFBundlePackageType>APPL</CFBundlePackageType>
+    <CFBundleSignature>????</CFBundleSignature>
+    <CFBundleExecutable>DemoBrowser</CFBundleExecutable>
+    <CFBundleIconFile>app.icns</CFBundleIconFile>
+    <NSPrincipalClass>NSApplication</NSPrincipalClass>
+    <NSHighResolutionCapable>true</NSHighResolutionCapable>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4129.50" />
+    <PackageReference Include="Avalonia" Version="11.3.20" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.20" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.20" />
+    <PackageReference Include="CefGlue.Avalonia" Version="120.6099.211" />
+    <PackageReference Include="Dotnet.Bundle" Version="0.9.13" />
   </ItemGroup>
 
+  <!--
+    Windows only: CefGlue stages the Chromium locale packs under runtimes\win-x64\native\locales, but libcef looks
+    for them in locales\ next to itself; without them the renderer shows blank pages. Registering them as content
+    instead of copying them after the build also gets them into the single-file bundle, which carries only what the
+    publish pipeline knows about. macOS ships them flat via cef.redist.osx64 and is not affected.
+  -->
+  <ItemGroup Condition="'$(CefGlueTargetPlatform)' == 'win-x64'">
+    <None Include="@(CefRuntimeWin64Locales)" Visible="false">
+      <Link>locales\%(RecursiveDir)%(FileName)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
+  <!--
+    CefGlue copies its browser-process helper including the .pdb files; DebugType=none only silences our own symbols.
+    The single-file bundler skips symbol files, so they would be left next to the .exe as the only loose files.
+  -->
+  <Target Name="RemoveSymbolsFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.pdb'" />
+    </ItemGroup>
+  </Target>
+
   <ItemGroup>
-    <Resource Include="Assets\app.ico" />
+    <AvaloniaResource Include="Assets\shield-256.png" />
+    <AvaloniaResource Include="Assets\app.ico" />
+    <!-- Dotnet.Bundle copies CFBundleIconFile from the output directory -->
+    <None Include="Assets\app.icns" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

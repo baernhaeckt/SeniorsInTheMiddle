@@ -1,0 +1,12 @@
+<Project>
+  <!--
+    CefGlue resolves which CEF runtime to copy from $(RuntimeIdentifier) while NuGet props are being imported,
+    i.e. before the project body is evaluated. The RID therefore has to be known this early.
+    CefGlue 120 ships CEF for macOS x64 only (no osx-arm64 helper); Apple Silicon runs the x64 build under Rosetta 2.
+  -->
+  <PropertyGroup>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('OSX'))">osx-x64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">win-x64</RuntimeIdentifier>
+    <SelfContained Condition="'$(SelfContained)' == ''">false</SelfContained>
+  </PropertyGroup>
+</Project>
