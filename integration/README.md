@@ -17,7 +17,7 @@ Then open **http://localhost:3100**.
 | Service | What it is |
 | --- | --- |
 | `certgen` | One-shot. Issues the harness CA and the receiver's HTTPS certificate into the `pki` volume. |
-| `proxy` | **The thing under test.** Built from `../backend/Dockerfile`, unmodified. Proxy traffic and the API on 8080, the same over TLS on 8443. |
+| `proxy` | **The thing under test.** Built from `../backend/Dockerfile`, unmodified. Proxy traffic on 3128, the same over TLS on 3127, the API and telemetry stream on 8080. |
 | `receiver` | An ordinary destination host on 3000 (HTTP) and 3443 (HTTPS). Knows nothing about the proxy. |
 | `sender` | A device configured to use the proxy. Generates traffic and serves the testing UI on 3100. |
 | `dashboard` | Optional (`--profile dashboard`). The SPA from `../frontend`, on 8081. |
@@ -147,7 +147,7 @@ curl -s http://localhost:3100/api/stats
 docker compose logs proxy | grep "Client -> remote" | head
 
 # The same path by hand, from outside the compose network
-curl -sI --proxy http://localhost:8080 http://receiver.sitm.local:3000/api/v1/status
+curl -sI --proxy http://localhost:3128 http://receiver.sitm.local:3000/api/v1/status
 
 # One-shot, for CI: exits non-zero if the proxy regresses
 docker compose run --rm -e BURST=200 sender
@@ -173,9 +173,12 @@ defaults to a proxy on this machine, which is exactly what the harness runs:
 | feed | **live proxy** |
 | telemetry hub URL | `http://localhost:8080/hub/telemetry` |
 | proxy host | `localhost` |
-| proxy port | `8080` |
-| CA URL | derived: `http://localhost:8080/ca.crt` |
-| PAC URL | derived: `http://localhost:8080/proxy.pac` |
+| proxy port | `3128` |
+| CA URL | derived: `http://localhost:3128/ca.crt` |
+| PAC URL | derived: `http://localhost:3128/proxy.pac` |
+
+The hub is on the proxy's API port and the traffic goes through its proxy port; they are
+two listeners in the same container, which is why those numbers differ.
 
 The header should settle on `live · http://localhost:8080/hub/telemetry`. Every request the
 sender drives through the proxy shows up as a row — which is why the fixtures are Swiss and

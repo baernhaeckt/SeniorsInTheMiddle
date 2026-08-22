@@ -16,7 +16,7 @@ const LIVE: RuntimeConfig = {
   source: 'ws',
   hubUrl: 'http://proxy:8080/hub/telemetry',
   proxyHost: 'proxy',
-  proxyPort: '8080',
+  proxyPort: '3128',
   networkName: '',
   caUrl: '',
   pacUrl: '',
@@ -40,9 +40,10 @@ describe('validate', () => {
   it('ships a default that works against a proxy on this machine', () => {
     // A fresh install should reach `docker compose up` in integration/ with no typing.
     expect(validate(BLANK_CONFIG)).toEqual({})
+    // The hub is on the API port, the certificate and PAC file on the proxy port.
     expect(BLANK_CONFIG.hubUrl).toBe('http://localhost:8080/hub/telemetry')
-    expect(caUrlOf(BLANK_CONFIG)).toBe('http://localhost:8080/ca.crt')
-    expect(pacUrlOf(BLANK_CONFIG)).toBe('http://localhost:8080/proxy.pac')
+    expect(caUrlOf(BLANK_CONFIG)).toBe('http://localhost:3128/ca.crt')
+    expect(pacUrlOf(BLANK_CONFIG)).toBe('http://localhost:3128/proxy.pac')
   })
 
   it('requires a hub url and proxy address for the live source', () => {
@@ -86,8 +87,8 @@ describe('normalize and derived urls', () => {
   })
 
   it('derives certificate and PAC urls unless given', () => {
-    expect(caUrlOf(LIVE)).toBe('http://proxy:8080/ca.crt')
-    expect(pacUrlOf(LIVE)).toBe('http://proxy:8080/proxy.pac')
+    expect(caUrlOf(LIVE)).toBe('http://proxy:3128/ca.crt')
+    expect(pacUrlOf(LIVE)).toBe('http://proxy:3128/proxy.pac')
     expect(caUrlOf({ ...LIVE, caUrl: 'https://c' })).toBe('https://c')
     expect(pacUrlOf({ ...LIVE, pacUrl: ' https://p ' })).toBe('https://p')
   })
@@ -126,6 +127,16 @@ describe('loadConfig / saveConfig', () => {
       [STORAGE_KEY]: JSON.stringify({ source: 'ws', proxyHost: 'bad host' }),
     })
     expect(loadConfig(badHost)).toBeNull()
+  })
+
+  it('ignores a config saved under an earlier key', () => {
+    // A v2 config holds a proxy address on what is now the backend's API port, so the
+    // setup guide built from it would point a device at a port that does not proxy.
+    const stale = memoryStorage({
+      'sitm.config.v2': JSON.stringify({ ...LIVE, proxyPort: '8080' }),
+    })
+    expect(STORAGE_KEY).toBe('sitm.config.v3')
+    expect(loadConfig(stale)).toBeNull()
   })
 
   it('salvages a partially corrupt stored config when what is left validates', () => {

@@ -5,6 +5,9 @@
 #   receiver  an ordinary destination host, reachable over HTTP and HTTPS
 #   sender    a device configured to use the proxy, plus the testing UI on :3100
 #
+# The proxy publishes three ports: :3128 the proxy, :3127 the proxy over TLS, :8080 the
+# WebAPI, Swagger and the telemetry stream. Only :8080 answers an API call.
+#
 #   docker compose up --build              run the harness
 #   docker compose --profile dashboard up  ... and the dashboard SPA on :8081
 #
@@ -39,8 +42,9 @@ services:
       # Without a key the JwtBearer registration builds a SymmetricSecurityKey over zero
       # bytes and the app fails to start. appsettings.json ships it empty on purpose.
       Jwt__Key: ${JWT_KEY:-aGFybmVzcy1vbmx5LWtleS1ub3QtYS1zZWNyZXQtMDAwMQ==}
-      Proxy__HttpPort: "8080"
-      Proxy__HttpsPort: "8443"
+      Proxy__HttpPort: "3128"
+      Proxy__HttpsPort: "3127"
+      Proxy__ApiPort: "8080"
       # Added to the dashboard certificate and used by ForwardProxyMiddleware to spot an
       # absolute-form request that points back at this app.
       Proxy__HostNames__0: proxy
@@ -63,8 +67,9 @@ services:
       - certs:/app/certs
       - pki:/pki:ro
     ports:
+      - "3128:3128"
+      - "3127:3127"
       - "8080:8080"
-      - "8443:8443"
     networks: [harness]
 
   # -------------------------------------------------------- the destination host
@@ -100,7 +105,7 @@ services:
       - receiver
     environment:
       PROXY_HOST: proxy
-      PROXY_PORT: "8080"
+      PROXY_PORT: "3128"
       TARGET_HOST: receiver.sitm.local
       TARGET_HTTP_PORT: "3000"
       TARGET_HTTPS_PORT: "3443"
@@ -122,8 +127,8 @@ services:
     networks: [harness]
 
   # ------------------------------------------------------- optional, off by default
-  # The dashboard SPA. Its defaults already point at the proxy on localhost:8080, so it
-  # attaches to the telemetry hub without anything being typed in.
+  # The dashboard SPA. Its defaults already point at the telemetry hub on localhost:8080
+  # and at the proxy on localhost:3128, so it attaches without anything being typed in.
   dashboard:
     profiles: [dashboard]
     build:

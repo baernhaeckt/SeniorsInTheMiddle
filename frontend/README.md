@@ -77,11 +77,16 @@ first run the app opens a setup screen and asks for:
 | Wi-Fi name              | the network that already routes through the proxy, if there is one |
 | Certificate and PAC URL | optional, derived from host and port when left empty               |
 
-The form starts filled in for a proxy on this machine — `http://localhost:8080/hub/telemetry`,
-host `localhost`, port `8080` — which is what `docker compose up` in `integration/` runs, so
-a fresh install reaches a local proxy without anything being typed.
+The form starts filled in for a proxy on this machine — hub
+`http://localhost:8080/hub/telemetry`, host `localhost`, port `3128` — which is what
+`docker compose up` in `integration/` runs, so a fresh install reaches a local proxy
+without anything being typed.
 
-The values are saved in `localStorage` under `sitm.config.v2` and belong to that
+The two ports differ on purpose: the backend serves the telemetry hub on its API port
+(`8080`) and takes proxy traffic on `3128`, so the certificate and PAC URLs derived from
+host and port point at `3128` while the hub URL does not.
+
+The values are saved in `localStorage` under `sitm.config.v3` and belong to that
 browser. Reconfigure in the header reopens the form with the current values, and
 Cancel goes back without changing anything. Saving resets the dashboard so
 traffic from the old source does not sit there looking live.

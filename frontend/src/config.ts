@@ -28,21 +28,31 @@ export const RuntimeConfigSchema = v.object({
 export type RuntimeConfig = v.InferOutput<typeof RuntimeConfigSchema>
 
 /**
- * Bumped from v1, which stored a `wsUrl` pointing at a raw socket. Those configs cannot
- * reach a hub, so they are better forgotten than half-migrated.
+ * A stored config that can no longer do its job is forgotten rather than half-migrated,
+ * and the key is bumped to make that happen. `v1` held a `wsUrl` pointing at a raw socket,
+ * which cannot reach a hub. `v2` held a proxy address on the port the backend now serves
+ * its API from, so the setup guide built from it would tell people to configure a device
+ * against a port that does not proxy.
+ *
+ * A number in a stored address cannot be rewritten safely, because a deployment is free to
+ * put the proxy anywhere; sending people through the setup screen once shows them the
+ * current defaults and lets them re-enter a custom address.
  */
-export const STORAGE_KEY = 'sitm.config.v2'
+export const STORAGE_KEY = 'sitm.config.v3'
 
 /**
  * What a fresh install starts with: a proxy running on this machine, which is what
  * `docker compose up` in `integration/` gives you. Certificate and PAC URLs are left
  * empty on purpose — they derive from the address, so they stay right if it changes.
+ *
+ * The hub is on the API port and the proxy address is the proxy port; they are different
+ * listeners in the same process, which is why the two ports here do not match.
  */
 export const BLANK_CONFIG: RuntimeConfig = {
   source: 'ws',
   hubUrl: 'http://localhost:8080/hub/telemetry',
   proxyHost: 'localhost',
-  proxyPort: '8080',
+  proxyPort: '3128',
   networkName: '',
   caUrl: '',
   pacUrl: '',
@@ -52,10 +62,10 @@ export const BLANK_CONFIG: RuntimeConfig = {
 export const PLACEHOLDERS: Record<Exclude<keyof RuntimeConfig, 'source'>, string> = {
   hubUrl: 'http://proxy.sitm.local:8080/hub/telemetry',
   proxyHost: 'proxy.sitm.local',
-  proxyPort: '8080',
+  proxyPort: '3128',
   networkName: 'SITM-Guest',
-  caUrl: 'http://proxy.sitm.local:8080/ca.crt',
-  pacUrl: 'http://proxy.sitm.local:8080/proxy.pac',
+  caUrl: 'http://proxy.sitm.local:3128/ca.crt',
+  pacUrl: 'http://proxy.sitm.local:3128/proxy.pac',
 }
 
 export function proxyAddressOf(config: RuntimeConfig): string {
