@@ -7,6 +7,8 @@ service gets its own socket, and both processes run in the same container.
 | ----------------- | -------------------------------------------------------------------------- |
 | `service_runtime` | the shared package: socket, protocol, lifecycle, errors                     |
 | `example_service` | reference service: implement `Service`, call `run()`, done                  |
+| `pii_service`     | Presidio/spaCy PII detection (`analyze`, `replacement_text`)                |
+| `privacy_check_service` | re-identification risk of replaced names (`risk_check`), sentence-transformers + pymc |
 | `test-host`       | dotnet console app that calls the example service and asserts the contract  |
 
 The packages are plain directories, not installed distributions. They have no
@@ -161,15 +163,16 @@ image (`backend/Dockerfile`, built from the repository root), supervised by
 supervisord (`backend/supervisord.conf`). Each service is one `[program:..]`
 block with its own socket under `/run/services/`, and the proxy is told where
 to find it with `Services__<Name>__SocketPath`. The uv lock at the repo root
-provides the python dependencies; spaCy models are downloaded at build time
-(`SPACY_MODELS`, default `de_core_news_lg en_core_web_lg`) so nothing is
-fetched at runtime.
+provides the python dependencies; spaCy models (`SPACY_MODELS`, default
+`de_core_news_lg en_core_web_lg`) and the embedding model (`EMBEDDING_MODEL`,
+default `sentence-transformers/all-MiniLM-L6-v2`, cached under `HF_HOME=/opt/hf`)
+are downloaded at build time so nothing is fetched at runtime.
 
 ```bash
 docker build -f backend/Dockerfile -t sitm-proxy .
 docker run --rm -p 8080:8080 -e Jwt__Key=... sitm-proxy
 curl http://localhost:8080/healthz        # pings every configured service
-docker exec <id> supervisorctl status      # pii-service, proxy
+docker exec <id> supervisorctl status      # pii-service, privacy-check-service, proxy
 ```
 
 ## Adding a new service

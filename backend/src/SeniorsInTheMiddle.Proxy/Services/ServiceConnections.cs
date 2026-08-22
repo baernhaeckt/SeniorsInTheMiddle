@@ -8,9 +8,11 @@ public sealed class ServiceConnections : IAsyncDisposable
 {
     /// <summary>Services this build knows how to talk to. A name missing from the
     /// configuration is still listed, as disabled, so health output names it.</summary>
-    public static readonly string[] KnownServices = [PiiService];
+    public static readonly string[] KnownServices = [PiiService, PrivacyCheckService];
 
     public const string PiiService = "Pii";
+
+    public const string PrivacyCheckService = "PrivacyCheck";
 
     private readonly Dictionary<string, ServiceConnection> connections = new(StringComparer.OrdinalIgnoreCase);
 

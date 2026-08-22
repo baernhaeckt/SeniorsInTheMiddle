@@ -133,18 +133,23 @@ which is how the tests and `curl` reach it.
 
 ## Python services
 
-The PII detection lives in a python process (`services/pii_service`) that runs next
-to this one in the container image, supervised by supervisord. Each python service
-owns one unix socket and is configured by name:
+The PII detection (`services/pii_service`) and the re-identification risk check
+(`services/privacy_check_service`) live in python processes that run next to this one
+in the container image, supervised by supervisord. Each python service owns one unix
+socket and is configured by name:
 
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `Services:Pii:SocketPath` | empty | Unix socket of the PII service. Empty disables it, which is the normal state on a Windows dev box. The image sets `/run/services/pii-service.sock`. |
 | `Services:Pii:ConnectTimeoutSeconds` | `30` | How long the first connect keeps retrying while the daemon loads its model. |
 | `Services:Pii:MaxFrameBytes` | `8388608` | Largest reply accepted; matches `SERVICE_MAX_FRAME_BYTES` on the python side. |
+| `Services:PrivacyCheck:SocketPath` | empty | Unix socket of the privacy check service. The image sets `/run/services/privacy-check-service.sock`. |
+| `Services:PrivacyCheck:ConnectTimeoutSeconds` | `60` | As above; this daemon loads a sentence-transformers model. |
 
-`IPiiServiceClient` (`Services/Pii`) is the typed client; `ServiceConnection` behind it
-reconnects when supervisord restarts the daemon. `GET /healthz` on the API port pings
+`IPiiServiceClient` (`Services/Pii`) and `IPrivacyCheckServiceClient` (`Services/PrivacyCheck`)
+are the typed clients; `ServiceConnection` behind them reconnects when supervisord restarts
+the daemon. A `RiskCheckAsync` call runs an MCMC sampler on the python side and takes
+tens of seconds; call it off the request path. `GET /healthz` on the API port pings
 every configured service and answers 503 with one line per service when one is down.
 A startup probe logs each service's `$info` once, so a wrong path shows up in the
 container log immediately. The wire format is described in `services/README.md`.

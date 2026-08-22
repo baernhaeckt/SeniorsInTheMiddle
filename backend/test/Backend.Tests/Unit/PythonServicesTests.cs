@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 using SeniorsInTheMiddle.Proxy.Services;
 using SeniorsInTheMiddle.Proxy.Services.Pii;
+using SeniorsInTheMiddle.Proxy.Services.PrivacyCheck;
 
 namespace Backend.Tests.Unit;
 
@@ -91,5 +92,37 @@ public class PythonServicesTests
         Assert.IsFalse(client.IsEnabled);
         Assert.IsTrue(connections.All.Any(c => c.Name == ServiceConnections.PiiService));
         await Assert.ThrowsExactlyAsync<ServiceUnavailableException>(() => client.AnalyzeAsync("Hans Muster"));
+    }
+
+    [TestMethod]
+    public void RiskCheckResult_Reads_The_Python_Snake_Case_Shape()
+    {
+        const string json = """
+            {
+              "risks": [
+                { "name": "Hans Muster", "risk_probability": 0.7321 }
+              ]
+            }
+            """;
+
+        PrivacyRiskResult result = JsonSerializer.Deserialize<PrivacyRiskResult>(json, PiiJson.Options)!;
+
+        Assert.IsTrue(result.HasRisks);
+        PrivacyRisk risk = result.Risks.Single();
+        Assert.AreEqual("Hans Muster", risk.Name);
+        Assert.AreEqual(0.7321, risk.RiskProbability, 0.0001);
+        Assert.AreEqual(0.7321, result.MaxRiskProbability, 0.0001);
+    }
+
+    [TestMethod]
+    public async Task Unconfigured_PrivacyCheck_Service_Is_Disabled_Not_Broken()
+    {
+        await using ServiceConnections connections = new(ServiceOptions.From(Config()), NullLoggerFactory.Instance);
+        IPrivacyCheckServiceClient client = new PrivacyCheckServiceClient(connections);
+
+        Assert.IsFalse(client.IsEnabled);
+        Assert.IsTrue(connections.All.Any(c => c.Name == ServiceConnections.PrivacyCheckService));
+        await Assert.ThrowsExactlyAsync<ServiceUnavailableException>(
+            () => client.RiskCheckAsync("Hans Muster wohnt in Bern", ["Hans Muster"]));
     }
 }

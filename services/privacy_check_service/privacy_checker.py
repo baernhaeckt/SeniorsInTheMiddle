@@ -95,8 +95,8 @@ class PrivacyChecker:
             # Character similarity
             PrivacyChecker._levenshtein(query, candidate_name),
 
-            # z-score of the similarity
-            (embedding_similarity - similarities.mean()) / similarities.std()
+            # z-score of the similarity (0 for a single candidate, where std is 0)
+            (embedding_similarity - similarities.mean()) / std if (std := float(similarities.std())) > 0 else 0.0
         ]
 
     @staticmethod
@@ -139,7 +139,7 @@ class PrivacyChecker:
 
         return trace.posterior["p"].mean(dim=("chain", "draw")).values
 
-    def check_privacy_risk(self, text: str, replaced_names: list[str]) -> dict:
+    def check_privacy_risk(self, text: str, replaced_names: list[str]) -> list[dict]:
         """
         Checks if the given text contains any sensitive information based on the replaced names.
 
@@ -147,7 +147,8 @@ class PrivacyChecker:
             text (str): The text to be checked.
             replaced_names (list[str]): A list of names that have been replaced in the text.
         Returns:
-            float: A score indicating the level of privacy risk. A higher score indicates a higher risk.
+            list[dict]: The name(s) with the highest risk probability, as
+            ``{"name": str, "risk_probability": float}`` records (JSON-serialisable).
         """
         # Create embeddings for the text and replaced names
         logger.info("Create embeddings for the text and the names.")
@@ -170,10 +171,10 @@ class PrivacyChecker:
         for name, prob in zip(replaced_names, probabilities):
             similarity_probabilities.append({
                 "name": name,
-                "risk_probability": prob
+                "risk_probability": float(prob)
             })
 
         df_probabilities = pd.DataFrame(similarity_probabilities)
         df_risk_max = df_probabilities[df_probabilities["risk_probability"] == df_probabilities["risk_probability"].max()]
 
-        return df_risk_max.to_dict()
+        return df_risk_max.to_dict(orient="records")

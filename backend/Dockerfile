@@ -9,8 +9,10 @@
 #
 # Process layout at runtime (supervisord is PID 1, everything runs as the app user):
 #
-#   pii-service   /opt/venv/bin/python -m pii_service   -> /run/services/pii-service.sock
-#   proxy         dotnet SeniorsInTheMiddle.Proxy.dll   <- Services__Pii__SocketPath
+#   pii-service            /opt/venv/bin/python -m pii_service            -> /run/services/pii-service.sock
+#   privacy-check-service  /opt/venv/bin/python -m privacy_check_service  -> /run/services/privacy-check-service.sock
+#   proxy                  dotnet SeniorsInTheMiddle.Proxy.dll            <- Services__Pii__SocketPath,
+#                                                                            Services__PrivacyCheck__SocketPath
 #
 # Adding a service: COPY its package below, add a [program:..] block to
 # backend/supervisord.conf and a Services__<Name>__SocketPath env here.
@@ -41,7 +43,8 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/python \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
-    UV_PYTHON_PREFERENCE=only-managed
+    UV_PYTHON_PREFERENCE=only-managed \
+    HF_HOME=/opt/hf
 
 WORKDIR /build
 
@@ -61,16 +64,23 @@ RUN for model in $SPACY_MODELS; do \
         uv run --no-sync --frozen python -c "import spacy; spacy.load('$model'); print('ok: $model')" || exit 1; \
     done
 
-# Download the embedding model to calculate the privacy risk
-RUN uv run hf download sentence-transformers/all-MiniLM-L6-v2
+# The sentence-transformers embedding model privacy_check_service uses is part of the
+# image too. It goes into HF_HOME (/opt/hf), which is copied into the final stage and
+# read there offline.
+ARG EMBEDDING_MODEL="sentence-transformers/all-MiniLM-L6-v2"
+RUN uv run --no-sync --frozen hf download "$EMBEDDING_MODEL" \
+    && HF_HUB_OFFLINE=1 uv run --no-sync --frozen python -c \
+        "from sentence_transformers import SentenceTransformer; SentenceTransformer('$EMBEDDING_MODEL'); print('ok: $EMBEDDING_MODEL')"
 
 # ---------- Runtime ----------
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 
 # supervisord runs the python daemons and the dotnet process side by side. The
 # system python it pulls in is only used by supervisord itself.
+# g++ is for pytensor (pymc), which compiles its sampling graph to C at runtime;
+# without a compiler it falls back to a much slower python backend.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends supervisor \
+    && apt-get install -y --no-install-recommends supervisor g++ \
     && rm -rf /var/lib/apt/lists/*
 
 # Kestrel listeners come from the Proxy:*Port settings below, not from this preset.
@@ -98,18 +108,26 @@ ENV PYTHONPATH=/srv/services \
     PYTHONDONTWRITEBYTECODE=1 \
     PATH=/opt/venv/bin:$PATH \
     SERVICE_SOCKET_DIR=/run/services \
-    DEFAULT_LANGUAGE=de
+    DEFAULT_LANGUAGE=de \
+    HF_HOME=/opt/hf \
+    HF_HUB_OFFLINE=1 \
+    TOKENIZERS_PARALLELISM=false \
+    PYTENSOR_FLAGS=base_compiledir=/tmp/pytensor
 
 COPY --from=python-build /opt/python /opt/python
 COPY --from=python-build /opt/venv /opt/venv
+COPY --from=python-build /opt/hf /opt/hf
 
 # One socket per service. These are the paths supervisord starts them on and the
 # paths the proxy connects to; override both together if they ever need to move.
 ENV PII_SOCKET_PATH=/run/services/pii-service.sock \
-    Services__Pii__SocketPath=/run/services/pii-service.sock
+    Services__Pii__SocketPath=/run/services/pii-service.sock \
+    PRIVACY_CHECK_SOCKET_PATH=/run/services/privacy-check-service.sock \
+    Services__PrivacyCheck__SocketPath=/run/services/privacy-check-service.sock
 
-COPY services/service_runtime /srv/services/service_runtime
-COPY services/pii_service     /srv/services/pii_service
+COPY services/service_runtime        /srv/services/service_runtime
+COPY services/pii_service            /srv/services/pii_service
+COPY services/privacy_check_service  /srv/services/privacy_check_service
 
 # ---- dotnet
 WORKDIR /app

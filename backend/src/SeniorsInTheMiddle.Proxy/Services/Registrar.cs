@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 using SeniorsInTheMiddle.Proxy.Services.Pii;
+using SeniorsInTheMiddle.Proxy.Services.PrivacyCheck;
 
 namespace SeniorsInTheMiddle.Proxy.Services;
 
@@ -21,6 +22,7 @@ public static class Registrar
             .AddSingleton(ServiceOptions.From(configuration))
             .AddSingleton<ServiceConnections>()
             .AddSingleton<IPiiServiceClient, PiiServiceClient>()
+            .AddSingleton<IPrivacyCheckServiceClient, PrivacyCheckServiceClient>()
             .AddHostedService<ServiceStartupProbe>();
 
         services.AddHealthChecks()
