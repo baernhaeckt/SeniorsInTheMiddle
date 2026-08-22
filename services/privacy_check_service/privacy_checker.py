@@ -1,8 +1,8 @@
 import logging
+import os
 from typing import Any
 
 import numpy as np
-import pandas as pd
 import pymc as pm
 from sentence_transformers import SentenceTransformer
 
@@ -131,10 +131,17 @@ class PrivacyChecker:
                 observed=true_candidate
             )
 
+            # Four scalar betas and one categorical observation: a few hundred draws settle the
+            # posterior mean, and the check runs off the proxy's request path but still has to
+            # finish while the exchange is on the dashboard. Tunable per deployment.
             trace = pm.sample(
-                2000,
-                tune=2000,
+                draws=int(os.environ.get("PRIVACY_MCMC_DRAWS", "500")),
+                tune=int(os.environ.get("PRIVACY_MCMC_TUNE", "500")),
+                chains=2,
+                cores=1,
                 target_accept=0.99,
+                progressbar=False,
+                compute_convergence_checks=False,
             )
 
         return trace.posterior["p"].mean(dim=("chain", "draw")).values
@@ -147,8 +154,13 @@ class PrivacyChecker:
             text (str): The text to be checked.
             replaced_names (list[str]): A list of names that have been replaced in the text.
         Returns:
-            list[dict]: The name(s) with the highest risk probability, as
-            ``{"name": str, "risk_probability": float}`` records (JSON-serialisable).
+            list[dict]: Every replaced name with its risk probability, as
+            ``{"name": str, "risk_probability": float}`` records (JSON-serialisable),
+            in the order given. The caller picks the maximum.
+
+        Known limits: the probabilities are a softmax over the candidates, so a single name
+        always scores 1.0; and the encoder truncates the text at 256 word pieces, so a long
+        body is judged by its head.
         """
         # Create embeddings for the text and replaced names
         logger.info("Create embeddings for the text and the names.")
@@ -174,7 +186,4 @@ class PrivacyChecker:
                 "risk_probability": float(prob)
             })
 
-        df_probabilities = pd.DataFrame(similarity_probabilities)
-        df_risk_max = df_probabilities[df_probabilities["risk_probability"] == df_probabilities["risk_probability"].max()]
-
-        return df_risk_max.to_dict(orient="records")
+        return similarity_probabilities

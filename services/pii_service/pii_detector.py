@@ -1,6 +1,7 @@
 import logging
 import os
 import statistics
+from dataclasses import replace
 
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 
@@ -77,6 +78,22 @@ class PiiDetector:
             detected_pii_type_frequencies=detected_pii_type_frequencies
         )
 
+    @staticmethod
+    def _to_item(text: str, detection) -> DetectionResultItem:
+        pii_type_name = PiiTypes(detection.entity_type).name
+        pii_mapping = get_pii_risk_mapping(pii_type_name)
+
+        return DetectionResultItem(
+            information_type=pii_mapping.information_type,
+            entity_type=pii_type_name,
+            score=detection.score,
+            start_position=detection.start,
+            end_position=detection.end,
+            detected_text=text[detection.start:detection.end],
+            risk_level=pii_mapping.risk_level.value,
+            hipaa_category=pii_mapping.hipaa_category.value
+        )
+
     def analyze_text(self, text: str, detection_entities: list[str]) -> dict:
         """
         Analyzes the given text for PII entities.
@@ -94,35 +111,27 @@ class PiiDetector:
             logger.info(f"Found {len(detections)} potential PII entities.")
 
             detection_entities = list()
+            ignored_entities = list()
             for detection in detections:
-                if detection.score < 0.6:
+                item = self._to_item(text, detection)
+
+                if detection.score < settings.PII_SCORE_THRESHOLD:
                     logger.info(f"Ignored PII: {detection}")
+                    ignored_entities.append(item)
                     continue
 
                 logger.info(f"Detected PII: {detection}")
-                pii_type_name = PiiTypes(detection.entity_type).name
-                pii_mapping = get_pii_risk_mapping(pii_type_name)
-                detected_text = text[detection.start:detection.end]
-
-                detection_entities.append(
-                    DetectionResultItem(
-                        information_type=pii_mapping.information_type,
-                        entity_type=pii_type_name,
-                        score=detection.score,
-                        start_position=detection.start,
-                        end_position=detection.end,
-                        detected_text=detected_text,
-                        risk_level=pii_mapping.risk_level.value,
-                        hipaa_category=pii_mapping.hipaa_category.value
-                    )
-                )
+                detection_entities.append(item)
 
             if len(detection_entities) == 0:
                 logger.info("No PII entities found.")
-                return dict()
+                if len(ignored_entities) == 0:
+                    return dict()
+                return {"ignored_results": [to_dict(item) for item in ignored_entities]}
 
             logger.info(f"Starting analysis of detection results for {len(detection_entities)} entities.")
             pii_analysis_result = self._analyze_detection_result(DetectionResult(detection_results=detection_entities))
+            pii_analysis_result = replace(pii_analysis_result, ignored_results=ignored_entities)
 
             return to_dict(pii_analysis_result)
         except Exception as e:

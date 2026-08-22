@@ -4,8 +4,8 @@ Methods:
     risk_check  {"text": str, "replaced_names": [str, ...]}
                 -> {"risks": [{"name": str, "risk_probability": float}, ...]}
 
-``risks`` lists the replaced name(s) with the highest re-identification
-probability; it is empty when ``replaced_names`` is empty.
+``risks`` lists every replaced name with its re-identification probability;
+it is empty when ``replaced_names`` is empty.
 """
 
 from __future__ import annotations
@@ -36,6 +36,10 @@ class PrivacyCheckService(Service):
     async def start(self) -> None:
         # The embedding model is loaded exactly once, before the socket is opened.
         self._checker = PrivacyChecker()
+        # The first sample pays for the PyTensor compile; take it here rather than on the
+        # first real exchange.
+        logger.info("Warming up the sampler")
+        self._checker.check_privacy_risk("Hoi Hans, bis morgen.", ["Hans Muster", "Anna Beispiel"])
         logger.info("Privacy-check-service ready")
 
     async def stop(self) -> None:
