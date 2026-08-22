@@ -3,6 +3,7 @@ import statistics
 
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 
+from services.pii_service.config import settings
 from services.pii_service.models.analyze_result import AnalyzeResult
 from services.pii_service.models.detection_result import DetectionResultItem, DetectionResult, to_dict
 from services.pii_service.pii_types import PiiTypes
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 class PiiDetector:
     SUPPORTED_LANGUAGES = ["de", "en"]
 
-    def __init__(self, language_code: str = "de"):
+    def __init__(self, language_code: str = settings.DEFAULT_LANGUAGE) -> None:
         """
         Initializes the PiiDetector class.
         """
@@ -84,19 +85,20 @@ class PiiDetector:
 
             detection_entities = list()
             for detection in detections:
-                risk_assessment = get_pii_risk_mapping(detection.entity_type)
+                pii_mapping = get_pii_risk_mapping(detection.entity_type)
                 detected_text = text[detection.start:detection.end]
 
                 detection_entities.append(
                     DetectionResultItem(
-                        information_type=risk_assessment.information_type,
+                        information_type=pii_mapping.information_type,
                         entity_type=PiiTypes(detection.entity_type).name,
                         score=detection.score,
                         start_position=detection.start,
                         end_position=detection.end,
                         detected_text=detected_text,
-                        risk_level=risk_assessment.risk_level.value,
-                        hipaa_category=risk_assessment.hipaa_category.value
+                        replacement_text=pii_mapping.faker,
+                        risk_level=pii_mapping.risk_level.value,
+                        hipaa_category=pii_mapping.hipaa_category.value
                     )
                 )
 
