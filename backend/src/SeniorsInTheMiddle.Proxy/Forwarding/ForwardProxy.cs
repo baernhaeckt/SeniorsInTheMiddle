@@ -12,6 +12,7 @@ sealed class ForwardProxy : IForwardProxy
     private readonly ClientLabeler clientLabeler;
     private readonly IBodyMutationFactory bodyMutations;
     private readonly BodyLimits bodyLimits;
+    private readonly InspectionScope scope;
     private readonly ILogger<ForwardProxyTransformer> transformerLogger;
 
     private readonly UpstreamHttpClient upstream;
@@ -27,6 +28,7 @@ sealed class ForwardProxy : IForwardProxy
         ClientLabeler clientLabeler,
         IBodyMutationFactory bodyMutations,
         BodyLimits bodyLimits,
+        InspectionScope scope,
         UpstreamHttpClient upstream,
         ILogger<ForwardProxyTransformer> transformerLogger)
     {
@@ -35,6 +37,7 @@ sealed class ForwardProxy : IForwardProxy
         this.clientLabeler = clientLabeler;
         this.bodyMutations = bodyMutations;
         this.bodyLimits = bodyLimits;
+        this.scope = scope;
         this.upstream = upstream;
         this.transformerLogger = transformerLogger;
     }
@@ -70,6 +73,7 @@ sealed class ForwardProxy : IForwardProxy
                     destination,
                     bodyMutations.CreateForExchange(destination, trace),
                     bodyLimits,
+                    scope,
                     transformerLogger,
                     trace));
         }

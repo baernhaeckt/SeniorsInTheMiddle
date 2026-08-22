@@ -1,4 +1,6 @@
-﻿using System.Collections.Concurrent;
+﻿using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Configuration;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Threading.Channels;
 
@@ -254,6 +256,9 @@ internal sealed class ForwardingHarness : IAsyncDisposable
                 target,
                 (mutation ?? new PassthroughMutationFactory()).CreateForExchange(target, trace),
                 limits ?? new BodyLimits(BodyLimits.DefaultMaxMutableBodyBytes),
+                // Unconfigured, so every path is inspected and these keep testing the forwarding
+                // itself rather than the narrowing -- InspectionScopeTests covers that.
+                new InspectionScope(new ConfigurationBuilder().Build(), NullLogger<InspectionScope>.Instance),
                 state.Logger,
                 trace);
 

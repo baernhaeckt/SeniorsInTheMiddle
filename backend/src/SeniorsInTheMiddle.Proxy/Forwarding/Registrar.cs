@@ -27,6 +27,7 @@ public static class Registrar
             .AddSingleton<IBodyMutationFactory, ReplacerService>()
             .AddSingleton<SelfHostNames>()
             .AddSingleton<InterceptionBypass>()
+            .AddSingleton<InspectionScope>()
             .AddSingleton<UpstreamHttpClient>()
             .AddSingleton<IForwardProxy, ForwardProxy>()
             .AddSingleton<MitmCertificateProvider>()

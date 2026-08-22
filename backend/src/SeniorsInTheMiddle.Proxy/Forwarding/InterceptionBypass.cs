@@ -17,8 +17,7 @@
 /// </summary>
 sealed class InterceptionBypass
 {
-    private readonly HashSet<string> exact = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<string> suffixes = [];
+    private readonly HostPattern hosts;
 
     public InterceptionBypass(IConfiguration configuration, ILogger<InterceptionBypass> logger)
     {
@@ -28,12 +27,9 @@ sealed class InterceptionBypass
         // where deleting it means what it looks like it means.
         string[] configured = configuration.GetSection("Proxy:BypassHosts").Get<string[]>() ?? [];
 
-        foreach (string entry in configured)
-        {
-            Add(entry);
-        }
+        hosts = new HostPattern(configured);
 
-        if (exact.Count > 0 || suffixes.Count > 0)
+        if (!hosts.IsEmpty)
         {
             logger.LogInformation(
                 "Not intercepting {Hosts}. Traffic to these is tunnelled unread and nothing in it is inspected.",
@@ -42,42 +38,8 @@ sealed class InterceptionBypass
     }
 
     /// <summary>
-    /// Whether <paramref name="host"/> is left unintercepted.
-    ///
-    /// An entry covers its own subdomains: "example.com" matches "example.com" and
-    /// "api.example.com", but never "notexample.com" -- the dot is part of what is compared, so a
-    /// suffix match cannot straddle a label boundary.
+    /// Whether <paramref name="host"/> is left unintercepted. An entry covers its subdomains --
+    /// see <see cref="HostPattern"/>.
     /// </summary>
-    public bool Covers(string host)
-    {
-        string name = host.Trim().TrimEnd('.');
-
-        if (name.Length == 0)
-            return false;
-
-        if (exact.Contains(name))
-            return true;
-
-        foreach (string suffix in suffixes)
-        {
-            if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-
-        return false;
-    }
-
-    private void Add(string entry)
-    {
-        // "*.example.com" and "example.com" are both taken to mean the domain and everything
-        // under it, because the difference between them is a distinction nobody writing this
-        // list intends to draw.
-        string name = entry.Trim().TrimStart('*', '.').TrimEnd('.');
-
-        if (name.Length == 0)
-            return;
-
-        exact.Add(name);
-        suffixes.Add($".{name}");
-    }
+    public bool Covers(string host) => hosts.Covers(host);
 }

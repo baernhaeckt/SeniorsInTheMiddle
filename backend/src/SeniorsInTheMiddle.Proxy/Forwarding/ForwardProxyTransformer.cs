@@ -38,6 +38,7 @@ sealed class ForwardProxyTransformer(
     Uri destination,
     IExchangeBodyMutation mutation,
     BodyLimits limits,
+    InspectionScope scope,
     ILogger<ForwardProxyTransformer> logger,
     ExchangeTrace trace) : HttpTransformer
 {
@@ -182,6 +183,13 @@ sealed class ForwardProxyTransformer(
             return;
         }
 
+        if (!scope.Allows(destination))
+        {
+            trace.Passthrough("outside the inspected paths for this host");
+
+            return;
+        }
+
         if (BodySigningHeader(request) is string signedBy)
         {
             logger.LogWarning(
@@ -297,7 +305,7 @@ sealed class ForwardProxyTransformer(
         if (!MayReadBody(httpContext, proxyResponse))
             return;
 
-        if (IsBotManagement())
+        if (IsBotManagement() || !scope.Allows(destination))
             return;
 
         MediaTypeHeaderValue? contentType = proxyResponse.Content.Headers.ContentType;

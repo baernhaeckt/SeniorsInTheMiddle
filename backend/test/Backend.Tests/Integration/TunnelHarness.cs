@@ -301,6 +301,7 @@ internal sealed class TunnelHarness : IAsyncDisposable
             .AddSingleton<IBodyMutationFactory>(mutation ?? new PassthroughMutationFactory())
             .AddSingleton<SelfHostNames>()
             .AddSingleton<InterceptionBypass>()
+            .AddSingleton<InspectionScope>()
             .AddSingleton<MitmCertificateProvider>()
             .AddSingleton<IStreamProxyFactory, StreamProxyFactory>()
             .AddSingleton<ConnectProxyMiddleware>()
