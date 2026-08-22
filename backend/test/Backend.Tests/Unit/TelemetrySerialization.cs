@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 
 using SeniorsInTheMiddle.Proxy.Telemetry;
 
@@ -102,7 +102,7 @@ public class TelemetrySerialization
         string json = TelemetryJson.Serialize(new DetectionCompleted(
             "x-1",
             1,
-            [new DetectedEntity("e1", EntityKind.Ahv, "756.1234.5678.97", "[AHV_1]", 9, 24, 0.97)],
+            [new DetectedEntity("e1", "AHV", "756.1234.5678.97", "[AHV_1]", 9, 24, 0.97)],
             3.5));
 
         StringAssert.Contains(json, "\"kind\":\"AHV\"");
