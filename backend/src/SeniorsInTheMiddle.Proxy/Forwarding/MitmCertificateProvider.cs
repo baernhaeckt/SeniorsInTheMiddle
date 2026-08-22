@@ -19,12 +19,25 @@ sealed class MitmCertificateProvider
     /// <summary>
     /// The private key every server certificate this provider mints is built on.
     ///
-    /// One key for all of them rather than one per host. Generating an RSA key costs 50-150 ms
-    /// of CPU, and <see cref="GetServerCertificate"/> runs on the connection whose handshake
-    /// triggered it: minting a key per host stalls the first connection to every new site, and
-    /// a page pulling from dozens of hosts serializes those stalls on the accept path. Signing
-    /// on its own is sub-millisecond, so with the key already made a cold host costs nothing
-    /// worth measuring.
+    /// One key for all of them rather than one per host. Two reasons, and the first one is not
+    /// an optimisation.
+    ///
+    /// A browser cannot be asked about a bad certificate on a *subresource*. Chromium offers the
+    /// embedder a certificate error for a main-frame navigation only; for a script, an API call
+    /// or an image on another origin it denies the request outright, on the grounds that a user
+    /// has no context to judge it. A client behind this proxy therefore cannot decide per host --
+    /// it has to be told, before it starts, which key is ours, and that is only possible if there
+    /// is one such key. With a key per host, a page whose subresources live on other origins (a
+    /// CDN, an API host, an analytics domain) loses every one of them to
+    /// ERR_CERT_AUTHORITY_INVALID while the document itself loads: a site that looks broken
+    /// rather than a certificate that looks wrong. Every interception proxy shares the key for
+    /// this reason (mitmproxy, Burp, Fiddler).
+    ///
+    /// It is also faster. Generating an RSA key costs 50-150 ms of CPU, and
+    /// <see cref="GetServerCertificate"/> runs on the connection whose handshake triggered it:
+    /// minting a key per host stalls the first connection to every new site, and a page pulling
+    /// from dozens of hosts serializes those stalls on the accept path. Signing on its own is
+    /// sub-millisecond, so with the key already made a cold host costs nothing worth measuring.
     ///
     /// Sharing it gives an attacker nothing: every one of these certificates is signed by the
     /// CA whose own private key lives in this same process and on disk beside it, so anything

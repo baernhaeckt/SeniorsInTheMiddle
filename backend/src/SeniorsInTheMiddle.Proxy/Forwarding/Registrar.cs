@@ -1,4 +1,5 @@
 ﻿using System.Security.Cryptography.X509Certificates;
+using System.Text;
 
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using SeniorsInTheMiddle.Proxy.Forwarding.Tokenizer;
@@ -57,6 +58,27 @@ public static class Registrar
 
         webHost.ConfigureKestrel(options =>
         {
+            // Pass header bytes through instead of insisting they are ASCII.
+            //
+            // A proxy does not get to choose what a destination puts in a header. Real sites send raw UTF-8 in
+            // Content-Disposition filenames (an umlaut in an image name is enough), which is not legal HTTP but
+            // is common. HttpClient hands those to us decoded as Latin-1 -- one char per byte, so "ö" arrives as
+            // "Ã¶" -- and Kestrel then refuses to write a non-ASCII header back, aborting the whole response.
+            // The client sees a 502 for a resource the destination served with 200: on a product page, an image
+            // that silently fails to load.
+            //
+            // Selecting Latin-1 for writing turns each of those chars back into the byte it came from, so the
+            // header reaches the client exactly as the destination sent it. Round-tripping the bytes is the only
+            // behaviour a transparent proxy can defend; validating them is the destination's business, not ours.
+            //
+            // Response direction only. No client has been seen sending such a header, and the request direction
+            // is not symmetrical: Kestrel decodes there rather than encodes, so changing it would reinterpret
+            // what clients send rather than pass through what a destination sent.
+            //
+            // Nothing else changes: Latin-1 and ASCII agree byte-for-byte below U+0080, and these chars come
+            // from a Latin-1 decode, so none of them can exceed U+00FF and none is unmappable.
+            options.ResponseHeaderEncodingSelector = _ => Encoding.Latin1;
+
             options.ListenAnyIP(ports.HttpProxy, listen =>
             {
                 PinToHttp11(listen);
