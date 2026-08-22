@@ -3,13 +3,37 @@ using System.IO.Pipelines;
 using System.Net.Sockets;
 using System.Net.Security;
 using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Microsoft.AspNetCore.Connections;
 
 namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
+/// <summary>
+/// Turns a client's CONNECT into a TLS session this proxy can read.
+///
+/// What happens to the decrypted bytes then depends on what they are. HTTP is handed back to
+/// Kestrel by swapping the connection's transport for the decrypted stream, so the requests
+/// inside the tunnel run through the ordinary pipeline and get forwarded, inspected and
+/// rewritten exactly like plaintext ones. Anything else is copied through byte for byte,
+/// because a CONNECT is not a promise that HTTP follows and an HTTP parser would answer 400
+/// to a mail or database session that used to work.
+/// </summary>
 sealed class ConnectProxyMiddleware
 {
+    /// <summary>What the first decrypted bytes turned out to be.</summary>
+    private enum TunnelPayload
+    {
+        /// <summary>The client went away before sending anything.</summary>
+        None,
+
+        /// <summary>An HTTP/1.x request line. Goes back to Kestrel.</summary>
+        Http,
+
+        /// <summary>Something else entirely. Gets a byte tunnel.</summary>
+        Opaque,
+    }
+
     private readonly IStreamProxyFactory streamProxyFactory;
     private readonly MitmCertificateProvider certificateProvider;
     private readonly ILogger<ConnectProxyMiddleware> logger;
@@ -48,67 +72,155 @@ sealed class ConnectProxyMiddleware
             return;
         }
 
-        if (!TryParseConnectTarget(requestLine, out string? host, out int port))
+        if (!TryParseConnectTarget(requestLine, out string host, out int port))
         {
             await WriteProxyErrorAsync(output, "400 Bad Request");
             input.AdvanceTo(buffer.End);
             return;
         }
 
-        using (TcpClient tcpClient = new())
+        input.AdvanceTo(headerEnd.Value, headerEnd.Value);
+
+        // The tunnel is confirmed before the destination is known to be reachable, because
+        // whether we even want a connection to it depends on bytes that only arrive after the
+        // handshake. For forwarded traffic that is the better order anyway: an unreachable
+        // origin becomes a 502 the client reads inside the tunnel, rather than a refused
+        // CONNECT it has to guess the meaning of.
+        await output.WriteAsync(Encoding.ASCII.GetBytes("HTTP/1.1 200 Connection Established\r\n\r\n"));
+
+        try
         {
-            try
+            await using Stream clientStream = connection.Transport.Input.AsStream(leaveOpen: true);
+            await using Stream clientOutputStream = connection.Transport.Output.AsStream(leaveOpen: true);
+            using SslStream clientTls = new(
+                new DuplexStream(clientStream, clientOutputStream),
+                leaveInnerStreamOpen: true);
+
+            // Not disposed here: the provider owns it and hands the same instance to every
+            // connection for this host (see MitmCertificateProvider.GetServerCertificate).
+            X509Certificate2 serverCertificate = certificateProvider.GetServerCertificate(host);
+            await clientTls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
             {
-                await tcpClient.ConnectAsync(host, port, connection.ConnectionClosed);
-            }
-            catch (Exception ex) when (ex is IOException or OperationCanceledException)
+                ServerCertificate = serverCertificate,
+                EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
+                ClientCertificateRequired = false,
+
+                // Stated rather than left to chance. Everything past this point reads HTTP/1.1:
+                // the listener is pinned to it and the sniffing below only recognises it. With
+                // no list at all a client that offered only h2 would assume it had been
+                // accepted and speak a protocol nothing here parses; refusing the handshake is
+                // the honest answer to that.
+                ApplicationProtocols = [SslApplicationProtocol.Http11],
+            }, connection.ConnectionClosed);
+
+            IDuplexPipe decrypted = new StreamDuplexPipe(clientTls);
+            switch (await SniffAsync(decrypted.Input, connection.ConnectionClosed))
             {
-                if (!connection.ConnectionClosed.IsCancellationRequested)
-                {
-                    await WriteProxyErrorAsync(output, "502 Bad Gateway");
-                }
+                case TunnelPayload.None:
+                    return;
 
-                input.AdvanceTo(buffer.End);
-                return;
-            }
+                case TunnelPayload.Http:
+                    // Kestrel reads the connection's transport, so replacing it hands the
+                    // decrypted stream to the HTTP layer and the requests inside the tunnel
+                    // reach the ordinary pipeline.
+                    connection.Features.Set<IInterceptedTunnel>(new InterceptedTunnel($"{host}:{port}"));
+                    connection.Transport = decrypted;
+                    await next(connection);
+                    return;
 
-            input.AdvanceTo(headerEnd.Value, headerEnd.Value);
-            await output.WriteAsync(Encoding.ASCII.GetBytes("HTTP/1.1 200 Connection Established\r\n\r\n"));
-
-            try
-            {
-                await using Stream clientStream = connection.Transport.Input.AsStream(leaveOpen: true);
-                await using Stream clientOutputStream = connection.Transport.Output.AsStream(leaveOpen: true);
-                using SslStream clientTls = new(
-                    new DuplexStream(clientStream, clientOutputStream),
-                    leaveInnerStreamOpen: true);
-                // Not disposed here: the provider owns it and hands the same instance to every
-                // connection for this host (see MitmCertificateProvider.GetServerCertificate).
-                System.Security.Cryptography.X509Certificates.X509Certificate2 serverCertificate =
-                    certificateProvider.GetServerCertificate(host);
-                await clientTls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
-                {
-                    ServerCertificate = serverCertificate,
-                    EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
-                    ClientCertificateRequired = false
-                }, connection.ConnectionClosed);
-
-                using SslStream upstreamTls = new(tcpClient.GetStream(), leaveInnerStreamOpen: false);
-                await upstreamTls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
-                {
-                    TargetHost = host,
-                    EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13
-                }, connection.ConnectionClosed);
-
-                await streamProxyFactory
-                    .Create(new StreamDuplexPipe(clientTls), upstreamTls)
-                    .ProxyAsync(connection.ConnectionClosed);
-            }
-            catch (Exception ex) when (ex is AuthenticationException or IOException or OperationCanceledException)
-            {
-                logger.LogDebug(ex, "HTTPS interception ended for {Host}:{Port}", host, port);
+                default:
+                    await TunnelOpaqueAsync(decrypted, host, port, connection.ConnectionClosed);
+                    return;
             }
         }
+        catch (Exception ex) when (ex is AuthenticationException or IOException or OperationCanceledException)
+        {
+            logger.LogDebug(ex, "HTTPS interception ended for {Host}:{Port}", host, port);
+        }
+    }
+
+    /// <summary>
+    /// Copies bytes between the client and the origin without reading them, for a tunnel that
+    /// turned out not to carry HTTP.
+    /// </summary>
+    private async Task TunnelOpaqueAsync(
+        IDuplexPipe decrypted,
+        string host,
+        int port,
+        CancellationToken cancellationToken)
+    {
+        using TcpClient tcpClient = new();
+
+        try
+        {
+            await tcpClient.ConnectAsync(host, port, cancellationToken);
+        }
+        catch (Exception ex) when (ex is SocketException or IOException or OperationCanceledException)
+        {
+            // The tunnel was confirmed already, so there is no status line left to answer with
+            // and the client is inside TLS. Closing is the only signal available.
+            logger.LogDebug(ex, "Could not reach {Host}:{Port} for a tunnelled connection.", host, port);
+            return;
+        }
+
+        using SslStream upstreamTls = new(tcpClient.GetStream(), leaveInnerStreamOpen: false);
+        await upstreamTls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
+        {
+            TargetHost = host,
+            EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13
+        }, cancellationToken);
+
+        await streamProxyFactory.Create(decrypted, upstreamTls).ProxyAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Looks at the first decrypted bytes and puts them back.
+    ///
+    /// The examined position must be the start of the buffer. Reporting anything further tells
+    /// the reader we are waiting for bytes we have not seen yet, and the next read then blocks
+    /// on a client that is itself waiting for our reply.
+    /// </summary>
+    private static async ValueTask<TunnelPayload> SniffAsync(
+        PipeReader reader,
+        CancellationToken cancellationToken)
+    {
+        ReadResult result = await reader.ReadAsync(cancellationToken);
+
+        try
+        {
+            if (result.Buffer.IsEmpty)
+                return result.IsCompleted ? TunnelPayload.None : TunnelPayload.Opaque;
+
+            return LooksLikeHttpRequestLine(result.Buffer) ? TunnelPayload.Http : TunnelPayload.Opaque;
+        }
+        finally
+        {
+            reader.AdvanceTo(result.Buffer.Start, result.Buffer.Start);
+        }
+    }
+
+    /// <summary>
+    /// Whether the buffer opens with an HTTP/1.x request line, which is a method, a target and
+    /// a version separated by single spaces.
+    ///
+    /// Input:  "GET /health HTTP/1.1\r\nHost: ..."   -> true
+    /// Input:  "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"    -> false, nothing downstream speaks HTTP/2
+    /// Input:  "EHLO mail.example.com\r\n"           -> false
+    /// Input:  "\x16\x03\x01..." (nested TLS)        -> false
+    /// </summary>
+    private static bool LooksLikeHttpRequestLine(ReadOnlySequence<byte> buffer)
+    {
+        // A request line longer than this is not one we would forward anyway, and the check
+        // only needs its last token.
+        const int MaxRequestLineBytes = 256;
+
+        string start = Encoding.ASCII.GetString(
+            buffer.Slice(0, Math.Min(buffer.Length, MaxRequestLineBytes)).ToArray());
+
+        int lineEnd = start.IndexOf('\r');
+        string[] parts = (lineEnd < 0 ? start : start[..lineEnd]).Split(' ');
+
+        return parts.Length == 3 && parts[2].StartsWith("HTTP/1.", StringComparison.Ordinal);
     }
 
     private static SequencePosition? FindHeaderEnd(ReadOnlySequence<byte> buffer)
