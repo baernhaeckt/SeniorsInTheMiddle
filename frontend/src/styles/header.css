@@ -423,3 +423,61 @@
   border-color: var(--alert-line);
   color: var(--alert);
 }
+
+/* ------------------------------------------------------------- projector -- */
+
+/*
+ * Type size, said the way every reader does it: a small A beside a big one. It
+ * needs no label, which is the point -- it sits among controls that have one,
+ * and once projector mode is on it is the only control left on screen, so it
+ * has to be found by shape rather than read.
+ */
+.tsize {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-3);
+  transition:
+    border-color 160ms var(--ease),
+    color 160ms var(--ease),
+    background 160ms var(--ease);
+}
+
+.tsize:hover {
+  border-color: var(--ink-3);
+  color: var(--ink);
+}
+
+/* One baseline under both, which is what makes the pair read as a scale. */
+.tsize__mark {
+  font-family: var(--display);
+  font-variation-settings: 'wdth' 104;
+  font-weight: 700;
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+
+.tsize__mark b {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.tsize[data-on='true'] {
+  border-color: var(--warm-line);
+  background: var(--warm-soft);
+  color: var(--warm);
+}
+
+.tsize[data-on='true']:hover {
+  border-color: var(--warm);
+}
+
+/*
+ * One size in both modes. It is the way back out of projector mode, and a
+ * control that changes shape when you press it is one you have to find twice.
+ */

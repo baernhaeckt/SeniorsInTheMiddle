@@ -640,44 +640,46 @@
   white-space: nowrap;
 }
 
+/*
+ * Sized in lines rather than pixels, so it holds its height at any type size
+ * and never clips a line halfway. --lines is mirrored by READOUT_LINES in
+ * Gate.tsx, which is what decides how many lines are handed to it.
+ */
 .gate__readout {
+  --lines: 4;
+  --leading: 1.5;
+
   margin: 8px 11px;
-  height: 88px;
+  height: calc(var(--lines) * var(--leading) * 1em + 22px);
   padding: 10px 11px;
   border: 1px solid var(--line-soft);
   border-radius: 2px;
   background: rgba(13, 18, 22, 0.72);
   font-family: var(--mono);
   font-size: 12.5px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-}
-
-/* A body longer than the box loses its tail rather than pushing the box open. */
-.gate__body {
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
+  line-height: var(--leading);
   overflow: hidden;
 }
 
 /*
- * A short viewport gives the band about 330px to work with, which the card and
- * one waiting strip only just fit into. Taller screens spend the room on the
- * readout, which is the row worth reading from across an office.
+ * One field of the body per line, laid out and never wrapped: wrapping is what
+ * used to push the identifier onto whichever line it landed on, including the
+ * one under the fold. A line too long for the box loses its tail instead.
  */
-@media (min-height: 860px) {
-  .gate__readout {
-    height: 152px;
-    font-size: 13px;
-  }
+[data-laidout='true'] .gate__line {
+  min-height: calc(var(--leading) * 1em);
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
-  .gate__body {
-    -webkit-line-clamp: 7;
-  }
+/* A body that is not JSON has no lines to lay out, so the box wraps it. */
+[data-laidout='false'] .gate__line {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
 /* A short viewport has room for the card and one waiting strip, and no more. */

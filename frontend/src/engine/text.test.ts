@@ -5,6 +5,7 @@ import {
   clockOf,
   excerptAround,
   formatBytes,
+  readoutWindow,
   prettyBody,
   splitByValues,
   typeTag,
@@ -124,5 +125,81 @@ describe('formatting', () => {
     expect(typeTag('application/json')).toBe('json')
     expect(typeTag('video/mp4')).toBe('mp4')
     expect(typeTag('weird')).toBe('asset')
+  })
+})
+
+describe('readoutWindow', () => {
+  const entity = (id: string, value: string, token: string): Entity => ({
+    id,
+    kind: 'PERSON',
+    value,
+    token,
+    start: 0,
+    end: 0,
+    confidence: 0.9,
+    informationType: '',
+    riskLevel: 3,
+    hipaaCategory: '',
+  })
+
+  const BODY = JSON.stringify({
+    claimId: 'CLM-1',
+    insuredName: 'Rosmarie Studer',
+    town: 'Bern',
+    policy: '42-118',
+    note: 'later',
+  })
+  const NAME = entity('e1', 'Rosmarie Studer', '[PERSON_1]')
+
+  it('lays a JSON body out and centres the window on the identifier', () => {
+    const window = readoutWindow(BODY, [NAME], false, 3, 64)
+
+    expect(window.structured).toBe(true)
+    expect(window.lines).toHaveLength(3)
+    // The identifier's line has the line before it above and the next below.
+    expect(window.lines[1]?.runs.map((run) => run.text).join('')).toContain('Rosmarie Studer')
+    expect(window.lines[0]?.runs.map((run) => run.text).join('')).toContain('claimId')
+    expect(window.lines[2]?.runs.map((run) => run.text).join('')).toContain('town')
+  })
+
+  it('marks the identifier as its own run, keyed so it can animate', () => {
+    const marked = readoutWindow(BODY, [NAME], false, 3, 64).lines[1]?.runs.filter(
+      (run) => run.key !== undefined,
+    )
+
+    expect(marked).toEqual([{ text: 'Rosmarie Studer', key: 'e1' }])
+  })
+
+  it('keeps the key the same once the value has become its token', () => {
+    const before = readoutWindow(BODY, [NAME], false, 3, 64)
+    const after = readoutWindow(BODY.replace(NAME.value, NAME.token), [NAME], true, 3, 64)
+
+    expect(before.lines[1]?.key).toBe(after.lines[1]?.key)
+    const run = after.lines[1]?.runs.find((item) => item.key !== undefined)
+    expect(run).toEqual({ text: '[PERSON_1]', key: 'e1' })
+  })
+
+  it('marks every identifier in the window, not only the one it is centred on', () => {
+    const town = entity('e2', 'Bern', '[CITY_1]')
+    const window = readoutWindow(BODY, [NAME, town], false, 4, 64)
+    const keys = window.lines.flatMap((line) => line.runs.flatMap((run) => run.key ?? []))
+
+    expect(keys).toEqual(['e1', 'e2'])
+  })
+
+  it('asks for as many lines as it is given, even from a short body', () => {
+    expect(readoutWindow('{"a":1}', [], false, 4, 64).lines).toHaveLength(4)
+  })
+
+  it('gives a body that is not JSON back as one run of text', () => {
+    const window = readoutWindow('name=Rosmarie Studer&town=Bern', [NAME], false, 4, 10)
+
+    expect(window.structured).toBe(false)
+    expect(window.lines).toHaveLength(1)
+    expect(window.lines[0]?.runs.some((run) => run.key === 'e1')).toBe(true)
+  })
+
+  it('has nothing to show for an empty body', () => {
+    expect(readoutWindow('', [NAME], false, 4, 64)).toEqual({ structured: false, lines: [] })
   })
 })

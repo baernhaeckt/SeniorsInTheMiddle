@@ -1,6 +1,6 @@
-import { stageViewOf } from '../engine/stageView'
+import { isTokenizedStage, stageViewOf } from '../engine/stageView'
 import type { Exchange, ProxyInfo, Stage } from '../engine/store'
-import { excerptAround, formatBytes } from '../engine/text'
+import { formatBytes, readoutWindow, type ReadoutLine } from '../engine/text'
 import type { GateCard } from '../engine/useGateStack'
 import { cssVars } from '../ui/cssVars'
 import { Clip } from './Clip'
@@ -43,7 +43,15 @@ const TONES: Record<Stage, Tone> = {
   done: 'warm',
 }
 
-const READOUT_WIDTH = 200
+/** Lines the readout shows. Mirrors --lines on `.gate__readout` in band.css. */
+const READOUT_LINES = 4
+
+/**
+ * How much of the identifier's own line is kept either side of it. Wide enough
+ * that a short line arrives whole; narrow enough that a long one cannot carry
+ * the identifier off the right-hand edge.
+ */
+const READOUT_WIDTH = 64
 
 interface GateProps {
   cards: GateCard[]
@@ -136,15 +144,21 @@ function Card({ exchange, proxy, leaving = false }: CardProps) {
         <span className="gate__meta">{reading.meta}</span>
       </div>
 
-      <div className="gate__readout">
+      <div className="gate__readout" data-laidout={reading.kind === 'text' && reading.structured}>
         {reading.kind === 'idle' ? (
           <span className="gate__idle">boundary idle · assets passing untouched</span>
         ) : (
-          <span className="gate__body">
-            {reading.before}
-            {reading.focus && <Morph to={reading.focus} settledClass={reading.focusClass} />}
-            {reading.after}
-          </span>
+          reading.lines.map((line) => (
+            <div key={line.key} className="gate__line">
+              {line.runs.map((run, index) =>
+                run.key === undefined ? (
+                  <span key={`t-${index}`}>{run.text}</span>
+                ) : (
+                  <Morph key={run.key} to={run.text} settledClass={reading.focusClass} />
+                ),
+              )}
+            </div>
+          ))
         )}
       </div>
 
@@ -246,9 +260,8 @@ type Readout =
       kind: 'text'
       label: string
       meta: string
-      before: string
-      focus: string
-      after: string
+      structured: boolean
+      lines: ReadoutLine[]
       focusClass: string
     }
 
@@ -303,6 +316,12 @@ function labelOf(exchange: Exchange): { label: string; meta: string; focusClass:
 function readoutOf(exchange: Exchange | null): Readout {
   if (!exchange) return IDLE
   const view = stageViewOf(exchange)
-  const parts = excerptAround(view.text, view.focus, READOUT_WIDTH)
-  return { kind: 'text', ...labelOf(exchange), ...parts }
+  const window = readoutWindow(
+    view.text,
+    exchange.entities,
+    isTokenizedStage(exchange.stage),
+    READOUT_LINES,
+    READOUT_WIDTH,
+  )
+  return { kind: 'text', ...labelOf(exchange), ...window }
 }

@@ -22,6 +22,21 @@ export function isTokenizedStage(stage: Stage): boolean {
   return TOKENIZED_STAGES.has(stage)
 }
 
+/**
+ * Stages at which the readout has already shown everything it is going to.
+ *
+ * Only two transitions change what is written in the box: into `redact`, where
+ * the values become tokens, and into `rehydrate`, where they come back. After
+ * the second one the text is settled — the numbers under it still fill in, but
+ * the payload does not move again. Read by `gateStack.ts` to decide when a card
+ * should let the next one have the gate.
+ */
+const SPENT_STAGES: ReadonlySet<Stage> = new Set(['rehydrate', 'deliver', 'done'])
+
+export function isSpentStage(stage: Stage): boolean {
+  return SPENT_STAGES.has(stage)
+}
+
 export function stageViewOf(exchange: Exchange, stage: Stage = exchange.stage): StageView {
   const first = exchange.entities[0]
   const redacted = exchange.redactedRequestBody ?? exchange.requestBody
