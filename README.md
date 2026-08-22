@@ -16,8 +16,9 @@ Ausführliche Beschreibung: `docs/` (Jury-Dokumentation).
   Build-Context ist das Repo-Root) enthält zusätzlich die Python-Services aus
   `/services` als Daemons unter supervisord.
 - `/services` : Python-Services und die gemeinsame Unix-Socket-Runtime, die im
-  Backend-Container neben dem Proxy laufen. `pii_service` (Presidio/spaCy) ist im
-  Image verdrahtet, `privacy_check_service` ist Prototyp. Siehe
+  Backend-Container neben dem Proxy laufen. `pii_service` (Presidio/spaCy) und
+  `privacy_check_service` (Re-Identifikationsrisiko, sentence-transformers/pymc)
+  sind im Image verdrahtet. Siehe
   [services/README.md](services/README.md).
 - `/frontend` : Dashboard (React/Vite), eigenes schlankes nginx-Image. Siehe
   [frontend/README.md](frontend/README.md).
@@ -51,8 +52,9 @@ dotnet run --project backend/src/SeniorsInTheMiddle.Proxy
 cd frontend && npm install && npm run dev
 ```
 
-Auf Windows gibt es keine Unix-Sockets: `Services__Pii__SocketPath` bleibt leer, der
-Proxy läuft dann ohne PII-Erkennung. Für den vollen Pfad das Backend-Image bauen
+Auf Windows gibt es keine Unix-Sockets: `Services__Pii__SocketPath` und
+`Services__PrivacyCheck__SocketPath` bleiben leer, der Proxy läuft dann ohne
+PII-Erkennung und Risiko-Check. Für den vollen Pfad das Backend-Image bauen
 (`docker build -f backend/Dockerfile -t sitm-proxy .`, Build-Context ist das Repo-Root).
 
 ## Deployment

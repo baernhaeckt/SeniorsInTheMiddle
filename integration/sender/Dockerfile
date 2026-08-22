@@ -9,6 +9,7 @@ COPY public ./public
 
 ENV PROXY_HOST=proxy \
     PROXY_PORT=3128 \
+    PROXY_TLS_PORT=3127 \
     TARGET_HOST=receiver.sitm.local \
     TARGET_HTTP_PORT=3000 \
     TARGET_HTTPS_PORT=3443 \

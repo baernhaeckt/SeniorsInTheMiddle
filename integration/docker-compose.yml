@@ -107,6 +107,9 @@ services:
     environment:
       PROXY_HOST: proxy
       PROXY_PORT: "3128"
+      # The same proxy behind TLS. Its certificate is minted by the MITM CA and carries
+      # the names in Proxy__HostNames, which is why "proxy" is listed there above.
+      PROXY_TLS_PORT: "3127"
       TARGET_HOST: receiver.sitm.local
       TARGET_HTTP_PORT: "3000"
       TARGET_HTTPS_PORT: "3443"
@@ -115,6 +118,7 @@ services:
       RATE_PER_MINUTE: ${RATE_PER_MINUTE:-120}
       CONCURRENCY: ${CONCURRENCY:-4}
       HTTPS_RATIO: ${HTTPS_RATIO:-0.5}
+      PROXY_TLS_RATIO: ${PROXY_TLS_RATIO:-0.5}
       PII_RATIO: ${PII_RATIO:-0.35}
       SEED: ${SEED:-20260822}
       BURST: ${BURST:-0}

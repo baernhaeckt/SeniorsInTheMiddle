@@ -44,6 +44,7 @@ async function execute(spec) {
   const result = await send(spec, {
     proxyHost: settings.proxyHost,
     proxyPort: settings.proxyPort,
+    proxyTlsPort: settings.proxyTlsPort,
     targetHost: settings.targetHost,
     targetHttpPort: settings.targetHttpPort,
     targetHttpsPort: settings.targetHttpsPort,
@@ -60,6 +61,10 @@ async function execute(spec) {
     scenario: spec.scenario,
     describe: spec.describe,
     scheme: spec.scheme,
+    // true when the connection to the proxy itself was TLS (the :3127 listener)
+    proxyTls: spec.proxyTls,
+    // the proxy's own certificate as seen on that connection, or null when plain
+    proxyCert: result.proxyTls,
     method: spec.method,
     url: `${spec.scheme}://${settings.targetHost}:${port}${spec.path}`,
     path: spec.path,
@@ -87,6 +92,7 @@ async function execute(spec) {
       seq: record.seq,
       scenario: record.scenario,
       scheme: record.scheme,
+      proxyTls: record.proxyTls,
       status: record.status,
       expected: record.expected,
       error: record.error,
@@ -169,6 +175,8 @@ function summarise() {
     successRate: stats.successRate === null ? null : Number(stats.successRate.toFixed(4)),
     http: stats.byScheme.http,
     https: stats.byScheme.https,
+    plainToProxy: stats.byTransport.plain,
+    tlsToProxy: stats.byTransport.tls,
     intercepted: stats.intercepted,
     pii: stats.pii,
     latencyMs: stats.latencyMs,
@@ -198,7 +206,8 @@ async function main() {
     store,
     hooks: {
       ca: () => (ca ? { ...ca, pem: undefined, trusted: true } : { trusted: false }),
-      fire: (scenario, scheme) => execute(build(scenario, rng, scheme)),
+      fire: (scenario, scheme, proxyTls) =>
+        execute(build(scenario, rng, scheme, proxyTls && settings.proxyTlsPort > 0)),
     },
   })
 

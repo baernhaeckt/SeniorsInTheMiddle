@@ -99,6 +99,7 @@
   <h1>SITM proxy harness</h1>
   <span class="chip"><span id="link-dot" class="dot down"></span><b id="link-state">connecting</b></span>
   <span class="chip">proxy <b id="proxy-address">…</b></span>
+  <span class="chip">tls proxy <b id="proxy-tls-address">…</b></span>
   <span class="chip">target <b id="target-host">…</b></span>
   <span class="chip">CA <b id="ca-subject">not fetched</b></span>
   <span class="chip" id="ca-fingerprint"></span>
@@ -128,6 +129,7 @@
             <tr>
               <th style="width:52px">#</th>
               <th style="width:64px">scheme</th>
+              <th style="width:56px" title="How the proxy itself was reached: plain TCP on :3128 or TLS on :3127">via</th>
               <th style="width:88px">scenario</th>
               <th style="width:52px">method</th>
               <th>path</th>
@@ -149,6 +151,7 @@
         <label>rate /min <input id="ratePerMinute" type="number" min="1" max="20000" step="10"></label>
         <label>workers <input id="concurrency" type="number" min="1" max="64" step="1"></label>
         <label>https share <input id="httpsRatio" type="number" min="0" max="1" step="0.05"></label>
+        <label title="Share of requests that reach the proxy over TLS (:3127) instead of plain TCP (:3128)">tls→proxy share <input id="proxyTlsRatio" type="number" min="0" max="1" step="0.05"></label>
         <label>pii share <input id="piiRatio" type="number" min="0" max="1" step="0.05"></label>
         <button id="apply" class="primary">Apply</button>
         <button id="pause">Pause</button>
@@ -160,6 +163,12 @@
           <select id="fire-scheme">
             <option value="https">https (CONNECT + intercept)</option>
             <option value="http">http (absolute form)</option>
+          </select>
+        </label>
+        <label>connection to proxy
+          <select id="fire-transport">
+            <option value="plain">plain (:3128)</option>
+            <option value="tls">tls (:3127)</option>
           </select>
         </label>
       </div>
@@ -214,12 +223,15 @@
   function renderSender(stats, config) {
     const http = stats.byScheme.http
     const https = stats.byScheme.https
+    const tlsProxy = stats.byTransport?.tls ?? { total: 0, ok: 0 }
     const successTone = stats.successRate === null ? '' : stats.successRate >= 0.95 ? 'ok' : 'bad'
     $('sender-cards').innerHTML = [
       card('requests', fmt.int(stats.total), fmt.int(stats.failed) + ' failed', stats.failed ? 'warn' : ''),
       card('success', fmt.pct(stats.successRate), 'through the proxy', successTone),
       card('http', fmt.int(http.total), fmt.int(http.ok) + ' ok'),
       card('https', fmt.int(https.total), fmt.int(https.ok) + ' ok'),
+      card('via tls proxy', fmt.int(tlsProxy.total), fmt.int(tlsProxy.ok) + ' ok · :3127 listener',
+        tlsProxy.total && tlsProxy.ok < tlsProxy.total ? 'bad' : tlsProxy.total ? 'ok' : 'muted'),
       card('intercepted', fmt.int(stats.intercepted), 'MITM certificate seen', stats.intercepted ? 'ok' : 'muted'),
       card('latency p50', fmt.ms(stats.latencyMs.p50), 'p95 ' + fmt.ms(stats.latencyMs.p95)),
       card('pii requests', fmt.int(stats.pii.sent), fmt.int(stats.pii.broken) + ' round-trips broken',
@@ -239,10 +251,14 @@
       $('ratePerMinute').value = config.ratePerMinute
       $('concurrency').value = config.concurrency
       $('httpsRatio').value = config.httpsRatio
+      $('proxyTlsRatio').value = config.proxyTlsRatio
       $('piiRatio').value = config.piiRatio
     }
     $('pause').textContent = config.paused ? 'Resume' : 'Pause'
     $('proxy-address').textContent = config.proxy
+    $('proxy-tls-address').textContent = config.proxyTls ?? 'off'
+    $('proxyTlsRatio').disabled = !config.proxyTls
+    $('fire-transport').disabled = !config.proxyTls
     $('target-host').textContent = config.target
     $('link-dot').className = 'dot ' + (config.paused ? 'paused' : 'live')
     $('link-state').textContent = config.paused ? 'paused' : 'live'
@@ -290,6 +306,7 @@
       <tr data-seq="${record.seq}" class="${record.ok ? '' : 'failed'} ${selected === record.seq ? 'selected' : ''}">
         <td class="muted">${record.seq}</td>
         <td>${record.scheme}</td>
+        <td class="${record.proxyTls ? '' : 'muted'}">${record.proxyTls ? 'tls' : 'plain'}</td>
         <td>${escape(record.scenario)}</td>
         <td>${escape(record.method)}</td>
         <td title="${escape(record.url)}">${escape(record.path)}</td>
@@ -319,7 +336,9 @@
           record.expected && record.status !== record.expected ? ` (expected ${record.expected})` : ''}</dd>
         <dt>duration</dt><dd>${record.durationMs} ms</dd>
         <dt>bytes</dt><dd>${fmt.bytes(record.requestBytes)} up · ${fmt.bytes(record.responseBytes)} down</dd>
-        ${record.tls ? `<dt>certificate</dt><dd>${escape(record.tls.subject ?? '?')} issued by ${escape(record.tls.issuer ?? '?')}</dd>` : ''}
+        <dt>via</dt><dd>${record.proxyTls ? 'tls connection to the proxy (:3127)' : 'plain connection to the proxy (:3128)'}</dd>
+        ${record.proxyCert ? `<dt>proxy cert</dt><dd>${escape(record.proxyCert.subject ?? '?')} issued by ${escape(record.proxyCert.issuer ?? '?')}</dd>` : ''}
+        ${record.tls ? `<dt>target cert</dt><dd>${escape(record.tls.subject ?? '?')} issued by ${escape(record.tls.issuer ?? '?')}</dd>` : ''}
         ${record.error ? `<dt>error</dt><dd class="bad">${escape(record.error)}</dd>` : ''}
         <dt>round trip</dt><dd>${piiLine}</dd>
       </dl>
@@ -379,7 +398,7 @@
     renderDetail()
   })
 
-  for (const id of ['ratePerMinute', 'concurrency', 'httpsRatio', 'piiRatio']) {
+  for (const id of ['ratePerMinute', 'concurrency', 'httpsRatio', 'proxyTlsRatio', 'piiRatio']) {
     $(id).addEventListener('focus', () => { editing = true })
     $(id).addEventListener('blur', () => { editing = false })
   }
@@ -398,6 +417,7 @@
     ratePerMinute: Number($('ratePerMinute').value),
     concurrency: Number($('concurrency').value),
     httpsRatio: Number($('httpsRatio').value),
+    proxyTlsRatio: Number($('proxyTlsRatio').value),
     piiRatio: Number($('piiRatio').value),
   }))
 
@@ -425,7 +445,11 @@
       const record = await fetch('/api/fire', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ scenario: button.dataset.scenario, scheme: $('fire-scheme').value }),
+        body: JSON.stringify({
+          scenario: button.dataset.scenario,
+          scheme: $('fire-scheme').value,
+          proxyTls: $('fire-transport').value === 'tls',
+        }),
       }).then((r) => r.json())
       if (record.seq) {
         rows.set(record.seq, record)

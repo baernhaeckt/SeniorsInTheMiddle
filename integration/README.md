@@ -51,8 +51,26 @@ https    CONNECT receiver.sitm.local:3443 HTTP/1.1
          -> ConnectProxyMiddleware intercepts, mints a certificate, tunnels
 ```
 
-There is no proxy library in the sender. Both request shapes are written by hand with
-Node core modules, because those exact bytes are what the proxy parses.
+And each of those reaches the proxy one of two ways, in the `PROXY_TLS_RATIO` mix:
+
+```
+plain    TCP to proxy:3128, the request line in the clear
+
+tls      TLS to proxy:3127 first -- the "HTTPS proxy" a browser can be configured
+         with -- then the same request line inside it. Verified against the proxy's
+         own CA, with `proxy` as SNI, the way a device would.
+```
+
+The two draws are independent, so all four combinations occur, including CONNECT inside
+a TLS connection: TLS in TLS. The table shows the transport in the `via` column and the
+counters split it out, so a regression in the TLS listener — wrong names in its
+certificate, HTTP/2 negotiated so the CONNECT sniffing never sees a request line, the
+decrypted request not reaching the forwarder — shows up as failures under `tls` only,
+while `plain` stays green.
+
+There is no proxy library in the sender. Both request shapes and both transports are
+written by hand with Node core modules, because those exact bytes are what the proxy
+parses.
 
 ## The two numbers that matter
 
@@ -77,10 +95,13 @@ trust boundary.
   machine and the response body that came back.
 - `MITM` flag on a row means the client was handed a certificate the proxy minted rather
   than the receiver's own — interception actually happened.
-- Rate, workers, HTTPS share and PII share are editable while it runs. Pause and resume.
+- Rate, workers, HTTPS share, TLS-to-proxy share and PII share are editable while it runs.
+  Pause and resume.
 - **Freeze table** stops the redraw so a row stays still long enough to click. Traffic and
   counters carry on underneath.
-- **Fire** one request of any scenario over either scheme, to poke the proxy by hand.
+- **Fire** one request of any scenario over either scheme and either connection to the
+  proxy, to poke the proxy by hand. The detail pane shows both certificates the client
+  saw: the proxy's own on a TLS connection, and the minted one inside a tunnel.
 
 Behind it: `GET /api/stats`, `GET /api/events?since=`, `GET|POST /api/config`,
 `GET /api/scenarios`, `POST /api/fire`, `GET /api/ca`.
@@ -95,10 +116,14 @@ certificates normally, so the proxy has to trust whoever signed the receiver.
 and the proxy is pointed at it with `SSL_CERT_FILE`. .NET on Linux resolves trust through
 OpenSSL, which honours that variable.
 
-**The proxy's MITM CA → intercepted hosts.** The proxy generates it on first start into
-`/app/certs`, which the harness mounts as a named volume — the volume `backend/Dockerfile`
-asks for. The sender fetches the public certificate from `/ca.crt`, converts the DER bytes
-to PEM in-process, and trusts it for every TLS handshake, exactly as a real device would.
+**The proxy's MITM CA → intercepted hosts, and the proxy itself.** The proxy generates it
+on first start into `/app/certs`, which the harness mounts as a named volume — the volume
+`backend/Dockerfile` asks for. The sender fetches the public certificate from `/ca.crt`,
+converts the DER bytes to PEM in-process, and trusts it for every TLS handshake, exactly
+as a real device would. The same CA signs the certificate the TLS proxy listener on 3127
+presents; its subject alternative names come from `Proxy:HostNames` plus `localhost` and
+the container's own name, which is why the compose file sets `Proxy__HostNames__0: proxy`
+— the sender verifies that certificate against the name it connects to.
 Waiting for that endpoint to answer doubles as the sender's readiness check: neither
 `aspnet:10.0` nor `node:22-alpine` ships curl or wget, so a healthcheck would have to be
 written in Node anyway.
@@ -115,6 +140,8 @@ All in `.env` (see `.env.example`), and the traffic ones are live-editable in th
 | `RATE_PER_MINUTE` | `120` | Requests per minute across all workers. |
 | `CONCURRENCY` | `4` | Workers. |
 | `HTTPS_RATIO` | `0.5` | Share of requests that go through `CONNECT`. |
+| `PROXY_TLS_RATIO` | `0.5` | Share of requests whose connection to the proxy is TLS (port 3127). Independent of `HTTPS_RATIO`. |
+| `PROXY_TLS_PORT` | `3127` | The TLS proxy listener. `0` if the image under test has none; everything then goes plain. |
 | `PII_RATIO` | `0.35` | Share of requests carrying personal data. |
 | `SEED` | `20260822` | Same seed, same sequence. |
 | `BURST` | `0` | One-shot mode: send N requests, print a summary, exit. |
@@ -137,6 +164,13 @@ proxy is not answering; an empty `Jwt:Key` and a port already in use are the usu
 30 seconds (`proxy-ca-changed` in its log). If the failures persist past that, the chain
 is genuinely broken rather than stale.
 
+**Only `via tls` rows fail, `plain` is fine** — the TLS proxy listener on 3127 is the
+problem, not the forwarding. `tls to proxy: TLS not authorized: ...` means its certificate
+does not name `proxy` (check `Proxy__HostNames__0`) or was not signed by the CA the
+sender fetched. A timeout or an immediate close after the handshake usually means the
+listener negotiated something other than HTTP/1.1, or the decrypted bytes never reached
+the CONNECT sniffing. Set `PROXY_TLS_RATIO=1` to make the run consist of nothing else.
+
 ## Checking it works
 
 ```bash
@@ -149,8 +183,18 @@ docker compose logs proxy | grep "Client -> remote" | head
 # The same path by hand, from outside the compose network
 curl -sI --proxy http://localhost:3128 http://receiver.sitm.local:3000/api/v1/status
 
+# ... and through the TLS proxy listener. curl needs the proxy's CA for the proxy itself
+# (--proxy-cacert) and for the intercepted host (--cacert).
+curl -s http://localhost:3128/ca.crt | openssl x509 -inform DER -out proxy-ca.pem
+curl -sI --proxy https://localhost:3127 --proxy-cacert proxy-ca.pem --cacert proxy-ca.pem \
+  https://receiver.sitm.local:3443/api/v1/status
+
 # One-shot, for CI: exits non-zero if the proxy regresses
 docker compose run --rm -e BURST=200 sender
+
+# The same, but every request through the TLS listener -- the run that catches a broken
+# :3127 on its own
+docker compose run --rm -e BURST=200 -e PROXY_TLS_RATIO=1 sender
 ```
 
 The CA volume contract is worth checking once: note the fingerprint in

@@ -68,7 +68,7 @@ async function readJsonBody(req, limit = 64_000) {
 
 /**
  * @param store    the record store
- * @param hooks    { ca: () => object, fire: (scenario, scheme) => Promise<record> }
+ * @param hooks    { ca: () => object, fire: (scenario, scheme, proxyTls) => Promise<record> }
  */
 export function startUi({ store, hooks }) {
   const server = http.createServer(async (req, res) => {
@@ -121,7 +121,8 @@ export function startUi({ store, hooks }) {
         const scenario = findScenario(patch.scenario)
         if (!scenario) return json(res, 400, { error: `no scenario named ${patch.scenario}` })
         const scheme = patch.scheme === 'https' ? 'https' : 'http'
-        return json(res, 200, await hooks.fire(scenario, scheme))
+        const proxyTls = patch.proxyTls === true || patch.proxyTls === 'tls'
+        return json(res, 200, await hooks.fire(scenario, scheme, proxyTls))
       }
 
       if (req.method === 'GET' && url.pathname === '/api/ca') {

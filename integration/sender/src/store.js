@@ -18,6 +18,9 @@ export function createStore({ historySize = 200, latencySamples = 500 } = {}) {
     bytesSent: 0,
     bytesReceived: 0,
     byScheme: { http: { total: 0, ok: 0 }, https: { total: 0, ok: 0 } },
+    // How the proxy itself was reached: plain TCP on the proxy port, or TLS on the
+    // TLS proxy port. A regression in the TLS listener shows up only under `tls`.
+    byTransport: { plain: { total: 0, ok: 0 }, tls: { total: 0, ok: 0 } },
     byScenario: {},
     byStatus: {},
     errors: {},
@@ -45,6 +48,10 @@ export function createStore({ historySize = 200, latencySamples = 500 } = {}) {
     const scheme = totals.byScheme[record.scheme]
     scheme.total += 1
     if (record.ok) scheme.ok += 1
+
+    const transport = totals.byTransport[record.proxyTls ? 'tls' : 'plain']
+    transport.total += 1
+    if (record.ok) transport.ok += 1
 
     const scenario = (totals.byScenario[record.scenario] ??= { total: 0, ok: 0 })
     scenario.total += 1

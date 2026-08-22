@@ -16,6 +16,10 @@ export const settings = {
   // its traffic -- only through the proxy. That is the whole contract it tests.
   proxyHost: process.env.PROXY_HOST ?? 'proxy',
   proxyPort: num('PROXY_PORT', 3128),
+  // The same proxy behind TLS: the listener a browser configured with an "HTTPS proxy"
+  // would use. 0 or less means the proxy under test has no such listener, and the
+  // sender sends everything plain regardless of PROXY_TLS_RATIO.
+  proxyTlsPort: num('PROXY_TLS_PORT', 3127),
   targetHost: process.env.TARGET_HOST ?? 'receiver.sitm.local',
   targetHttpPort: num('TARGET_HTTP_PORT', 3000),
   targetHttpsPort: num('TARGET_HTTPS_PORT', 3443),
@@ -29,6 +33,8 @@ export const settings = {
   ratePerMinute: num('RATE_PER_MINUTE', 120),
   concurrency: clamp(num('CONCURRENCY', 4), 1, 64),
   httpsRatio: clamp(num('HTTPS_RATIO', 0.5), 0, 1),
+  /** Share of requests whose connection to the proxy itself is TLS (the :3127 listener). */
+  proxyTlsRatio: clamp(num('PROXY_TLS_RATIO', 0.5), 0, 1),
   piiRatio: clamp(num('PII_RATIO', 0.35), 0, 1),
   paused: false,
 
@@ -53,6 +59,7 @@ export function updateSettings(patch) {
   if ('ratePerMinute' in patch) settings.ratePerMinute = clamp(Number(patch.ratePerMinute), 1, 20000)
   if ('concurrency' in patch) settings.concurrency = Math.round(clamp(Number(patch.concurrency), 1, 64))
   if ('httpsRatio' in patch) settings.httpsRatio = clamp(Number(patch.httpsRatio), 0, 1)
+  if ('proxyTlsRatio' in patch) settings.proxyTlsRatio = clamp(Number(patch.proxyTlsRatio), 0, 1)
   if ('piiRatio' in patch) settings.piiRatio = clamp(Number(patch.piiRatio), 0, 1)
   if ('paused' in patch) settings.paused = Boolean(patch.paused)
   return publicSettings()
@@ -61,12 +68,14 @@ export function updateSettings(patch) {
 export function publicSettings() {
   return {
     proxy: `${settings.proxyHost}:${settings.proxyPort}`,
+    proxyTls: settings.proxyTlsPort > 0 ? `${settings.proxyHost}:${settings.proxyTlsPort}` : null,
     target: settings.targetHost,
     targetHttpPort: settings.targetHttpPort,
     targetHttpsPort: settings.targetHttpsPort,
     ratePerMinute: settings.ratePerMinute,
     concurrency: settings.concurrency,
     httpsRatio: settings.httpsRatio,
+    proxyTlsRatio: settings.proxyTlsRatio,
     piiRatio: settings.piiRatio,
     paused: settings.paused,
     seed: settings.seed,

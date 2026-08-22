@@ -188,22 +188,35 @@ function weightedPick(rng, scenarios) {
 }
 
 /**
- * Picks the next request. The personal-data share is a knob rather than a weight, so the
- * UI can push it to 0 or 1 without rewriting the table.
+ * Picks the next request. The personal-data, https and tls-to-proxy shares are knobs
+ * rather than weights, so the UI can push each to 0 or 1 without rewriting the table.
+ *
+ * Scheme and transport are drawn independently, so all four combinations occur:
+ * absolute-form over plain, absolute-form inside TLS, CONNECT over plain, and CONNECT
+ * inside TLS (TLS in TLS).
  */
-export function nextRequest(rng, { piiRatio, httpsRatio }) {
+export function nextRequest(rng, { piiRatio, httpsRatio, proxyTlsRatio, proxyTlsPort }) {
   const carriesPii = rng() < piiRatio
   const scenario = weightedPick(rng, carriesPii ? PII_SCENARIOS : CLEAN_SCENARIOS)
-  return build(scenario, rng, rng() < httpsRatio ? 'https' : 'http')
+  const scheme = rng() < httpsRatio ? 'https' : 'http'
+  // Always drawn, so the sequence for a seed does not depend on whether the TLS
+  // listener is configured.
+  const proxyTls = rng() < proxyTlsRatio && proxyTlsPort > 0
+  return build(scenario, rng, scheme, proxyTls)
 }
 
-export function build(scenario, rng, scheme) {
+/**
+ * @param scheme    'http' (absolute form) or 'https' (CONNECT + intercept) to the target
+ * @param proxyTls  whether the connection to the proxy itself is TLS
+ */
+export function build(scenario, rng, scheme, proxyTls = false) {
   const spec = scenario.build(rng)
   return {
     scenario: scenario.name,
     describe: scenario.describe,
     carriesPii: PII_SCENARIOS.includes(scenario),
     scheme,
+    proxyTls: Boolean(proxyTls),
     method: spec.method,
     path: spec.path,
     headers: spec.headers ?? {},
