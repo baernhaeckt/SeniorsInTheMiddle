@@ -53,9 +53,6 @@ jobs:
           tags: |
             ${{ env.IMAGE_REPO }}:${{ github.sha }}
             ${{ env.IMAGE_REPO }}:latest
-          # Keeps the NuGet restore layer warm between runs.
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Azure login
         uses: azure/login@v2
