@@ -53,7 +53,7 @@ macOS x64 only — and runs under Rosetta 2 on Apple Silicon (macOS offers to in
 is missing).
 
 Keyboard: `⌘T` / `Ctrl+T` new tab, `⌘W` / `Ctrl+W` close tab, `⌘L` / `Ctrl+L` focus address bar, `F5` reload,
-`Ctrl+Shift+D` proxy diagnostics.
+`F12` or `⌘⇧I` / `Ctrl+Shift+I` developer tools, `Ctrl+Shift+D` proxy diagnostics.
 
 ## Debugging the proxy
 
@@ -72,6 +72,20 @@ The **Proxy diagnostics** window (`Ctrl+Shift+D`, or the 🛠 button next to ⚙
 
 "Copy all" puts the whole report on the clipboard. The window is modeless, so a failing page can be reloaded while
 it stays open.
+
+### Developer tools
+
+`F12` (or the `</>` button in the toolbar) opens Chromium's own DevTools for the active tab — the Network tab is
+the quickest way to see what the proxy actually returned, and Security shows the re-signed certificate the way
+Chromium sees it. Pressing `F12` again closes the window; it belongs to the tab it was opened from, so every tab
+has its own.
+
+DevTools is a **windowed** browser next to the off-screen rendered tab, opened via `CefBrowserHost.ShowDevTools`.
+It deliberately does not use CefGlue's `AvaloniaCefBrowser.ShowDeveloperTools()`: that hands the tab's own
+`CefClient` to CEF, and the off-screen adapter's `OnBrowserClose` — unlike the windowed one — does not check
+`browser.IsPopup`, so closing the DevTools window tears down the *tab's* browser and leaves a dead tab behind.
+`TabBrowser.ToggleDevTools` passes a separate, handler-free client instead, which keeps the DevTools browser off
+the tab's adapter entirely.
 
 Set `"UseProxy": false` in `settings.json` (or clear the checkbox in the settings dialog) to connect directly and
 skip the CA download entirely. That separates "the proxy is broken" from "the browser is broken" in one step.
@@ -217,6 +231,7 @@ error fires and the chain list stays empty; state, protocol and cipher are still
 | `DocumentTitleChanged`, `SourceChanged`, `HistoryChanged`, `NavigationStarting/Completed` | `TitleChanged`, `AddressChanged`, `LoadingStateChange`, `LoadStart`/`LoadEnd` |
 | `Settings.IsStatusBarEnabled` | `StatusMessage` event → status bar row |
 | `GetDevToolsProtocolEventReceiver` + `CallDevToolsProtocolMethodAsync` | `AddDevToolsMessageObserver` + `SendDevToolsMessage` |
+| `CoreWebView2.OpenDevToolsWindow()` | `CefBrowserHost.ShowDevTools` / `CloseDevTools` / `HasDevTools` with a dedicated `CefClient` |
 | `Security.visibleSecurityStateChanged` (TLS details + chain) | `Network.responseReceived` (TLS details) + `OnCertificateError` (chain) — CEF emits no Security domain |
 | browser process wait + profile wipe on exit | wait for every browser's `OnBeforeClose`, then `CefRuntime.Shutdown()` + profile wipe (finished by a detached helper) |
 | `Visibility.Collapsed` per inactive tab | `IsVisible = false` per inactive tab |

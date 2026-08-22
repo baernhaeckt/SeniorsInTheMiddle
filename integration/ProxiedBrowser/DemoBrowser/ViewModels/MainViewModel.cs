@@ -43,6 +43,7 @@ public sealed class MainViewModel : ObservableObject
                 ActiveTab.Reload();
             }
         }, () => ActiveTab is not null);
+        DevToolsCommand = new RelayCommand(() => ActiveTab?.ToggleDevTools(), () => ActiveTab is not null);
         NewTabCommand = new RelayCommand(() => _ = OpenTabAsync(_settingsService.Current.StartPage, activate: true));
         CloseTabCommand = new RelayCommand(p => CloseTab(p as TabViewModel));
         ActivateTabCommand = new RelayCommand(p => ActiveTab = p as TabViewModel ?? ActiveTab);
@@ -133,6 +134,9 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand ForwardCommand { get; }
 
     public RelayCommand ReloadOrStopCommand { get; }
+
+    /// <summary>Opens/closes Chromium's own DevTools window for the active tab (F12 / Ctrl+Shift+I).</summary>
+    public RelayCommand DevToolsCommand { get; }
 
     public RelayCommand NewTabCommand { get; }
 

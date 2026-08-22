@@ -131,6 +131,8 @@
                     </Button>
                     <Button DockPanel.Dock="Right" Classes="icon" Content="⚙" ToolTip.Tip="Settings" Click="OnSettingsClick" />
                     <Button DockPanel.Dock="Right" Classes="icon" Content="🛠" ToolTip.Tip="Proxy diagnostics (Ctrl+Shift+D)" Click="OnDiagnosticsClick" />
+                    <Button DockPanel.Dock="Right" Classes="icon" Content="&lt;/&gt;" FontSize="12"
+                            ToolTip.Tip="Developer tools (F12)" Command="{Binding DevToolsCommand}" />
                     <Grid Margin="8,0">
                         <TextBox x:Name="AddressBar" Classes="pill" Padding="30,5,12,5"
                                  Text="{Binding AddressText, Mode=TwoWay}"

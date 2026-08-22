@@ -205,6 +205,15 @@ public sealed class TabViewModel : ObservableObject, IDisposable
 
     public void Stop() => WebView.Core?.StopLoad();
 
+    /// <summary>Opens the tab's DevTools window, or closes it again when it is already open (F12).</summary>
+    public void ToggleDevTools()
+    {
+        if (!_disposed)
+        {
+            WebView.ToggleDevTools();
+        }
+    }
+
     private void OnBrowserInitialized()
     {
         var core = WebView.Core;
@@ -455,6 +464,7 @@ public sealed class TabViewModel : ObservableObject, IDisposable
         DisposeChain(SecurityInfo);
         _devToolsRegistration?.Dispose();
         _devToolsRegistration = null;
+        WebView.CloseDevTools();
         var hadBrowser = WebView.Core is not null;
         WebView.Dispose();
         if (!hadBrowser)

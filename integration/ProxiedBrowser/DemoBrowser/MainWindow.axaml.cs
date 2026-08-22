@@ -44,9 +44,11 @@ public partial class MainWindow : Window
             KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.T, modifier), Command = viewModel.NewTabCommand });
             KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.W, modifier), Command = new RelayCommand(() => viewModel.CloseTab(viewModel.ActiveTab)) });
             KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.L, modifier), Command = new RelayCommand(FocusAddressBar) });
+            KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.I, modifier | KeyModifiers.Shift), Command = viewModel.DevToolsCommand });
         }
 
         KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.F5), Command = viewModel.ReloadOrStopCommand });
+        KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.F12), Command = viewModel.DevToolsCommand });
         KeyBindings.Add(new KeyBinding
         {
             Gesture = new KeyGesture(Key.D, KeyModifiers.Control | KeyModifiers.Shift),
