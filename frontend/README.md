@@ -86,7 +86,7 @@ The two ports differ on purpose: the backend serves the telemetry hub on its API
 (`8080`) and takes proxy traffic on `3128`, so the certificate and PAC URLs derived from
 host and port point at `3128` while the hub URL does not.
 
-The values are saved in `localStorage` under `sitm.config.v2` and belong to that
+The values are saved in `localStorage` under `sitm.config.v3` and belong to that
 browser. Reconfigure in the header reopens the form with the current values, and
 Cancel goes back without changing anything. Saving resets the dashboard so
 traffic from the old source does not sit there looking live.

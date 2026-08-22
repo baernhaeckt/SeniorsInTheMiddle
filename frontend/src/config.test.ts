@@ -129,6 +129,16 @@ describe('loadConfig / saveConfig', () => {
     expect(loadConfig(badHost)).toBeNull()
   })
 
+  it('ignores a config saved under an earlier key', () => {
+    // A v2 config holds a proxy address on what is now the backend's API port, so the
+    // setup guide built from it would point a device at a port that does not proxy.
+    const stale = memoryStorage({
+      'sitm.config.v2': JSON.stringify({ ...LIVE, proxyPort: '8080' }),
+    })
+    expect(STORAGE_KEY).toBe('sitm.config.v3')
+    expect(loadConfig(stale)).toBeNull()
+  })
+
   it('salvages a partially corrupt stored config when what is left validates', () => {
     const stored = { ...LIVE, networkName: 12345 }
     const storage = memoryStorage({ [STORAGE_KEY]: JSON.stringify(stored) })

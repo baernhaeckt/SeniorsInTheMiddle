@@ -28,10 +28,17 @@ export const RuntimeConfigSchema = v.object({
 export type RuntimeConfig = v.InferOutput<typeof RuntimeConfigSchema>
 
 /**
- * Bumped from v1, which stored a `wsUrl` pointing at a raw socket. Those configs cannot
- * reach a hub, so they are better forgotten than half-migrated.
+ * A stored config that can no longer do its job is forgotten rather than half-migrated,
+ * and the key is bumped to make that happen. `v1` held a `wsUrl` pointing at a raw socket,
+ * which cannot reach a hub. `v2` held a proxy address on the port the backend now serves
+ * its API from, so the setup guide built from it would tell people to configure a device
+ * against a port that does not proxy.
+ *
+ * A number in a stored address cannot be rewritten safely, because a deployment is free to
+ * put the proxy anywhere; sending people through the setup screen once shows them the
+ * current defaults and lets them re-enter a custom address.
  */
-export const STORAGE_KEY = 'sitm.config.v2'
+export const STORAGE_KEY = 'sitm.config.v3'
 
 /**
  * What a fresh install starts with: a proxy running on this machine, which is what
