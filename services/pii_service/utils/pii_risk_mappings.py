@@ -41,7 +41,7 @@ PII_TYPE_MAPPINGS: dict[str, PiiMapping] = {
         hipaa_category=HipaaCategory.PHI,
         risk_level=RiskLevel.LEVEL_TWO,
         pii_enum=PiiTypes.DATE,
-        faker=lambda: faker.date(),
+        faker=lambda: faker.date(pattern="%d.%m.%Y"),
     ),
     "NRP": PiiMapping(
         information_type="Nationality, Religion, Political Affiliation",
@@ -146,7 +146,7 @@ PII_TYPE_MAPPINGS: dict[str, PiiMapping] = {
         hipaa_category=HipaaCategory.PHI,
         risk_level=RiskLevel.LEVEL_THREE,
         pii_enum=PiiTypes.PERSON,
-        faker=lambda: f"{faker.first_name()} {faker.last_name()}",
+        faker=lambda: faker.name(),
     ),
     "CRYPTO": PiiMapping(
         information_type="Crypto (Financial Accounts)",
