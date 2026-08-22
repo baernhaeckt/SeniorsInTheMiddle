@@ -26,6 +26,8 @@ Heute wird dieser Konflikt organisatorisch gelöst. Sensible Angaben wie Namen, 
 
 Entscheidend ist dabei der Zeitpunkt. Daten erst beim Anzeigen wieder einzusetzen genügt nicht: Liegen die echten Werte weiterhin beim fremden Dienst und werden nur lokal versteckt, ist nichts gewonnen. Der Austausch muss stattfinden, solange die Daten noch im eigenen Einflussbereich sind. Diese Ausgangslage ist abgeleitet von der Challenge Beschreibung (siehe Anhang 2).
 
+#pagebreak()
+
 = Lösungsansatz
 
 Wir bauen die fehlende Schicht dort ein, wo jeder Dienst gleich aussieht: auf dem Netzwerkweg. "Seniors in the Middle" (SITM) ist ein Man-in-the-Middle-Proxy, der als Grenzposten zwischen den Geräten einer Organisation und allem Fremden steht. Der Name ist die Selbstbeschreibung: Wir sitzen bewusst in der Mitte, und zwar auf der eigenen Seite der Grenze.
@@ -54,6 +56,8 @@ Auf dem Rückweg werden die Tokens in der Antwort wieder durch die echten Werte 
 *Sichtbarkeit als Teil des Produkts*\
 Eine Schicht, die man nicht sieht, wird nicht geglaubt. Der Proxy sendet jeden Schritt als Ereignis an ein Dashboard: welche Anfrage beobachtet wurde, was gefunden wurde, wie der Body nach der Ersetzung aussah, was tatsächlich hinausging, was zurückkam und was der Client zu sehen bekam. Damit ist an einer Wand nachvollziehbar, dass die echten Werte die Grenze nie überschritten haben.
 
+#pagebreak()
+
 = Implementierung
 
 - Abfangender Forward-Proxy in .NET 10: absolute-form HTTP sowie HTTPS über CONNECT mit eigener CA, die beim ersten Start erzeugt wird und pro Zielhost ein Zertifikat ausstellt. Clients beziehen die CA unter /ca.crt und die Autokonfiguration unter /proxy.pac.
@@ -67,6 +71,8 @@ Eine Schicht, die man nicht sieht, wird nicht geglaubt. Der Proxy sendet jeden S
 - Testdaten sind Schweizer Fixtures mit korrekten Prüfziffern bei AHV-Nummern und IBANs, damit eine Erkennung, die validiert, nicht an Lorem Ipsum vorbeiläuft.
 - Secure: Kein Schlüsselmaterial im Image, die CA in einem gemounteten Volume, Secrets ausschliesslich über Umgebungsvariablen. Zugang zur API über JWT, der Telemetrie-Stream prüft zusätzlich den Origin des WebSocket-Handshakes selbst, weil ein Browser darauf weder CORS noch Preflight anwendet.
 - CI/CD über GitHub Actions: Build, Lint, Typecheck, Tests und Container-Images pro Komponente, Deployment nach Azure Container Apps.
+
+#pagebreak()
 
 = Technischer Aufbau
 
@@ -134,6 +140,8 @@ Wir zeigen die Schicht selbst, nicht eine fertige Betriebslösung. Bewusst ausse
 - Der Proxy ist als Proof of Concept unauthentifiziert und ohne Zielbeschränkung. Für einen Einsatz ausserhalb einer kontrollierten Umgebung fehlen Authentifizierung, Zielrestriktionen, Verbindungslimits und Schutz vor Zugriffen auf interne Adressen.
 - Skalierung und Latenz unter Last sind nicht vermessen. Die Erkennung ist der teuerste Schritt im Pfad und wäre der erste Kandidat für Caching und horizontale Verteilung.
 
+#pagebreak()
+
 = Literatur
 
 - Natron Tech, Challenge "Swiss Data Airlock", BärnHäckt 2026 (siehe Anhang 2).
@@ -147,4 +155,35 @@ Wir zeigen die Schicht selbst, nicht eine fertige Betriebslösung. Bewusst ausse
 = Anhang
 
 - Anhang 1: Repository mit Quellcode, Dokumentation und Pitch-Material: #link("https://github.com/baernhaeckt/SeniorsInTheMiddle")
-- Anhang 2: Challenge-Beschreibung "Swiss Data Airlock" von Natron Tech.
+- Anhang 2: Challenge-Beschreibung "Swiss Data Airlock" von Natron Tech. #link("https://www.bernhackt.ch/challenges/2026-swiss-data-airlock")
+
+== Challange Beschreibung
+
+KONTEXT UND HINTERGRUND
+
+Wir betreiben Infrastruktur für unsere Kundschaft, und ein Teil unseres Jobs ist, sorgfältig mit ihren Daten umzugehen.
+
+Bei manchen Kunden geht das so weit, dass gewisse Daten die Schweiz gar nicht verlassen dürfen, und zwar so, dass ein ausländischer Anbieter sie technisch nie zu Gesicht bekommt. Nicht weil ein Gesetz das pauschal verbietet, sondern weil wir es ihnen so zugesagt haben.
+
+Das wird unangenehm, weil viele gute Tools heute in der Cloud von Drittanbietern laufen, deren Server im Ausland stehen. Für manche gibt es zwar eine Schweizer Region, aber das deckt längst nicht alles ab, und der Anbieter bleibt am Ende ein ausländisches Unternehmen. Für ein verlässliches 'die Daten landen da nie' reicht das nicht.
+
+Und es bleibt nicht bei einem einzelnen Tool. Besonders heikle Daten wie Kontaktinformationen, finanzielle Angaben oder Vertragsnummern können wir nicht in Dokumentationstools wie Confluence ablegen. Dasselbe bei KI-Diensten, denen wir gerne unseren Kontext geben würden, aber ohne die sensiblen Daten.
+
+Überall dieselbe Frage, und überall fehlt uns dasselbe: eine Schicht, die genau diese Daten ersetzt, bevor sie uns verlassen.
+
+BESCHREIBUNG DES PROBLEMS
+
+Baut uns eine Schicht, die bestimmte Daten tokenisiert, bevor sie einen Dienst ausserhalb unserer Kontrolle erreichen, und sie für berechtigte Personen lokal wieder einsetzt. Nach aussen sind nur noch bedeutungslose Tokens sichtbar, für uns sieht alles normal aus, mit den echten Werten. Die Zuordnung von Token zu echtem Wert bleibt bei uns, auf einem Server in der Schweiz.
+
+Das Ganze ist bewusst allgemein gedacht. Wir haben zwar konkrete Lösungen im Kopf, möchten die Challenge aber offen lassen.
+
+Als Gedankenstütze haben wir zwei Beispiele:
+Ein Cloud-Tool wie Confluence: Wir schreiben echte Namen, Adressen und Vertragsnummern hinein, beim Anbieter landen nur Tokens, im Browser sehen wir wieder die echten Werte.
+
+Ein KI-Dienst oder MCP-Server: Ein externes Modell arbeitet mit unserem Kontext, sieht statt der echten Personendaten aber nur Tokens, und die Antwort wird bei uns wieder aufgelöst.
+
+Wichtig ist in beiden Fällen der Zeitpunkt. Es reicht nicht, die Daten erst beim Anzeigen oder beim Empfang der Antwort wieder einzusetzen. Sie müssen ersetzt werden, bevor sie unsere Grenze überschreiten. Wenn die echten Daten weiterhin beim fremden Dienst liegen und nur lokal versteckt werden, ist die Aufgabe nicht gelöst.
+
+Wenn das mal steht, kommen die spannenden Fragen: Wie sucht man, wenn überall nur noch Tokens stehen? Wie bleibt dieselbe Angabe über viele Dokumente oder Anfragen hinweg konsistent maskiert, damit Zusammenhänge erhalten bleiben? Was ist mit Anhängen, Kommentaren, Benachrichtigungen? Was mit Feldern, die der Dienst für sich selbst braucht, etwa die Login-Mail, die man nicht einfach durch einen Token ersetzen kann? Und wer darf überhaupt re-identifizieren?
+
+Wie ihr das baut, ist euch überlassen. Wir haben ein paar Ideen, aber wir sind gespannt auf eure.
