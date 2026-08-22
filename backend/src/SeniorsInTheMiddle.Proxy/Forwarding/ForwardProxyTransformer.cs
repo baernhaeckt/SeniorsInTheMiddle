@@ -560,19 +560,21 @@ sealed class ForwardProxyTransformer(
             Math.Min(ceiling, MaxPreallocatedBytes));
 
     /// <summary>
-    /// <paramref name="buffer"/>, grown straight to <paramref name="ceiling"/> once it is full.
+    /// <paramref name="buffer"/>, grown once it is full, never past <paramref name="ceiling"/>.
     ///
-    /// One growth rather than doubling. The ceiling is known before the first read, so a body
-    /// past the preallocation cap costs one more rent and one more copy; doubling its way there
-    /// would cost a reallocation and a full copy per step, every one of them large enough to
-    /// land on the large object heap, on every request.
+    /// Doubling rather than jumping straight to the ceiling. The ceiling is the configured
+    /// rewrite limit, not a measurement of this body: a 65 KB body under the 64 MB the setting
+    /// allows would reserve 64 MB, and enough concurrent ordinary uploads would reserve it each,
+    /// which is exactly what <see cref="MaxPreallocatedBytes"/> exists to prevent. Growth stays
+    /// proportional to what has actually arrived, and every step comes from the pool rather than
+    /// from a fresh large-object-heap allocation.
     /// </summary>
     private static byte[] Grown(byte[] buffer, int filled, int ceiling)
     {
         if (filled < buffer.Length)
             return buffer;
 
-        byte[] grown = ArrayPool<byte>.Shared.Rent(ceiling);
+        byte[] grown = ArrayPool<byte>.Shared.Rent((int)Math.Min((long)buffer.Length * 2, ceiling));
         buffer.AsSpan(0, filled).CopyTo(grown);
         ArrayPool<byte>.Shared.Return(buffer);
 
@@ -615,8 +617,9 @@ sealed class ForwardProxyTransformer(
     /// Reads up to <paramref name="limit"/> + 1 bytes, so the caller can tell a body that fits
     /// from one that does not by length alone.
     ///
-    /// Reads into a pooled buffer that grows at most once rather than into a stream that doubles
-    /// its way up -- see <see cref="Grown"/>.
+    /// Reads into pooled buffers rather than a MemoryStream, so the arrays a growing body passes
+    /// through are recycled instead of being allocated afresh on the large object heap for every
+    /// request -- see <see cref="Grown"/>.
     /// </summary>
     private static async Task<byte[]> ReadAtMostAsync(
         Stream body,

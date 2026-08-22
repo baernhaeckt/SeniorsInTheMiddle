@@ -46,6 +46,20 @@ sealed class ConnectProxyMiddleware
     /// <summary>What ends a request head, and therefore where the client's TLS bytes start.</summary>
     private static ReadOnlySpan<byte> HeadTerminator => "\r\n\r\n"u8;
 
+    /// <summary>
+    /// How long the whole head has to arrive.
+    ///
+    /// Matches Kestrel's default RequestHeadersTimeout, which is the deadline a partial request
+    /// used to inherit by being handed straight to it. Buffering the head here instead takes
+    /// that deadline away, and nothing else would end a connection that sends half a CONNECT and
+    /// then goes quiet: enough of those and the process is holding connections it will never
+    /// hear from again.
+    /// </summary>
+    private static readonly TimeSpan HeadTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>The buffered request head, and the position just past its terminator.</summary>
+    internal readonly record struct RequestHead(ReadOnlySequence<byte> Buffer, SequencePosition? End);
+
     private readonly IStreamProxyFactory streamProxyFactory;
     private readonly MitmCertificateProvider certificateProvider;
     private readonly ILogger<ConnectProxyMiddleware> logger;
@@ -65,26 +79,18 @@ sealed class ConnectProxyMiddleware
         PipeReader input = connection.Transport.Input;
         PipeWriter output = connection.Transport.Output;
 
-        // Read until the head is whole. A single read is not enough: a CONNECT carrying
-        // Proxy-Authorization or a long User-Agent routinely arrives in two segments, and
-        // giving up on the first one would hand the half-read request to Kestrel, which
-        // answers 400 and leaves the client with no tunnel at all.
-        ReadOnlySequence<byte> buffer;
-        SequencePosition? headerEnd;
-
-        while (true)
+        if (await ReadHeadAsync(input, HeadTimeout, connection.ConnectionClosed) is not { } head)
         {
-            ReadResult readResult = await input.ReadAsync(connection.ConnectionClosed);
-            buffer = readResult.Buffer;
-            headerEnd = FindHeaderEnd(buffer);
+            logger.LogDebug(
+                "No complete request head from {Endpoint} within {Timeout}.",
+                connection.RemoteEndPoint,
+                HeadTimeout);
 
-            if (headerEnd is not null || readResult.IsCompleted || buffer.Length >= MaxHeadBytes)
-                break;
-
-            // Nothing consumed, everything examined: this asks for more bytes rather than
-            // being handed the same incomplete head again.
-            input.AdvanceTo(buffer.Start, buffer.End);
+            return;
         }
+
+        ReadOnlySequence<byte> buffer = head.Buffer;
+        SequencePosition? headerEnd = head.End;
 
         if (headerEnd is null)
         {
@@ -251,6 +257,48 @@ sealed class ConnectProxyMiddleware
         string[] parts = (lineEnd < 0 ? start : start[..lineEnd]).Split(' ');
 
         return parts.Length == 3 && parts[2].StartsWith("HTTP/1.", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Buffers until the request head is whole, and hands back what was read.
+    ///
+    /// A single read is not enough: a CONNECT carrying Proxy-Authorization or a long User-Agent
+    /// routinely arrives in two segments, and giving up on the first would hand the half-read
+    /// request to Kestrel, which answers 400 and leaves the client with no tunnel at all.
+    ///
+    /// Returns null when <paramref name="timeout"/> passed or the client went away, neither of
+    /// which leaves anything worth answering.
+    /// </summary>
+    internal static async ValueTask<RequestHead?> ReadHeadAsync(
+        PipeReader input,
+        TimeSpan timeout,
+        CancellationToken connectionClosed)
+    {
+        using CancellationTokenSource deadline =
+            CancellationTokenSource.CreateLinkedTokenSource(connectionClosed);
+
+        deadline.CancelAfter(timeout);
+
+        try
+        {
+            while (true)
+            {
+                ReadResult readResult = await input.ReadAsync(deadline.Token);
+                ReadOnlySequence<byte> buffer = readResult.Buffer;
+                SequencePosition? headerEnd = FindHeaderEnd(buffer);
+
+                if (headerEnd is not null || readResult.IsCompleted || buffer.Length >= MaxHeadBytes)
+                    return new RequestHead(buffer, headerEnd);
+
+                // Nothing consumed, everything examined: this asks for more bytes rather than
+                // being handed the same incomplete head again.
+                input.AdvanceTo(buffer.Start, buffer.End);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
     }
 
     /// <summary>
