@@ -58,3 +58,4 @@ class PiiTypes(Enum):
     KR_BRN = "KR_BRN"
     KR_RRN = "KR_RRN"
     TH_TNIN = "TH_TNIN"
+    MISC = "MISC"
