@@ -55,34 +55,60 @@ is missing).
 Keyboard: `⌘T` / `Ctrl+T` new tab, `⌘W` / `Ctrl+W` close tab, `⌘L` / `Ctrl+L` focus address bar, `F5` reload,
 `F12` or `⌘⇧I` / `Ctrl+Shift+I` developer tools, `Ctrl+Shift+D` proxy diagnostics.
 
-## Two certificates, two different mechanisms
+## What Chromium will and will not ask about
 
-Behind this proxy Chromium meets certificates signed by the proxy's CA in **two** places, and only one of them
-can be overridden from inside the app:
+Behind this proxy every certificate Chromium meets is signed by the proxy's CA. Chromium offers the
+embedder a say in exactly one of the three places that happens:
 
-| Certificate | When | How it is trusted |
+| Certificate | When | Can the app answer? |
 |---|---|---|
-| The re-signed **site** certificate (`bambit.ch`, `fonts.googleapis.com`, …) | Every HTTPS site, with either proxy scheme | `CertificateService.HandleServerCertificateError`, from `OnCertificateError`. Chromium asks, the app builds the chain against the in-memory CA and answers. |
-| The **proxy's own TLS** certificate | Only with `"ProxyScheme": "https"`, on the connection *to* the proxy | A pin on the command line. `OnCertificateError` never fires for it. |
+| The re-signed certificate of the **page you navigated to** | Main-frame navigation | **Yes** — `OnCertificateError` fires, and `CertificateService.HandleServerCertificateError` builds the chain against the in-memory CA. |
+| The re-signed certificate of a **subresource** — a script, an API call, an image on another origin | Every page that pulls from a CDN, an API host, an analytics domain | **No.** Chromium denies the request outright: a user has no context to judge a certificate they never chose to visit. |
+| The **proxy's own TLS** certificate | Only with `"ProxyScheme": "https"` | **No.** The connection fails before there is anything to ask about. |
 
-That second row is the one that bites. A proxy certificate Chromium does not trust is not a question it asks —
-it fails the connection outright (`ERR_CERT_AUTHORITY_INVALID`, `CertVerifyProcBuiltin for <proxy host> failed`
-in `cef.log`) and **every tab stays blank**, with no callback anywhere to intervene. The symptom looks identical
-to a broken site certificate, but no amount of work in `HandleServerCertificateError` can fix it.
+The two "no" rows are why a callback alone cannot make this browser work. Answering the first row gets the
+document on screen and nothing else: every script, XHR and image on another host dies with
+`ERR_CERT_AUTHORITY_INVALID`, which looks like a broken site rather than a certificate problem. Get the third
+row wrong and every tab stays blank, with `CertVerifyProcBuiltin for <proxy host> failed` in `cef.log` and no
+callback anywhere to intervene.
 
-So the decision is made before the engine starts. `CertificateService.ProbeProxyTlsPinAsync` opens its own TLS
-connection to `ProxyHost:ProxyPort`, validates the presented certificate against the CA just downloaded — the
-same custom-root policy used for site certificates, so an untrusted proxy is still refused — and derives its SPKI
-pin. `BrowserEnvironmentService` passes that one pin as `--ignore-certificate-errors-spki-list`.
+So the decision is made **before the engine starts**, because that is the only place it can be made.
 
-The pin covers exactly that key and nothing else. It is deliberately **not** `--ignore-certificate-errors`, which
-would accept every bad certificate from every host and silently switch off the in-process trust decision this app
-exists to demonstrate. Site certificates carry different keys, are not covered by the pin, and still go through
-`HandleServerCertificateError` — the diagnostics window shows both steps, one after the other.
+### How the pin is established
 
-Because the pin is a command-line switch, it is read once at engine start: **if the proxy is restarted and mints a
-new TLS certificate, restart the browser too.** That is the same restart the proxy settings already require.
-With `"ProxyScheme": "http"` no pin is involved at all — there is no TLS to the proxy.
+`CertificateService.CollectProxyPinsAsync` runs between the CA download and `CefRuntimeLoader.Initialize`:
+
+1. If the browser is going to speak TLS to the proxy, it opens that connection itself and reads the
+   certificate the proxy presents.
+2. It opens a real `CONNECT` tunnel through the proxy to the start page's host and reads the certificate the
+   proxy mints for it — exactly what the browser is about to meet.
+3. Each one is validated against the CA just downloaded, with the same custom-root policy used for site
+   certificates. Anything that does not chain to our CA is refused and never pinned.
+4. What survives is passed to Chromium as `--ignore-certificate-errors-spki-list`.
+
+**One pin covers every host**, because the proxy signs everything it mints with a single key (see
+`MitmCertificateProvider._serverKey` — that sharing is what makes a browser behind it possible at all, not an
+optimisation). Both certificates are probed anyway: against a proxy that shares the key they yield the same
+pin, and against one that does not, the browser still reaches the proxy and its start page instead of nothing.
+
+It is deliberately **not** `--ignore-certificate-errors`. That switch accepts every bad certificate from every
+host and would silently switch off the trust decision this app exists to demonstrate. A pin covers one public
+key — the one this app verified itself, in-process, against a CA it fetched and checked. A certificate from
+anywhere else still fails, and still lands in `HandleServerCertificateError`.
+
+### Two consequences worth knowing
+
+**Restart the browser when you restart the proxy.** The pin is a command-line switch, read once at engine
+start, and a restarted proxy generates a new signing key. This is the same restart the proxy settings already
+require.
+
+**The lock popup no longer gets its certificate for free.** It used to arrive with the certificate error;
+there is no error any more. CEF exposes no way to read the certificate of a *successful* connection (its
+DevTools Security domain stays silent and `Network.getCertificate` answers with an empty list), so
+`TabViewModel.AttachInterceptedCertificateAsync` asks the proxy for it the same way the browser got it —
+through a `CONNECT` tunnel, cached per host. Best effort, and off the navigation path.
+
+With `"ProxyScheme": "http"` there is no TLS to the proxy, so only the interception pin is established.
 
 ## Debugging the proxy
 
@@ -157,7 +183,7 @@ All state lives under `~/Library/Application Support/DemoBrowser/` (macOS) resp.
 | Key | Meaning |
 |-----|---------|
 | `UseProxy` | `false` connects directly (`--no-proxy-server`) and skips the CA download; every other proxy key below is then ignored. Useful to tell a broken proxy apart from a broken browser. Default `true`. |
-| `ProxyScheme` | `http` (plain HTTP CONNECT proxy, port 3128) or `https` (TLS-terminating proxy, port 3127). The settings dialog swaps the port automatically when you switch scheme. With `https` the proxy's own TLS certificate is validated against the CA at startup and pinned for Chromium — see [Two certificates, two different mechanisms](#two-certificates-two-different-mechanisms). |
+| `ProxyScheme` | `http` (plain HTTP CONNECT proxy, port 3128) or `https` (TLS-terminating proxy, port 3127). The settings dialog swaps the port automatically when you switch scheme. Either way the proxy's signing key is validated against the CA at startup and pinned for Chromium — see [What Chromium will and will not ask about](#what-chromium-will-and-will-not-ask-about). |
 | `ProxyHost`, `ProxyPort` | Proxy endpoint. Port must be 1–65535. |
 | `ProxyBypassList` | Chromium `--proxy-bypass-list` syntax, e.g. `localhost;*.corp.example.com`. Empty = nothing bypassed. |
 | `CaCertUrl` | URL serving the proxy CA as PEM or DER. The proxy publishes it (and `proxy.pac`) on its plain-HTTP port: `http://<host>:3128/ca.cer`. An https URL is validated with full TLS. |
