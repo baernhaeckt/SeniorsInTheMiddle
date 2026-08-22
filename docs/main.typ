@@ -1,5 +1,5 @@
-#let team = "Menu Mingles"
-#let title = "TransGourmet: Clever planen, bewusster essen - Menueplanung smart gemacht"
+#let team = "SeniorsInTheMiddle"
+#let title = "Swiss Data Airlock: Der Proxy, der Personendaten an der Grenze ersetzt"
 
 #set document(author: team)
 #set text(font: "Arial", size: 10pt, lang: "de", region: "CH")
