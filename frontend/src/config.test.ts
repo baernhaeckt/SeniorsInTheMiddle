@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   BLANK_CONFIG,
   STORAGE_KEY,
+  apiBaseOf,
   caUrlOf,
   coerceConfig,
   loadConfig,
@@ -158,5 +159,31 @@ describe('loadConfig / saveConfig', () => {
     expect(() => {
       saveConfig(LIVE, throwing)
     }).not.toThrow()
+  })
+})
+
+describe('apiBaseOf', () => {
+  it('takes the origin from the hub URL', () => {
+    // The API and the hub are the same listener, so nobody is asked for a second address.
+    expect(apiBaseOf({ ...BLANK_CONFIG, hubUrl: 'http://localhost:8080/hub/telemetry' })).toBe(
+      'http://localhost:8080',
+    )
+  })
+
+  it('keeps a non-default port and drops the path', () => {
+    expect(
+      apiBaseOf({ ...BLANK_CONFIG, hubUrl: 'https://proxy.sitm.local:9443/hub/telemetry' }),
+    ).toBe('https://proxy.sitm.local:9443')
+  })
+
+  it('tolerates surrounding whitespace', () => {
+    expect(apiBaseOf({ ...BLANK_CONFIG, hubUrl: '  http://proxy:8080/hub/telemetry  ' })).toBe(
+      'http://proxy:8080',
+    )
+  })
+
+  it('is empty for something that is not a URL', () => {
+    expect(apiBaseOf({ ...BLANK_CONFIG, hubUrl: 'proxy:8080' })).toBe('')
+    expect(apiBaseOf({ ...BLANK_CONFIG, hubUrl: '' })).toBe('')
   })
 })

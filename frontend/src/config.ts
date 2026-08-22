@@ -72,6 +72,27 @@ export function proxyAddressOf(config: RuntimeConfig): string {
   return `${config.proxyHost}:${config.proxyPort}`
 }
 
+/**
+ * Where the REST API lives, derived from the hub address rather than asked for separately.
+ *
+ * The two are the same listener — `http://host:8080/hub/telemetry` and
+ * `http://host:8080/api/v1/...` — so a second field on the setup screen would only be a
+ * second thing to get wrong. Empty when the hub URL is not a URL, which the form already
+ * refuses to save.
+ */
+export function apiBaseOf(config: RuntimeConfig): string {
+  try {
+    const url = new URL(config.hubUrl.trim())
+    // The scheme is checked rather than assumed: `new URL` happily parses "proxy:8080" as a
+    // custom scheme, and hands back the string "null" for its origin.
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return ''
+
+    return url.origin
+  } catch {
+    return ''
+  }
+}
+
 /** The root certificate a device must trust before HTTPS can be read. */
 export function caUrlOf(config: RuntimeConfig): string {
   return config.caUrl.trim() || `http://${proxyAddressOf(config)}/ca.crt`

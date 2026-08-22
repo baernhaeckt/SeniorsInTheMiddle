@@ -1,3 +1,4 @@
+import type { Session } from '../auth/session'
 import { hasProxyAddress, proxyAddressOf, type RuntimeConfig } from '../config'
 import { COPY } from '../copy'
 import { median } from '../engine/store'
@@ -5,6 +6,7 @@ import { useStore } from '../engine/useStore'
 import { PROTOCOL_VERSION } from '../protocol/types'
 import type { LinkState } from '../transport/types'
 import { Mark, Wordmark } from './Brand'
+import { UserBubble } from './UserBubble'
 
 const LINK_COPY: Record<LinkState, string> = {
   idle: 'not attached',
@@ -18,9 +20,12 @@ interface HeaderProps {
   config: RuntimeConfig
   onOpenGuide: () => void
   onReconfigure: () => void
+  /** Absent on the demo feed, which signs nobody in. */
+  session: Session | null
+  onSignOut: () => void
 }
 
-export function Header({ config, onOpenGuide, onReconfigure }: HeaderProps) {
+export function Header({ config, onOpenGuide, onReconfigure, session, onSignOut }: HeaderProps) {
   const metrics = useStore((state) => state.metrics)
   const link = useStore((state) => state.link)
   const protocolVersion = useStore((state) => state.protocolVersion)
@@ -85,6 +90,8 @@ export function Header({ config, onOpenGuide, onReconfigure }: HeaderProps) {
         <button type="button" className="reconf" onClick={onReconfigure}>
           Reconfigure
         </button>
+
+        {session && <UserBubble session={session} onSignOut={onSignOut} />}
       </div>
     </header>
   )

@@ -238,3 +238,92 @@ describe('createSignalRTransport', () => {
     expect(FakeHub.instances).toHaveLength(1)
   })
 })
+
+describe('authentication', () => {
+  /** Captures what the transport hands the SignalR builder, which is where the token goes. */
+  function setupWithToken(getToken: () => string | null) {
+    const factories: (undefined | (() => string))[] = []
+    const failures: string[] = []
+
+    const transport = createSignalRTransport('http://proxy:8080/hub/telemetry', {
+      connectionFactory: (url, accessTokenFactory) => {
+        factories.push(accessTokenFactory)
+        const hub = new FakeHub(url)
+        FakeHub.instances.push(hub)
+        return hub
+      },
+      random: () => 0.5,
+      onRejected: vi.fn(),
+      getToken,
+      onConnectFailed: (detail) => failures.push(detail),
+    })
+
+    return { transport, factories, failures }
+  }
+
+  it('hands the connection a factory that reads the current token', () => {
+    let token: string | null = 'first-token'
+    const { transport, factories } = setupWithToken(() => token)
+
+    transport.start()
+
+    expect(factories[0]?.()).toBe('first-token')
+
+    // Read per call, not captured once: a re-login mid-session has to reach the socket.
+    token = 'second-token'
+    expect(factories[0]?.()).toBe('second-token')
+  })
+
+  it('re-reads the token on every reconnect attempt', async () => {
+    let token: string | null = 'stale'
+    const { transport, factories } = setupWithToken(() => token)
+
+    transport.start()
+    await latest()?.refuse()
+
+    token = 'fresh'
+    await vi.advanceTimersByTimeAsync(BACKOFF_MS[0] ?? 0)
+
+    expect(factories).toHaveLength(2)
+    expect(factories[1]?.()).toBe('fresh')
+  })
+
+  it('reports an empty token rather than omitting the factory when signed out', () => {
+    const { transport, factories } = setupWithToken(() => null)
+
+    transport.start()
+
+    expect(factories[0]).toBeTypeOf('function')
+    expect(factories[0]?.()).toBe('')
+  })
+
+  it('passes no factory at all when the caller supplies no token source', () => {
+    // The demo feed never signs in, and neither should its connection claim to.
+    const factories: (undefined | (() => string))[] = []
+    const transport = createSignalRTransport('http://proxy:8080/hub/telemetry', {
+      connectionFactory: (url, accessTokenFactory) => {
+        factories.push(accessTokenFactory)
+        const hub = new FakeHub(url)
+        FakeHub.instances.push(hub)
+        return hub
+      },
+      random: () => 0.5,
+      onRejected: vi.fn(),
+    })
+
+    transport.start()
+
+    expect(factories[0]).toBeUndefined()
+  })
+
+  it('reports a failed attempt so the app can ask why', async () => {
+    // The transport cannot see the status code behind a refused upgrade, so it only says
+    // that the attempt failed; deciding whether the session died is the app's job.
+    const { transport, failures } = setupWithToken(() => 'token')
+
+    transport.start()
+    await latest()?.refuse('could not reach the hub')
+
+    expect(failures).toEqual(['could not reach the hub'])
+  })
+})

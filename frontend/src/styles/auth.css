@@ -1,0 +1,291 @@
+/*
+ * The sign-in screen. Two panels: the product on the left, the form on the right.
+ *
+ * Shares the card treatment, inputs and buttons with the setup screen; only the split layout
+ * and the drifting packets are new here.
+ *
+ * Named `signin` rather than the more obvious `gate`, which band.css already uses for the
+ * flow band's centre readout. Reusing it silently inherits that block's fixed width.
+ */
+
+/*
+ * Flex with an auto-margined child rather than `place-items: center`, which the setup screen
+ * can afford and this cannot: centring a grid item sizes it to fit-content, and the card's
+ * own `minmax(0, 1fr)` columns then have nothing to push against, so its `100%` width
+ * resolves against a track its own content is defining and collapses to a ribbon. An auto
+ * margin centres against a width that is already definite, and never clips a tall card the
+ * way centred alignment does when the panel has to scroll.
+ */
+.signin {
+  height: 100%;
+  overflow: auto;
+  display: flex;
+  padding: 32px 20px;
+}
+
+.signin__card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  flex: none;
+  margin: auto;
+  width: min(880px, 100%);
+  background: linear-gradient(180deg, var(--panel-hi), var(--panel));
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow:
+    0 40px 120px rgb(0 0 0 / 60%),
+    0 0 90px rgb(40 136 121 / 5%);
+  animation: sheet-in 320ms var(--ease) both;
+}
+
+/* ------------------------------------------------------------------ art -- */
+
+.signin__art {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 380px;
+  padding: 26px 24px 22px;
+  border-right: 1px solid var(--line-soft);
+
+  /* Warm behind the household, cool behind the open internet: the same left-to-right
+     reading the dashboard's flow band uses. */
+  background:
+    radial-gradient(120% 90% at 0% 40%, rgb(40 136 121 / 18%), transparent 60%),
+    radial-gradient(120% 90% at 100% 60%, rgb(56 181 238 / 12%), transparent 60%), var(--void-2);
+}
+
+.signin__rail {
+  position: relative;
+  flex: 1;
+  margin: 6px 0 18px;
+}
+
+/* The boundary the packets meet, dead centre. */
+.signin__wall {
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, var(--warm-line), transparent);
+}
+
+.signin__mote {
+  position: absolute;
+  left: 0;
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  opacity: 0;
+  animation: signin-drift 5200ms linear infinite;
+}
+
+.signin__mote[data-kind='cool'] {
+  background: var(--cool);
+  box-shadow: 0 0 10px var(--cool-line);
+}
+
+/* Held at the wall rather than crossing it: stops halfway and fades. */
+.signin__mote[data-kind='warm'] {
+  background: var(--alert);
+  box-shadow: 0 0 10px var(--alert-line);
+  animation-name: signin-held;
+}
+
+@keyframes signin-drift {
+  0% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+
+  12% {
+    opacity: 1;
+  }
+
+  88% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(calc(100% + 220px));
+  }
+}
+
+@keyframes signin-held {
+  0% {
+    opacity: 0;
+    transform: translateX(0) scaleX(1);
+  }
+
+  15% {
+    opacity: 1;
+  }
+
+  55% {
+    opacity: 1;
+    transform: translateX(120px) scaleX(1);
+  }
+
+  70% {
+    opacity: 1;
+    transform: translateX(120px) scaleX(0.4);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(120px) scaleX(0.2);
+  }
+}
+
+.signin__mark {
+  width: 32px;
+  height: 32px;
+  flex: none;
+}
+
+.signin__thesis {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+/* ----------------------------------------------------------------- form -- */
+
+.signin__form {
+  padding: 26px 28px 22px;
+}
+
+.signin__head {
+  margin-bottom: 18px;
+}
+
+.signin__name {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.05;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.signin__name em {
+  font-style: normal;
+  color: var(--warm);
+}
+
+.signin__sub {
+  margin: 4px 0 0;
+}
+
+.signin__modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.signin__mode {
+  position: relative;
+  display: block;
+  padding: 8px 10px;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: rgb(13 18 22 / 50%);
+  cursor: pointer;
+  font-family: var(--display);
+  font-variation-settings: 'wdth' 106;
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--ink-2);
+  transition:
+    border-color 160ms var(--ease),
+    background 160ms var(--ease),
+    color 160ms var(--ease);
+}
+
+.signin__mode:hover {
+  border-color: var(--ink-3);
+}
+
+.signin__mode:has(.choice__radio:focus-visible) {
+  outline: 2px solid var(--warm);
+  outline-offset: 2px;
+}
+
+.signin__mode[data-picked='true'] {
+  border-color: var(--warm-line);
+  background: var(--warm-soft);
+  color: var(--warm);
+}
+
+.signin__demo {
+  margin: 0 0 12px;
+  padding: 7px 9px;
+  border: 1px dashed var(--warm-line);
+  border-radius: 2px;
+  background: var(--warm-soft);
+  color: var(--warm);
+  letter-spacing: 0.14em;
+}
+
+.signin__error {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--alert-line);
+  border-radius: 2px;
+  background: var(--alert-soft);
+  color: var(--alert);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.signin__go {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.signin__go:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.signin__where {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 14px 0 0;
+  font-size: 10px;
+  color: var(--ink-3);
+}
+
+.signin__where .u-mono {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- narrow -- */
+
+@media (width <= 760px) {
+  .signin__card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The art becomes a strip: enough to keep the brand, not enough to push the form
+     below the fold on a phone. */
+  .signin__art {
+    min-height: 0;
+    padding: 18px 20px;
+    border-right: none;
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .signin__rail {
+    display: none;
+  }
+}

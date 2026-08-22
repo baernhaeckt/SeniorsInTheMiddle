@@ -19,10 +19,23 @@ export interface HubLike {
 }
 
 export interface SignalRTransportOptions {
-  connectionFactory?: (url: string) => HubLike
+  connectionFactory?: (url: string, accessTokenFactory?: () => string) => HubLike
   random?: () => number
   /** Called once per rejected frame, with the reason. Defaults to console.warn, throttled per reason. */
   onRejected?: (detail: string) => void
+  /**
+   * The token to authenticate the handshake with, read fresh on every connect attempt so a
+   * sign-out or a new sign-in is picked up by the retry loop without rebuilding the transport.
+   */
+  getToken?: () => string | null
+  /**
+   * Called when a connection attempt fails, before the retry is scheduled.
+   *
+   * A browser cannot see the status code behind a failed WebSocket upgrade, so this transport
+   * genuinely cannot tell a rejected token from an unreachable proxy. It reports the failure
+   * and lets the app decide — the app can ask the REST API, which does answer that question.
+   */
+  onConnectFailed?: (detail: string) => void
 }
 
 export function backoffFor(attempt: number, random = Math.random): number {
@@ -36,12 +49,18 @@ export function backoffFor(attempt: number, random = Math.random): number {
  * connect-src policy to ws:/wss: and takes CORS out of the picture entirely — which
  * matters, because the proxy's address is typed in at runtime and cannot be baked into a
  * Content-Security-Policy at build time.
+ *
+ * The same choice is why the token travels as `accessTokenFactory` rather than a header:
+ * there is no negotiate request to put an Authorization header on, and the browser's
+ * WebSocket API cannot set one either. Given this factory, the SignalR client appends the
+ * token to the socket URL as `?access_token=`, which is what the hub reads it from.
  */
-function buildConnection(url: string): HubLike {
+function buildConnection(url: string, accessTokenFactory?: () => string): HubLike {
   return new HubConnectionBuilder()
     .withUrl(url, {
       skipNegotiation: true,
       transport: HttpTransportType.WebSockets,
+      accessTokenFactory,
     })
     .configureLogging(LogLevel.Warning)
     .build()
@@ -65,6 +84,13 @@ export function createSignalRTransport(
   const connect = options.connectionFactory ?? buildConnection
   const random = options.random ?? Math.random
   const onRejected = options.onRejected ?? warnOnce
+  const getToken = options.getToken
+  const onConnectFailed = options.onConnectFailed
+
+  // SignalR wants a factory that always produces a string. There being no token is a real
+  // state — the demo feed never has one — and an empty string is what the server then sees
+  // as "no credentials", which is the honest answer.
+  const accessTokenFactory = getToken ? () => getToken() ?? '' : undefined
 
   const events = createEmitter<ServerEvent>()
   const status = createEmitter<LinkStatus>()
@@ -92,7 +118,7 @@ export function createSignalRTransport(
 
     let next: HubLike
     try {
-      next = connect(url)
+      next = connect(url, accessTokenFactory)
     } catch (error) {
       scheduleRetry(messageOf(error, 'could not build a connection'))
       return
@@ -139,6 +165,7 @@ export function createSignalRTransport(
     const delay = backoffFor(attempt, random)
     attempt += 1
     setStatus({ state: 'retrying', attempt, detail })
+    onConnectFailed?.(detail)
     retryTimer = window.setTimeout(open, delay)
   }
 
