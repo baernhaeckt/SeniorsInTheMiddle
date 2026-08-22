@@ -97,7 +97,6 @@ class PiiDetector:
                         start_position=detection.start,
                         end_position=detection.end,
                         detected_text=detected_text,
-                        replacement_text=pii_mapping.faker,
                         risk_level=pii_mapping.risk_level.value,
                         hipaa_category=pii_mapping.hipaa_category.value
                     )
@@ -113,3 +112,14 @@ class PiiDetector:
             return to_dict(pii_analysis_result)
         except Exception as e:
                 raise Exception(f"Error analyzing text: {e}")
+
+    def create_replacement_text(self, pii_type: str) -> str:
+        """
+        Creates a replacement text for the given PII type.
+        Args:
+            pii_type (str): The PII type for which to create a replacement text.
+        Returns:
+            str: The replacement text.
+        """
+        pii_mapping = get_pii_risk_mapping(pii_type)
+        return pii_mapping.faker

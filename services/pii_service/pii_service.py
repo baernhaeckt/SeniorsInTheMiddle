@@ -46,7 +46,11 @@ class ExampleService(Service):
             case "analyze":
                 logger.info(f"Handling 'analyze")
                 text = payload.get("text", "")
-                pii_analyzer.analyze_text(text, detection_entities=[p.value for p in PiiTypes])
+                return pii_analyzer.analyze_text(text, detection_entities=[p.value for p in PiiTypes])
+            case "replacement_text":
+                logger.info(f"Handling 'replace_text'")
+                pii_type = payload.get("pii_type", "")
+                return pii_analyzer.create_replacement_text(pii_type)
             case _:
                 raise MethodNotFoundError(method)
 

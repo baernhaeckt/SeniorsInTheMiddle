@@ -13,7 +13,6 @@ class DetectionResultItem:
     start_position: int = 0
     end_position: int = 0
     detected_text: str = ""
-    replacement_text: str = ""
     risk_level: int = 0
     hipaa_category: str = ""
 
