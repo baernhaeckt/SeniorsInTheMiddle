@@ -37,6 +37,7 @@ public sealed class TabViewModel : ObservableObject, IDisposable
     private IReadOnlyList<string> _lastCertErrorIssues = [];
     private IReadOnlyList<X509Certificate2> _lastCertErrorChain = [];
     private ConnectionSecurityInfo _securityInfo = new();
+    private CertificateService.ProxyEndpoint? _proxyEndpoint;
     private CefRegistration? _devToolsRegistration;
 
     private const int EnableNetworkMessageId = 1;
@@ -153,7 +154,15 @@ public sealed class TabViewModel : ObservableObject, IDisposable
     /// </summary>
     public async Task InitializeAsync(BrowserEnvironment environment, string initialUrl)
     {
-        _ = environment; // one process-wide engine: every tab implicitly uses it
+        // One process-wide engine: every tab implicitly uses it. Its settings are kept for one thing only —
+        // asking the proxy which certificate it minted for a host, which is what the lock popup shows now that
+        // Chromium no longer reports an error for those certificates (see OnDocumentResponseReceived).
+        _proxyEndpoint = environment.Settings.UseProxy
+            ? new CertificateService.ProxyEndpoint(
+                environment.Settings.ProxyHost.Trim(),
+                environment.Settings.ProxyPort,
+                string.Equals(environment.Settings.ProxyScheme, "https", StringComparison.OrdinalIgnoreCase))
+            : null;
         Navigate(initialUrl);
         await _initialized.Task;
         if (_disposed)
@@ -315,10 +324,66 @@ public sealed class TabViewModel : ObservableObject, IDisposable
                 DisposeChain(previous);
             }
 
+            if (chain.Count == 0 && uri.Scheme == Uri.UriSchemeHttps)
+            {
+                _ = AttachInterceptedCertificateAsync(uri.Host);
+            }
         }
         catch (JsonException)
         {
         }
+    }
+
+    /// <summary>
+    /// Asks the proxy for the certificate it minted for <paramref name="host"/> and puts it in the lock popup.
+    ///
+    /// WHY this is needed: the chain used to arrive for free, because every site behind the proxy raised a
+    /// certificate error and OnCertificateError carries the certificate. It no longer does — the proxy's signing
+    /// key is pinned before the engine starts, so Chromium accepts those certificates silently, which is the only
+    /// way subresources on other origins can load at all. CEF exposes no way to read the certificate of a
+    /// *successful* connection (its DevTools Security domain stays silent and Network.getCertificate answers with
+    /// an empty list), so the certificate is fetched the same way the browser got it: through the proxy.
+    ///
+    /// Best effort and off the navigation path — a lock popup without a chain is a small loss, a blocked
+    /// navigation is not.
+    /// </summary>
+    private async Task AttachInterceptedCertificateAsync(string host)
+    {
+        if (_proxyEndpoint is not { } endpoint)
+        {
+            return;
+        }
+
+        var certificate = await _certificateService
+            .ProbeInterceptedCertificateAsync(endpoint, host)
+            .ConfigureAwait(false);
+        if (certificate is null)
+        {
+            return;
+        }
+
+        Post(() =>
+        {
+            var current = SecurityInfo;
+            if (_disposed || current.Chain.Count > 0 || !string.Equals(current.Host, host, StringComparison.OrdinalIgnoreCase))
+            {
+                // Navigated on, or a certificate error filled the chain in the meantime.
+                certificate.Dispose();
+                return;
+            }
+
+            SecurityInfo = new ConnectionSecurityInfo
+            {
+                Host = current.Host,
+                SecurityState = current.SecurityState,
+                Protocol = current.Protocol,
+                KeyExchange = current.KeyExchange,
+                Cipher = current.Cipher,
+                Chain = [certificate],
+                Issues = current.Issues,
+                TrustedViaProxyCa = true,
+            };
+        });
     }
 
     private void OnLoadStart(object sender, LoadStartEventArgs e)

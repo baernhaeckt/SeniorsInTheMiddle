@@ -114,28 +114,34 @@ public partial class App : Application
             caError = await certificateService.DownloadAsync(settings.CaCertUrl);
         }
 
-        // 3b. The proxy's own TLS certificate, when Chromium is going to speak TLS to the proxy.
+        // 3b. The certificates Chromium will never ask about: the proxy's own, and the ones it mints.
         //
-        // WHY before the engine starts: a site certificate the proxy re-signed is overridden in
-        // CertificateService.HandleServerCertificateError, but the certificate of the *proxy connection itself*
-        // never reaches that callback — Chromium refuses it outright (ERR_CERT_AUTHORITY_INVALID) and every tab
-        // stays blank with no way to intervene. The certificate is therefore validated here, against the CA that
-        // was just downloaded, and handed to the engine as a pin for that one key.
-        string[] proxyTlsPins = [];
+        // WHY before the engine starts: OnCertificateError is offered for main-frame navigations only. A
+        // subresource on another origin — a script, an API call, an image — is denied outright, and so is a bad
+        // certificate on the connection to the proxy itself. Neither reaches
+        // CertificateService.HandleServerCertificateError, so neither can be repaired once the engine is running:
+        // the document would load and everything it pulls from another host would fail. Both are therefore
+        // validated here against the CA that was just downloaded and handed over as command-line pins.
+        IReadOnlyList<string> proxyTlsPins = [];
         string? proxyTlsError = null;
-        if (settings.UseProxy && string.Equals(settings.ProxyScheme, "https", StringComparison.OrdinalIgnoreCase))
+        if (settings.UseProxy)
         {
-            splash.SetStatus("Checking the TLS proxy…");
-            var pin = await certificateService.ProbeProxyTlsPinAsync(settings.ProxyHost.Trim(), settings.ProxyPort);
-            if (pin is null)
+            splash.SetStatus("Checking the proxy…");
+            var endpoint = new CertificateService.ProxyEndpoint(
+                settings.ProxyHost.Trim(),
+                settings.ProxyPort,
+                string.Equals(settings.ProxyScheme, "https", StringComparison.OrdinalIgnoreCase));
+
+            // The start page is the natural probe target: it is the first thing the browser opens anyway, so a
+            // proxy that cannot serve it is a problem the user is about to meet regardless.
+            var probeHost = Uri.TryCreate(settings.StartPage, UriKind.Absolute, out var start)
+                && start.Scheme == Uri.UriSchemeHttps ? start.Host : null;
+
+            proxyTlsPins = await certificateService.CollectProxyPinsAsync(endpoint, probeHost);
+            if (proxyTlsPins.Count == 0)
             {
-                proxyTlsError = $"The TLS proxy at {settings.ProxyHost.Trim()}:{settings.ProxyPort} could not be "
-                    + "verified against the proxy CA, so Chromium will refuse to connect to it and every page will "
-                    + "stay blank. Proxy diagnostics (Ctrl+Shift+D) has the reason.";
-            }
-            else
-            {
-                proxyTlsPins = [pin];
+                proxyTlsError = $"Nothing could be verified against the proxy CA at {endpoint}. Pages behind the "
+                    + "proxy will show certificate errors. Proxy diagnostics (Ctrl+Shift+D) has the reason.";
             }
         }
 

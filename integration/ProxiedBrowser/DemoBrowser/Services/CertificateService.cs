@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Http;
 using System.Net.Security;
 using System.Net.Sockets;
@@ -23,6 +24,9 @@ public sealed class CertificateService(ProxyDiagnostics diagnostics)
 {
     private readonly ProxyDiagnostics _diagnostics = diagnostics;
     private X509Certificate2? _proxyCa;
+
+    /// <summary>DER bytes of the certificate the proxy mints per host, so the lock popup asks the proxy once.</summary>
+    private readonly ConcurrentDictionary<string, byte[]> _interceptedCertificates = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The in-memory proxy CA, or <c>null</c> if the download/parse failed.</summary>
     public X509Certificate2? ProxyCa => _proxyCa;
@@ -74,32 +78,75 @@ public sealed class CertificateService(ProxyDiagnostics diagnostics)
         }
     }
 
+    /// <summary>Where the browser sends its traffic, and whether it speaks TLS to get there.</summary>
+    public readonly record struct ProxyEndpoint(string Host, int Port, bool UseTls)
+    {
+        public override string ToString() => (UseTls ? "https://" : "http://") + Host + ":" + Port;
+    }
+
     /// <summary>
-    /// Connects to the proxy's TLS port, validates the certificate it presents against the downloaded proxy CA,
-    /// and returns its SPKI pin (base64 of the SHA-256 over the DER SubjectPublicKeyInfo) — the form Chromium's
-    /// <c>--ignore-certificate-errors-spki-list</c> expects. Returns <c>null</c> when the pin could not be
-    /// established, in which case <paramref name="error"/> says why.
+    /// Everything Chromium has to be told to accept before it starts, as SPKI pins.
     ///
-    /// WHY this is needed at all: with <c>ProxyScheme = https</c> Chromium speaks TLS to the *proxy itself*, and
-    /// that certificate is signed by the proxy's own CA. Unlike a site certificate, a bad proxy certificate never
-    /// reaches <see cref="CefRequestHandler.OnCertificateError"/> — Chromium fails the connection outright
-    /// (ERR_CERT_AUTHORITY_INVALID in cef.log, a blank page in the browser) and offers no override hook. So the
-    /// decision has to be made *before* the engine starts, and handed to it as a command-line pin.
+    /// WHY pins at all, and why they cannot be replaced by <see cref="HandleServerCertificateError"/>:
+    /// Chromium hands the embedder a certificate error only for a **main-frame navigation**. For a subresource —
+    /// a script, an XHR, an image on another origin — it denies the request outright and asks nobody, on the
+    /// grounds that a user has no context to judge it. Behind this proxy that is fatal: the document loads (the
+    /// app answers its error), and then every script, API call and image on another host dies with
+    /// ERR_CERT_AUTHORITY_INVALID. The certificate of the proxy connection itself is unaskable in the same way.
+    /// Neither can be repaired from a callback, so both are settled here and passed on the command line.
     ///
-    /// WHY a pin rather than <c>--ignore-certificate-errors</c>: the blanket switch would accept every bad
-    /// certificate from every host, which would silently disable the in-process trust decision this app exists to
-    /// demonstrate. The pin covers exactly the one certificate validated here, and nothing else: the re-signed
-    /// site certificates the proxy mints carry different keys and still go through
-    /// <see cref="HandleServerCertificateError"/>.
+    /// Two certificates are probed, and each is validated against the downloaded CA before it is pinned:
     ///
-    /// The chain is validated here with the same custom-root policy used for site certificates, so an untrusted
-    /// proxy is still refused — the pin is only ever produced for a certificate that chains to our own CA.
+    /// * the certificate the **proxy** presents on its own TLS port, which only matters when the browser speaks
+    ///   TLS to the proxy;
+    /// * the certificate the proxy **mints for an intercepted host**, fetched through a real CONNECT tunnel —
+    ///   exactly what the browser will meet.
+    ///
+    /// The proxy signs every certificate it mints with one key, so the second pin covers every host. Both are
+    /// returned anyway: they are the same value against a proxy that shares the key, and against one that does
+    /// not, the browser at least reaches the proxy and its start page instead of nothing at all.
     /// </summary>
-    public async Task<string?> ProbeProxyTlsPinAsync(string host, int port, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<string>> CollectProxyPinsAsync(
+        ProxyEndpoint proxy,
+        string? interceptionProbeHost,
+        CancellationToken cancellationToken = default)
+    {
+        var pins = new List<string>();
+
+        if (proxy.UseTls)
+        {
+            using var proxyCertificate = await ProbeProxyTlsCertificateAsync(proxy, cancellationToken).ConfigureAwait(false);
+            if (proxyCertificate is not null)
+            {
+                pins.Add(SpkiPin(proxyCertificate));
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(interceptionProbeHost))
+        {
+            using var intercepted = await ProbeInterceptedCertificateAsync(
+                proxy, interceptionProbeHost, cancellationToken).ConfigureAwait(false);
+            if (intercepted is not null)
+            {
+                pins.Add(SpkiPin(intercepted));
+            }
+        }
+
+        return [.. pins.Distinct(StringComparer.Ordinal)];
+    }
+
+    /// <summary>
+    /// The certificate on the proxy's own TLS port, validated against the proxy CA. <c>null</c> if it cannot be
+    /// reached or does not chain to the CA — in which case Chromium would refuse the proxy and every tab would
+    /// stay blank.
+    /// </summary>
+    public async Task<X509Certificate2?> ProbeProxyTlsCertificateAsync(
+        ProxyEndpoint proxy,
+        CancellationToken cancellationToken = default)
     {
         if (_proxyCa is null)
         {
-            _diagnostics.Error("Proxy TLS", $"Cannot pin {host}:{port}: no proxy CA is loaded",
+            _diagnostics.Error("Proxy TLS", $"Cannot pin {proxy}: no proxy CA is loaded",
                 "The CA download failed, so the certificate the TLS proxy presents cannot be validated.");
             return null;
         }
@@ -107,63 +154,198 @@ public sealed class CertificateService(ProxyDiagnostics diagnostics)
         try
         {
             using var tcp = new TcpClient();
-            await tcp.ConnectAsync(host, port, cancellationToken).ConfigureAwait(false);
-
-            X509Certificate2? presented = null;
-            await using var tls = new SslStream(tcp.GetStream(), leaveInnerStreamOpen: false,
-                userCertificateValidationCallback: (_, certificate, _, _) =>
-                {
-                    // Accept the handshake unconditionally and judge the certificate below: the callback only
-                    // decides whether the probe completes, and rejecting here would lose the certificate we came
-                    // for. Nothing is trusted on the strength of this connection — no request is sent over it.
-                    if (certificate is not null)
-                    {
-                        presented = X509CertificateLoader.LoadCertificate(certificate.GetRawCertData());
-                    }
-
-                    return true;
-                });
-
-            await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = host }, cancellationToken)
+            await tcp.ConnectAsync(proxy.Host, proxy.Port, cancellationToken).ConfigureAwait(false);
+            var presented = await ReadServerCertificateAsync(tcp.GetStream(), proxy.Host, cancellationToken)
                 .ConfigureAwait(false);
-
-            if (presented is null)
-            {
-                _diagnostics.Error("Proxy TLS", $"{host}:{port} completed a TLS handshake without presenting a certificate");
-                return null;
-            }
-
-            using (presented)
-            {
-                var (trusted, _) = BuildAgainstProxyCa(X509CertificateLoader.LoadCertificate(presented.RawData));
-                if (!trusted)
-                {
-                    _diagnostics.Error("Proxy TLS",
-                        $"Refused to pin {Subject(presented)} from {host}:{port}: it does not chain to the proxy CA",
-                        "Chromium would not be able to reach the proxy over TLS. Use the plain-HTTP proxy port, or "
-                        + "check that CaCertUrl points at the same proxy as ProxyHost/ProxyPort.");
-                    return null;
-                }
-
-                var pin = SpkiPin(presented);
-                _diagnostics.Info("Proxy TLS", $"Pinned the TLS proxy certificate of {host}:{port}",
-                    string.Join('\n',
-                    [
-                        "subject   : " + presented.Subject,
-                        "issuer    : " + presented.Issuer,
-                        "thumbprint: " + presented.Thumbprint,
-                        "spki pin  : " + pin,
-                    ]));
-                return pin;
-            }
+            return Accept("Proxy TLS", presented, $"the TLS proxy at {proxy}");
         }
-        catch (Exception ex) when (ex is SocketException or IOException or AuthenticationException
-                                   or OperationCanceledException or CryptographicException)
+        catch (Exception ex) when (IsProbeFailure(ex))
         {
-            _diagnostics.Error("Proxy TLS", $"Could not reach the TLS proxy at {host}:{port}: {ex.Message}", ex.ToString());
+            _diagnostics.Error("Proxy TLS", $"Could not reach the TLS proxy at {proxy}: {ex.Message}", ex.ToString());
             return null;
         }
     }
+
+    /// <summary>
+    /// The certificate the proxy mints for <paramref name="targetHost"/>, fetched through a CONNECT tunnel the
+    /// same way the browser opens one, and validated against the proxy CA. Cached per host: the proxy reuses one
+    /// certificate per host, and the lock popup asks for the same host repeatedly.
+    ///
+    /// The returned instance belongs to the caller and may be disposed; the cache holds the bytes, not the object.
+    /// </summary>
+    public async Task<X509Certificate2?> ProbeInterceptedCertificateAsync(
+        ProxyEndpoint proxy,
+        string targetHost,
+        CancellationToken cancellationToken = default)
+    {
+        if (_interceptedCertificates.TryGetValue(targetHost, out var cached))
+        {
+            return X509CertificateLoader.LoadCertificate(cached);
+        }
+
+        if (_proxyCa is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var tcp = new TcpClient();
+            await tcp.ConnectAsync(proxy.Host, proxy.Port, cancellationToken).ConfigureAwait(false);
+
+            Stream toProxy = tcp.GetStream();
+            SslStream? proxyTls = null;
+            try
+            {
+                if (proxy.UseTls)
+                {
+                    // The hop to the proxy is itself intercepted-looking; it is validated below like any other.
+                    proxyTls = new SslStream(toProxy, leaveInnerStreamOpen: true, (_, _, _, _) => true);
+                    await proxyTls.AuthenticateAsClientAsync(
+                        new SslClientAuthenticationOptions { TargetHost = proxy.Host }, cancellationToken)
+                        .ConfigureAwait(false);
+                    toProxy = proxyTls;
+                }
+
+                if (!await OpenConnectTunnelAsync(toProxy, targetHost, cancellationToken).ConfigureAwait(false))
+                {
+                    return null;
+                }
+
+                var presented = await ReadServerCertificateAsync(toProxy, targetHost, cancellationToken)
+                    .ConfigureAwait(false);
+                var accepted = Accept("Interception", presented, $"{targetHost} through {proxy}");
+                if (accepted is not null)
+                {
+                    _interceptedCertificates[targetHost] = accepted.RawData;
+                }
+
+                return accepted;
+            }
+            finally
+            {
+                if (proxyTls is not null)
+                {
+                    await proxyTls.DisposeAsync().ConfigureAwait(false);
+                }
+            }
+        }
+        catch (Exception ex) when (IsProbeFailure(ex))
+        {
+            _diagnostics.Warning("Interception",
+                $"Could not read the certificate the proxy mints for {targetHost}: {ex.Message}", ex.ToString());
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Sends <c>CONNECT host:443</c> and reads the status line and headers, one byte at a time so that not a
+    /// single byte of the tunnelled TLS handshake is swallowed by a buffer.
+    /// </summary>
+    private async Task<bool> OpenConnectTunnelAsync(Stream stream, string targetHost, CancellationToken cancellationToken)
+    {
+        var authority = $"{targetHost}:443";
+        var request = Encoding.ASCII.GetBytes($"CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n\r\n");
+        await stream.WriteAsync(request, cancellationToken).ConfigureAwait(false);
+        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+
+        var response = new StringBuilder();
+        var one = new byte[1];
+        while (!response.ToString().EndsWith("\r\n\r\n", StringComparison.Ordinal))
+        {
+            if (response.Length > 8192)
+            {
+                _diagnostics.Warning("Interception", $"The proxy answered CONNECT {authority} with an oversized header block");
+                return false;
+            }
+
+            var read = await stream.ReadAsync(one, cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                _diagnostics.Warning("Interception", $"The proxy closed the connection during CONNECT {authority}");
+                return false;
+            }
+
+            response.Append((char)one[0]);
+        }
+
+        var statusLine = response.ToString().Split("\r\n")[0];
+        if (!statusLine.Contains(" 200", StringComparison.Ordinal))
+        {
+            _diagnostics.Warning("Interception", $"CONNECT {authority} was refused: {statusLine}");
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Completes a TLS handshake on <paramref name="stream"/> purely to see the certificate. Every certificate is
+    /// accepted at this point and judged afterwards: rejecting in the callback would lose the very thing the probe
+    /// came for, and nothing is trusted on the strength of this connection — no request is ever sent over it.
+    /// </summary>
+    private static async Task<X509Certificate2?> ReadServerCertificateAsync(
+        Stream stream,
+        string targetHost,
+        CancellationToken cancellationToken)
+    {
+        X509Certificate2? presented = null;
+        var tls = new SslStream(stream, leaveInnerStreamOpen: true, (_, certificate, _, _) =>
+        {
+            if (certificate is not null)
+            {
+                presented = X509CertificateLoader.LoadCertificate(certificate.GetRawCertData());
+            }
+
+            return true;
+        });
+
+        await using (tls)
+        {
+            await tls.AuthenticateAsClientAsync(
+                new SslClientAuthenticationOptions { TargetHost = targetHost }, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return presented;
+    }
+
+    /// <summary>
+    /// Logs and returns <paramref name="presented"/> when it chains to the proxy CA, otherwise logs why not and
+    /// returns <c>null</c>. Refusing here is what keeps a pin from ever covering a certificate this app has not
+    /// verified itself.
+    /// </summary>
+    private X509Certificate2? Accept(string category, X509Certificate2? presented, string what)
+    {
+        if (presented is null)
+        {
+            _diagnostics.Error(category, $"{what} completed a TLS handshake without presenting a certificate");
+            return null;
+        }
+
+        var (trusted, _) = BuildAgainstProxyCa(X509CertificateLoader.LoadCertificate(presented.RawData));
+        if (!trusted)
+        {
+            _diagnostics.Error(category, $"Refused to pin {Subject(presented)} from {what}: it does not chain to the proxy CA",
+                "Check that CaCertUrl points at the same proxy as ProxyHost/ProxyPort.");
+            presented.Dispose();
+            return null;
+        }
+
+        _diagnostics.Info(category, $"Pinned the certificate of {what}",
+            string.Join('\n',
+            [
+                "subject   : " + presented.Subject,
+                "issuer    : " + presented.Issuer,
+                "thumbprint: " + presented.Thumbprint,
+                "spki pin  : " + SpkiPin(presented),
+            ]));
+        return presented;
+    }
+
+    private static bool IsProbeFailure(Exception ex) =>
+        ex is SocketException or IOException or AuthenticationException
+            or OperationCanceledException or CryptographicException or FormatException;
 
     /// <summary>Base64 of the SHA-256 over the DER-encoded SubjectPublicKeyInfo — Chromium's pin format.</summary>
     public static string SpkiPin(X509Certificate2 certificate) =>
