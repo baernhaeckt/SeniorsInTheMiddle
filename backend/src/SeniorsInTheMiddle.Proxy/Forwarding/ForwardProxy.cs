@@ -1,38 +1,42 @@
-using System.Diagnostics;
-using System.Net;
+﻿using System.Diagnostics;
 using Microsoft.AspNetCore.Http.Features;
 using SeniorsInTheMiddle.Proxy.Telemetry;
 using Yarp.ReverseProxy.Forwarder;
 
 namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
-sealed class ForwardProxy : IDisposable, IForwardProxy
+sealed class ForwardProxy : IForwardProxy
 {
     private readonly IHttpForwarder forwarder;
     private readonly ITelemetrySink telemetry;
     private readonly ClientLabeler clientLabeler;
+    private readonly IRequestBodyMutation bodyMutation;
+    private readonly RequestBodyLimits bodyLimits;
+    private readonly ILogger<ForwardProxyTransformer> transformerLogger;
 
-    private readonly HttpMessageInvoker httpClient;
+    private readonly UpstreamHttpClient upstream;
 
     private readonly ForwarderRequestConfig requestConfig = new()
     {
         ActivityTimeout = TimeSpan.FromMinutes(2)
     };
 
-    public ForwardProxy(IHttpForwarder forwarder, ITelemetrySink telemetry, ClientLabeler clientLabeler)
+    public ForwardProxy(
+        IHttpForwarder forwarder,
+        ITelemetrySink telemetry,
+        ClientLabeler clientLabeler,
+        IRequestBodyMutation bodyMutation,
+        RequestBodyLimits bodyLimits,
+        UpstreamHttpClient upstream,
+        ILogger<ForwardProxyTransformer> transformerLogger)
     {
         this.forwarder = forwarder;
         this.telemetry = telemetry;
         this.clientLabeler = clientLabeler;
-        httpClient = new HttpMessageInvoker(new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            AutomaticDecompression = DecompressionMethods.None,
-            UseCookies = false,
-            UseProxy = false,
-            ConnectTimeout = TimeSpan.FromSeconds(15)
-        });
-
+        this.bodyMutation = bodyMutation;
+        this.bodyLimits = bodyLimits;
+        this.upstream = upstream;
+        this.transformerLogger = transformerLogger;
     }
 
     public async Task HandleAsync(HttpContext context)
@@ -51,9 +55,9 @@ sealed class ForwardProxy : IDisposable, IForwardProxy
         ForwarderError error = await forwarder.SendAsync(
             context,
             destination.GetLeftPart(UriPartial.Authority),
-            httpClient,
+            upstream,
             requestConfig,
-            new ForwardProxyTransformer(destination));
+            new ForwardProxyTransformer(destination, bodyMutation, bodyLimits, transformerLogger));
 
         if (error != ForwarderError.None && !context.Response.HasStarted)
         {
@@ -97,17 +101,27 @@ sealed class ForwardProxy : IDisposable, IForwardProxy
         return requestId;
     }
 
-    public void Dispose()
-        => httpClient.Dispose();
-
     /// <summary>
-    /// The destination of an explicit proxy request, or null when the request line is in
-    /// origin form. Origin form belongs to the API and the telemetry stream on this same port,
-    /// so it is deliberately not treated as proxy traffic.
+    /// Where a request is meant to go, or null when it is not proxy traffic at all.
+    ///
+    /// A proxy client says so in two different ways depending on the scheme. Plain HTTP goes
+    /// out in absolute form ("GET http://example.com/ HTTP/1.1"), and origin form on the same
+    /// port belongs to the API and the telemetry stream, so it is deliberately not proxied.
+    /// Inside an intercepted TLS tunnel the client believes it reached the origin server, so
+    /// it sends origin form and the authority comes from the CONNECT that opened the tunnel.
     /// </summary>
     internal static Uri? GetProxyDestination(HttpContext context)
     {
         string? rawTarget = context.Features.Get<IHttpRequestFeature>()?.RawTarget;
+
+        // A tunnelled client may still send absolute form, so the origin-form check decides
+        // which of the two applies rather than the presence of the tunnel alone.
+        if (context.Features.Get<IInterceptedTunnel>() is { } tunnel && rawTarget is ['/', ..])
+        {
+            return Uri.TryCreate($"https://{tunnel.Authority}{rawTarget}", UriKind.Absolute, out Uri? tunnelled)
+                ? tunnelled
+                : null;
+        }
 
         return Uri.TryCreate(rawTarget, UriKind.Absolute, out Uri? absoluteUri) &&
                (absoluteUri.Scheme == Uri.UriSchemeHttp || absoluteUri.Scheme == Uri.UriSchemeHttps)
