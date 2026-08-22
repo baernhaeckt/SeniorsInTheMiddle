@@ -4,6 +4,8 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Text;
 
+using Microsoft.AspNetCore.Http;
+
 using SeniorsInTheMiddle.Proxy.Forwarding;
 using SeniorsInTheMiddle.Proxy.Telemetry;
 
@@ -26,8 +28,8 @@ namespace Backend.Tests.Integration;
 public class InterceptedHttpsTests
 {
     /// <summary>Rewrites every body to <paramref name="replacement"/>.</summary>
-    private static IRequestBodyMutation Replacing(string replacement)
-        => new DelegateMutation((_, _) => Encoding.UTF8.GetBytes(replacement));
+    private static IBodyMutationFactory Replacing(string replacement)
+        => new DelegateMutationFactory(onRequest: (_, _) => Encoding.UTF8.GetBytes(replacement));
 
     [TestMethod]
     public async Task Https_Request_Is_Decrypted_And_Forwarded_To_Its_Real_Destination()
@@ -101,6 +103,33 @@ public class InterceptedHttpsTests
         Assert.AreEqual("application/json", received.Value(HeaderNames.ContentType));
         Framing.MatchesBody(received);
         Framing.IsUnambiguous(received);
+    }
+
+    /// <summary>
+    /// The other direction inside the tunnel. A response is only readable here because the proxy
+    /// terminated the TLS itself, and it is where the real values would go back into what the
+    /// client sees.
+    /// </summary>
+    [TestMethod]
+    public async Task Response_Inside_The_Tunnel_Is_Rewritten_And_Reframed()
+    {
+        const string origin = """{"patient":"Hans Muster","ahv":"756.1234.5678.97"}""";
+        const string replacement = """{"patient":"Anna Beispiel","ahv":"756.0000.0000.00","padded":true}""";
+
+        await using TunnelHarness harness = await TunnelHarness.StartAsync(
+            new DelegateMutationFactory(onResponse: (_, _) => Encoding.UTF8.GetBytes(replacement)),
+            respond: async (context, _) =>
+            {
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync(origin, context.RequestAborted);
+            });
+        using HttpClient client = harness.CreateProxiedClient();
+
+        using HttpResponseMessage response = await client.GetAsync(new Uri(harness.DestinationUri, "/v1/patients"));
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        Assert.AreEqual(replacement, await response.Content.ReadAsStringAsync());
+        Assert.AreEqual(Encoding.UTF8.GetByteCount(replacement), response.Content.Headers.ContentLength);
     }
 
     /// <summary>One CONNECT carries many requests, and each one has to be read on its own.</summary>
@@ -241,15 +270,5 @@ public class InterceptedHttpsTests
         Assert.IsTrue(
             harness.Logs.Any(line => line.Contains($"Could not reach {authority}", StringComparison.Ordinal)),
             $"The tunnel did not take the opaque branch. Logs: {string.Join(" / ", harness.Logs.TakeLast(10))}");
-    }
-
-    private sealed class DelegateMutation(Func<ReadOnlyMemory<byte>, RequestBodyDescriptor, byte[]?> mutate)
-        : IRequestBodyMutation
-    {
-        public ValueTask<byte[]?> MutateAsync(
-            ReadOnlyMemory<byte> body,
-            RequestBodyDescriptor descriptor,
-            CancellationToken cancellationToken)
-            => ValueTask.FromResult(mutate(body, descriptor));
     }
 }
