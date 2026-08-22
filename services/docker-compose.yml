@@ -1,0 +1,13 @@
+# docker compose -f services/docker-compose.yml up --build --exit-code-from integration
+#
+# One container on purpose: the python service and the dotnet host share a unix
+# socket, which only works inside the same container (or a shared volume).
+services:
+  integration:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: services-integration
+    environment:
+      SERVICE_SOCKET_PATH: /run/services/example-service.sock
+      SERVICE_LOG_LEVEL: INFO

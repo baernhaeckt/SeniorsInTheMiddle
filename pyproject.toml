@@ -1,0 +1,16 @@
+[project]
+name = "seniorsinthemiddle"
+version = "0.1.0"
+description = "BärnHackt Seniros in the Middle"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "pip>=26.2.1",
+    "presidio-analyzer>=2.2.364",
+    "tiktoken>=0.14.0",
+]
+
+[dependency-groups]
+dev = [
+    "jupyter>=1.1.1",
+]
