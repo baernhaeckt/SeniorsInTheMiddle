@@ -1,6 +1,5 @@
 import logging
 import statistics
-from dataclasses import asdict
 
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 
@@ -99,9 +98,13 @@ class PiiDetector:
                     )
                 )
 
-            logger.info(f"Starting analysis of detection results for {len(detection_entities)} entities.")
+            if len(detection_entities) == 0:
+                logger.info("No PII entities found.")
+                return dict()
 
+            logger.info(f"Starting analysis of detection results for {len(detection_entities)} entities.")
             pii_analysis_result = self._analyze_detection_result(DetectionResult(detection_results=detection_entities))
-            return asdict(pii_analysis_result)
+
+            return pii_analysis_result.__dict__
         except Exception as e:
                 raise Exception(f"Error analyzing text: {e}")
