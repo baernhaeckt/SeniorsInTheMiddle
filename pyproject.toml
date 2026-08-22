@@ -8,8 +8,6 @@ dependencies = [
     "pip>=26.2.1",
     "presidio-analyzer>=2.2.364",
     "tiktoken>=0.14.0",
-    "torch>=2.13.0",
-    "transformers>=5.15.1",
 ]
 
 [dependency-groups]
