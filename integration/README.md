@@ -165,23 +165,32 @@ means every device has to trust a new root.
 docker compose --profile dashboard up
 ```
 
-`http://localhost:8081`, and the setup screen wants:
+`http://localhost:8081`. Press save without typing anything — the setup screen already
+defaults to a proxy on this machine, which is exactly what the harness runs:
 
 | Field | Value |
 | --- | --- |
+| feed | **live proxy** |
+| telemetry hub URL | `http://localhost:8080/hub/telemetry` |
 | proxy host | `localhost` |
 | proxy port | `8080` |
-| CA URL | `http://localhost:8080/ca.crt` |
-| PAC URL | `http://localhost:8080/proxy.pac` |
-| feed | **demo** |
+| CA URL | derived: `http://localhost:8080/ca.crt` |
+| PAC URL | derived: `http://localhost:8080/proxy.pac` |
 
-Leave the feed on demo: the proxy has no telemetry endpoint yet, so the `ws` source has
-nothing to connect to. When it grows one, the harness traffic is what will show up in it —
-which is the reason the fixtures are Swiss and the identifiers have valid check digits
-rather than being lorem ipsum.
+The header should settle on `live · http://localhost:8080/hub/telemetry`. Every request the
+sender drives through the proxy shows up as a row — which is why the fixtures are Swiss and
+the identifiers have valid check digits rather than being lorem ipsum.
 
-Note that the dashboard's origin has to appear in the proxy's `Cors:AllowedOrigins`;
-`docker-compose.yml` already sets `Cors__AllowedOrigins__0=http://localhost:8081`.
+Only the plain-HTTP path reports so far, and only that a request started and finished.
+Everything the dashboard draws about bodies and identifiers waits on the proxy pipeline;
+until then rows say `not inspected` and HTTPS tunnels are silent.
+
+The dashboard's origin has to appear in the proxy's `Cors:AllowedOrigins`, and not only for
+CORS: the hub checks the Origin of its WebSocket handshake against the same list, because a
+browser applies neither CORS nor a preflight to that handshake. `docker-compose.yml` sets
+both `http://localhost:8081` and `http://localhost:5173`, so `npm run dev` in `../frontend`
+works against the harness too. An origin that is missing gets a 403 and the header stays on
+`reattaching`.
 
 ## Scope
 
