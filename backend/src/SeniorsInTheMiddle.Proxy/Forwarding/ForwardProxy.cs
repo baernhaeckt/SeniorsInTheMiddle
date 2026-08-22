@@ -52,16 +52,30 @@ sealed class ForwardProxy : IForwardProxy
         string requestId = ObserveRequest(context, destination);
         long startedAt = Stopwatch.GetTimestamp();
 
-        ForwarderError error = await forwarder.SendAsync(
-            context,
-            destination.GetLeftPart(UriPartial.Authority),
-            upstream,
-            requestConfig,
-            new ForwardProxyTransformer(
-                destination,
-                bodyMutations.CreateForExchange(destination),
-                bodyLimits,
-                transformerLogger));
+        // Counted on the way out rather than read from Content-Length, which a chunked
+        // response does not carry -- see CountingStream.
+        Stream responseBody = context.Response.Body;
+        CountingStream counted = new(responseBody);
+        context.Response.Body = counted;
+
+        ForwarderError error;
+        try
+        {
+            error = await forwarder.SendAsync(
+                context,
+                destination.GetLeftPart(UriPartial.Authority),
+                upstream,
+                requestConfig,
+                new ForwardProxyTransformer(
+                    destination,
+                    bodyMutations.CreateForExchange(destination),
+                    bodyLimits,
+                    transformerLogger));
+        }
+        finally
+        {
+            context.Response.Body = responseBody;
+        }
 
         if (error != ForwarderError.None && !context.Response.HasStarted)
         {
@@ -72,7 +86,7 @@ sealed class ForwardProxy : IForwardProxy
             requestId,
             TelemetryJson.Now(),
             context.Response.StatusCode,
-            context.Response.ContentLength ?? 0,
+            counted.BytesWritten,
             Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds));
     }
 

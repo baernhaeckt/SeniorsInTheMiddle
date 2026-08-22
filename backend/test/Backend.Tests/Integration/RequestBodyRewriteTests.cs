@@ -405,6 +405,11 @@ public class RequestBodyRewriteTests
         RecordedRequest received = harness.RequireReceived();
         CollectionAssert.AreEqual(payload, received.Body);
         Framing.HasLength(received);
+
+        // Silently. Measuring a body against a limit of zero reads a byte off it and finds it
+        // over the limit every time, so a setting meant to disable rewriting logged an
+        // "uninspected" warning for every single request that carried a body.
+        Assert.IsEmpty(harness.Warnings);
     }
 
     /// <summary>

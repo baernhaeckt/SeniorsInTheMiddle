@@ -98,7 +98,9 @@ sealed class ForwardProxyTransformer(
     /// </summary>
     private const int MaxPreallocatedBytes = 64 * 1024;
 
-    private const int ReadChunkBytes = 8192;
+    /// <summary>Smallest buffer reserved, so a body with no declared length is not read a
+    /// handful of bytes at a time.</summary>
+    private const int MinBufferBytes = 8192;
 
     public override async ValueTask TransformRequestAsync(
         HttpContext httpContext,
@@ -144,6 +146,13 @@ sealed class ForwardProxyTransformer(
     private async ValueTask RewriteRequestBodyAsync(HttpContext httpContext, CancellationToken cancellationToken)
     {
         HttpRequest request = httpContext.Request;
+
+        // Rewriting turned off. Nothing is read, so the body reaches the destination exactly
+        // as it arrived -- and, since no byte was taken off it, without the "left uninspected"
+        // warning that measuring against a limit of zero would produce on every single
+        // request. A setting that asks for a no-op gets a silent one.
+        if (limits.MaxMutableBodyBytes == 0)
+            return;
 
         // The server answers this definitively. A GET or a HEAD gets no content at all, and
         // giving it one would put a Content-Length or a Transfer-Encoding on a request that must
@@ -530,6 +539,46 @@ sealed class ForwardProxyTransformer(
         }
     }
 
+    /// <summary>One past the limit, so a body that fits comes back shorter than what a body that
+    /// does not fit comes back as, and the caller can tell them apart by length alone.
+    ///
+    /// The arithmetic is in long on purpose: the limit is configured, and "limit + 1" on a large
+    /// one wraps negative and takes the exchange down with an argument out of range rather than a
+    /// body out of range.</summary>
+    private static int Ceiling(int limit) => (int)Math.Min((long)limit + 1, int.MaxValue);
+
+    /// <summary>
+    /// How much to reserve before the first read.
+    ///
+    /// A declared length is only a claim, so it caps the reservation rather than deciding it:
+    /// reserving the whole ceiling on it would let a peer that opens many connections and then
+    /// dribbles pin that much memory per connection without ever sending a body.
+    /// </summary>
+    private static int InitialCapacity(int ceiling, long declaredLength)
+        => (int)Math.Min(
+            Math.Max(declaredLength, MinBufferBytes),
+            Math.Min(ceiling, MaxPreallocatedBytes));
+
+    /// <summary>
+    /// <paramref name="buffer"/>, grown straight to <paramref name="ceiling"/> once it is full.
+    ///
+    /// One growth rather than doubling. The ceiling is known before the first read, so a body
+    /// past the preallocation cap costs one more rent and one more copy; doubling its way there
+    /// would cost a reallocation and a full copy per step, every one of them large enough to
+    /// land on the large object heap, on every request.
+    /// </summary>
+    private static byte[] Grown(byte[] buffer, int filled, int ceiling)
+    {
+        if (filled < buffer.Length)
+            return buffer;
+
+        byte[] grown = ArrayPool<byte>.Shared.Rent(ceiling);
+        buffer.AsSpan(0, filled).CopyTo(grown);
+        ArrayPool<byte>.Shared.Return(buffer);
+
+        return grown;
+    }
+
     /// <summary>
     /// The synchronous twin of <see cref="ReadAtMostAsync"/>, for decoding a buffer that is
     /// already in memory. Same "limit + 1" contract, so the caller can still tell a body that
@@ -537,36 +586,37 @@ sealed class ForwardProxyTransformer(
     /// </summary>
     private static byte[] ReadAtMost(Stream body, int limit)
     {
-        using MemoryStream buffer = new();
-        byte[] chunk = ArrayPool<byte>.Shared.Rent(ReadChunkBytes);
+        int ceiling = Ceiling(limit);
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(InitialCapacity(ceiling, declaredLength: 0));
+        int filled = 0;
 
         try
         {
-            while (buffer.Length <= limit)
+            while (filled < ceiling)
             {
-                long room = Math.Min(chunk.Length, (long)limit + 1 - buffer.Length);
-                int read = body.Read(chunk, 0, (int)room);
+                buffer = Grown(buffer, filled, ceiling);
+
+                int read = body.Read(buffer, filled, Math.Min(buffer.Length, ceiling) - filled);
                 if (read == 0)
                     break;
 
-                buffer.Write(chunk, 0, read);
+                filled += read;
             }
+
+            return Exactly(buffer, filled);
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(chunk);
+            ArrayPool<byte>.Shared.Return(buffer);
         }
-
-        return buffer.ToArray();
     }
 
     /// <summary>
     /// Reads up to <paramref name="limit"/> + 1 bytes, so the caller can tell a body that fits
     /// from one that does not by length alone.
     ///
-    /// The arithmetic is in long on purpose: <paramref name="limit"/> is configured, and
-    /// "limit + 1" on a large one wraps negative and takes the exchange down with an argument out
-    /// of range rather than a body out of range.
+    /// Reads into a pooled buffer that grows at most once rather than into a stream that doubles
+    /// its way up -- see <see cref="Grown"/>.
     /// </summary>
     private static async Task<byte[]> ReadAtMostAsync(
         Stream body,
@@ -574,30 +624,39 @@ sealed class ForwardProxyTransformer(
         long declaredLength,
         CancellationToken cancellationToken)
     {
-        int capacity = (int)Math.Clamp(declaredLength, 0, Math.Min(limit, MaxPreallocatedBytes));
-
-        using MemoryStream buffer = new(capacity);
-        byte[] chunk = ArrayPool<byte>.Shared.Rent(ReadChunkBytes);
+        int ceiling = Ceiling(limit);
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(InitialCapacity(ceiling, declaredLength));
+        int filled = 0;
 
         try
         {
-            while (buffer.Length <= limit)
+            while (filled < ceiling)
             {
-                long room = Math.Min(chunk.Length, (long)limit + 1 - buffer.Length);
-                int read = await body.ReadAsync(chunk.AsMemory(0, (int)room), cancellationToken);
+                buffer = Grown(buffer, filled, ceiling);
+
+                int read = await body.ReadAsync(
+                    buffer.AsMemory(filled, Math.Min(buffer.Length, ceiling) - filled),
+                    cancellationToken);
+
                 if (read == 0)
                     break;
 
-                buffer.Write(chunk, 0, read);
+                filled += read;
             }
+
+            return Exactly(buffer, filled);
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(chunk);
+            ArrayPool<byte>.Shared.Return(buffer);
         }
-
-        // ToArray rather than GetBuffer: the mutation is handed exactly the body, and a buffer
-        // that grew by doubling would otherwise carry a tail of zeroes into it.
-        return buffer.ToArray();
     }
+
+    /// <summary>
+    /// A copy of the first <paramref name="filled"/> bytes.
+    ///
+    /// A copy rather than the rented array itself: the mutation is handed exactly the body, and
+    /// a pooled buffer is longer than what was read and goes back to the pool afterwards.
+    /// </summary>
+    private static byte[] Exactly(byte[] buffer, int filled) => buffer.AsSpan(0, filled).ToArray();
 }

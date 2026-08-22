@@ -45,7 +45,11 @@ public sealed class ServiceConnection : IAsyncDisposable
         {
             return await connected.CallAsync(method, payload, cancellationToken);
         }
-        catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException or InvalidDataException)
+        // JsonException and KeyNotFoundException belong here too: a malformed or incomplete
+        // response frame kills the client's read loop, and a connection whose read loop is
+        // gone is as unusable as one whose socket is.
+        catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException
+            or InvalidDataException or JsonException or KeyNotFoundException)
         {
             await DropAsync(connected, ex);
             throw new ServiceUnavailableException(Name, $"The {Name} service connection failed.", ex);

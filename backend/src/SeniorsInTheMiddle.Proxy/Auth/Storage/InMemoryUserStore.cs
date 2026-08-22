@@ -19,6 +19,16 @@ public class InMemoryUserStore : IUserStore
     // Key = username
     private readonly ConcurrentDictionary<string, Credentials> _users = new();
 
+    /// <summary>
+    /// Held for writes only, so lookups stay lock-free.
+    ///
+    /// <see cref="TryCreateAsync"/> has to decide "is this name or this address already taken"
+    /// and act on the answer as one step. A ConcurrentDictionary makes each operation atomic,
+    /// not the pair, so without this two registrations racing on the same name would both see
+    /// it free.
+    /// </summary>
+    private readonly Lock _writeLock = new();
+
     private sealed record Credentials(User User, string Hash, string Salt);
 
     public Task<User?> FindByUsernameAsync(string username)
@@ -29,9 +39,25 @@ public class InMemoryUserStore : IUserStore
         return Task.FromResult<User?>(null);
     }
 
+    public Task<bool> TryCreateAsync(User user, string password)
+    {
+        lock (_writeLock)
+        {
+            if (_users.ContainsKey(user.Username) || IsEmailTaken(user.Email))
+                return Task.FromResult(false);
+
+            _users[user.Username] = Hashed(user, password);
+            return Task.FromResult(true);
+        }
+    }
+
     public Task SaveAsync(User user, string password)
     {
-        _users[user.Username] = Hashed(user, password);
+        lock (_writeLock)
+        {
+            _users[user.Username] = Hashed(user, password);
+        }
+
         return Task.CompletedTask;
     }
 
@@ -47,10 +73,32 @@ public class InMemoryUserStore : IUserStore
     }
 
     // For tests: seed data
-    public void Seed(User user, string password) => _users[user.Username] = Hashed(user, password);
+    public void Seed(User user, string password)
+    {
+        lock (_writeLock)
+        {
+            _users[user.Username] = Hashed(user, password);
+        }
+    }
 
     // For tests: clear
-    public void Clear() => _users.Clear();
+    public void Clear()
+    {
+        lock (_writeLock)
+        {
+            _users.Clear();
+        }
+    }
+
+    /// <summary>
+    /// Whether any account already uses <paramref name="email"/>.
+    ///
+    /// A scan, because the store is keyed by username alone. Registration is rare and the
+    /// store holds one process's worth of accounts, so the cost never shows; a store that
+    /// grows past that wants a second index rather than this.
+    /// </summary>
+    private bool IsEmailTaken(string email)
+        => _users.Values.Any(entry => string.Equals(entry.User.Email, email, StringComparison.OrdinalIgnoreCase));
 
     private static Credentials Hashed(User user, string password)
     {

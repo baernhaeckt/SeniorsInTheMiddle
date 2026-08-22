@@ -1,10 +1,19 @@
-﻿using System.IO.Pipelines;
-using System.Text;
+using System.IO.Pipelines;
 
 namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
+/// <summary>
+/// Copies bytes both ways between a client and an origin without reading them, for a CONNECT
+/// tunnel that turned out not to carry HTTP.
+///
+/// The payload is deliberately never decoded or logged. It is somebody's mail or database
+/// session in the clear, and turning every chunk into a string would put those bytes in the
+/// log and cap the tunnel's throughput at the logging sink's.
+/// </summary>
 public class StreamProxy : IStreamProxy
 {
+    private const int BufferBytes = 8192;
+
     private readonly IDuplexPipe _client;
     private readonly Stream _remote;
     private readonly ILogger<StreamProxy> _logger;
@@ -36,11 +45,26 @@ public class StreamProxy : IStreamProxy
             tunnelCancellation.Token);
 
         await Task.WhenAny(clientToDestination, destinationToClient);
+
+        // A client that half-closes its send side -- SMTP after QUIT, an upload framed by
+        // close -- has said it is done asking, not that it is done listening. Cancelling the
+        // other direction here would cut off the reply it is still waiting for, and the
+        // truncation would be silent. So an orderly end of the client's stream only stops
+        // that direction; everything else, the origin closing or either copy faulting, ends
+        // the tunnel.
+        if (clientToDestination.IsCompletedSuccessfully)
+            await WaitQuietlyAsync(destinationToClient);
+
         tunnelCancellation.Cancel();
 
+        await WaitQuietlyAsync(Task.WhenAll(clientToDestination, destinationToClient));
+    }
+
+    private static async Task WaitQuietlyAsync(Task copying)
+    {
         try
         {
-            await Task.WhenAll(clientToDestination, destinationToClient);
+            await copying;
         }
         catch (Exception ex) when (ex is IOException or OperationCanceledException)
         {
@@ -53,39 +77,22 @@ public class StreamProxy : IStreamProxy
         string direction,
         CancellationToken cancellationToken)
     {
-        byte[] buffer = new byte[8192];
+        byte[] buffer = new byte[BufferBytes];
+        long total = 0;
 
         while (true)
         {
             int bytesRead = await source.ReadAsync(buffer.AsMemory(), cancellationToken);
             if (bytesRead == 0)
-                return;
+                break;
 
-            using MemoryStream chunk = new(bytesRead);
-            await chunk.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
-            chunk.Position = 0;
-
-            _logger.LogInformation(
-                "{Direction} ({ByteCount} bytes): {Data}",
-                direction,
-                bytesRead,
-                GetLogText(buffer, bytesRead));
-
-            await chunk.CopyToAsync(destination, cancellationToken);
+            await destination.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
             await destination.FlushAsync(cancellationToken);
+            total += bytesRead;
         }
-    }
 
-    private static string GetLogText(byte[] buffer, int count)
-    {
-        try
-        {
-            return new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true)
-                .GetString(buffer, 0, count);
-        }
-        catch (DecoderFallbackException)
-        {
-            return $"[binary data, Base64: {Convert.ToBase64String(buffer, 0, count)}]";
-        }
+        // Once per direction, and volume only: enough to tell a tunnel that carried nothing
+        // from one that carried a gigabyte, without the payload it carried.
+        _logger.LogDebug("{Direction} closed after {ByteCount} bytes.", direction, total);
     }
 }
