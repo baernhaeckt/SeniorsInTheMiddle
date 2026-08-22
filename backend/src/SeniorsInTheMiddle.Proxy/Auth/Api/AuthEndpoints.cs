@@ -56,14 +56,16 @@ public static class AuthEndpoints
                 return Results.BadRequest(new { message = "Password must be at least 4 characters long" });
             }
 
-            User? user = await userStore.FindByUsernameAsync(request.Username);
+            // One call, because checking and then saving lets two registrations racing on the
+            // same name both pass the check and the second overwrite the first one's password.
+            bool created = await userStore.TryCreateAsync(
+                new User(request.Username, request.Email),
+                request.Password);
 
-            if (user != null)
+            if (!created)
             {
                 return Results.BadRequest(new { message = "Username or email already exists" });
             }
-
-            await userStore.SaveAsync(new User(request.Username, request.Email), request.Password);
 
             return Results.Ok(new { message = "User registered successfully" });
         })

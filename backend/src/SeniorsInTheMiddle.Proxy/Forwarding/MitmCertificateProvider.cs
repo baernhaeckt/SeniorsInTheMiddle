@@ -12,7 +12,37 @@ sealed class MitmCertificateProvider
     /// <summary>Renew a cached certificate this long before it actually expires.</summary>
     private static readonly TimeSpan RenewBefore = TimeSpan.FromHours(1);
 
+    private const int ServerKeyBits = 2048;
+
     private readonly X509Certificate2 _certificateAuthority;
+
+    /// <summary>
+    /// The private key every server certificate this provider mints is built on.
+    ///
+    /// One key for all of them rather than one per host. Generating an RSA key costs 50-150 ms
+    /// of CPU, and <see cref="GetServerCertificate"/> runs on the connection whose handshake
+    /// triggered it: minting a key per host stalls the first connection to every new site, and
+    /// a page pulling from dozens of hosts serializes those stalls on the accept path. Signing
+    /// on its own is sub-millisecond, so with the key already made a cold host costs nothing
+    /// worth measuring.
+    ///
+    /// Sharing it gives an attacker nothing: every one of these certificates is signed by the
+    /// CA whose own private key lives in this same process and on disk beside it, so anything
+    /// able to read this key could read that one and mint certificates for any host at all.
+    /// </summary>
+    private readonly Lazy<RSA> _serverKey = new(
+        () =>
+        {
+            RSA key = RSA.Create(ServerKeyBits);
+
+            // RSA.Create defers generation to the key's first use. Left to that, it would run
+            // on whichever connection got there first -- and on several at once, which the key
+            // object makes no promise about. Forcing it here keeps it inside the Lazy's lock.
+            key.ExportParameters(includePrivateParameters: false);
+
+            return key;
+        },
+        LazyThreadSafetyMode.ExecutionAndPublication);
 
     /// <summary>
     /// One certificate per intercepted host, reused for every connection to it.
@@ -151,7 +181,8 @@ sealed class MitmCertificateProvider
         if (hosts.Count == 0)
             throw new ArgumentException("At least one host name is required.", nameof(hosts));
 
-        using RSA key = RSA.Create(2048);
+        // Not disposed here: the provider owns it and every certificate it mints shares it.
+        RSA key = _serverKey.Value;
         CertificateRequest request = new(
             $"CN={hosts.First()}",
             key,

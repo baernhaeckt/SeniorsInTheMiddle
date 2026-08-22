@@ -26,6 +26,16 @@ public sealed class ServiceSocketClient : IAsyncDisposable
 
     private int _nextId;
 
+    /// <summary>
+    /// Why the read loop stopped, or null while it is still running.
+    ///
+    /// The loop is the only thing that ever completes a request, and it does not restart. Once
+    /// it is gone a call would write its frame to a socket that is often still writable and
+    /// then wait for an answer nobody is left to deliver -- forever, since there is no per-call
+    /// timeout. Every call after the fault therefore throws instead of waiting.
+    /// </summary>
+    private Exception? _faulted;
+
     private ServiceSocketClient(Socket socket, int maxFrameBytes)
     {
         _socket = socket;
@@ -72,6 +82,15 @@ public sealed class ServiceSocketClient : IAsyncDisposable
         var id = Interlocked.Increment(ref _nextId).ToString();
         var completion = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[id] = completion;
+
+        // Checked after the insert rather than before it: Fault sets the field and only then
+        // drains _pending, so a loop that died in between would leave this entry behind with
+        // nothing to complete it.
+        if (_faulted is { } dead)
+        {
+            _pending.TryRemove(id, out _);
+            throw new IOException("The service connection is no longer readable.", dead);
+        }
 
         var frame = JsonSerializer.SerializeToUtf8Bytes(
             new { id, method, payload = payload ?? new { } },
@@ -134,12 +153,24 @@ public sealed class ServiceSocketClient : IAsyncDisposable
         }
         catch (EndOfStreamException)
         {
-            FailPending(new IOException("The service closed the connection."));
+            Fault(new IOException("The service closed the connection."));
         }
         catch (Exception ex)
         {
-            FailPending(ex);
+            Fault(ex);
         }
+    }
+
+    /// <summary>
+    /// Records that the read loop has stopped and fails everything waiting on it.
+    ///
+    /// The order matters: <see cref="_faulted"/> is set before <see cref="_pending"/> is
+    /// drained, so a call that inserts itself concurrently sees the fault on its own re-check.
+    /// </summary>
+    private void Fault(Exception exception)
+    {
+        Interlocked.CompareExchange(ref _faulted, exception, null);
+        FailPending(exception);
     }
 
     private void Dispatch(byte[] body)
@@ -209,7 +240,7 @@ public sealed class ServiceSocketClient : IAsyncDisposable
             // the read loop is expected to fault while tearing down
         }
 
-        FailPending(new ObjectDisposedException(nameof(ServiceSocketClient)));
+        Fault(new ObjectDisposedException(nameof(ServiceSocketClient)));
         _shutdown.Dispose();
         _writeLock.Dispose();
     }

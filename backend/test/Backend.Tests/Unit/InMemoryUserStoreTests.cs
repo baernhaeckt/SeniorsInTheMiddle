@@ -40,6 +40,52 @@ public class InMemoryUserStoreTests
     }
 
     [TestMethod]
+    public async Task TryCreateAddsAUserThatIsNotThereYet()
+    {
+        var store = new InMemoryUserStore();
+
+        Assert.IsTrue(await store.TryCreateAsync(new User("ruth", "ruth@test.ch"), Password));
+        Assert.IsNotNull(await store.VerifyPassword("ruth", Password));
+    }
+
+    [TestMethod]
+    public async Task TryCreateRefusesATakenUsernameAndKeepsTheFirstPassword()
+    {
+        // The registration race, in the form it takes once the two callers have been
+        // serialized: the second must be turned away rather than overwrite the first, whose
+        // password would otherwise stop working with nothing to explain it.
+        var store = new InMemoryUserStore();
+        await store.TryCreateAsync(new User("ruth", "ruth@test.ch"), Password);
+
+        Assert.IsFalse(await store.TryCreateAsync(new User("ruth", "other@test.ch"), "second password"));
+        Assert.IsNotNull(await store.VerifyPassword("ruth", Password));
+        Assert.IsNull(await store.VerifyPassword("ruth", "second password"));
+    }
+
+    [TestMethod]
+    public async Task TryCreateRefusesATakenEmail()
+    {
+        var store = new InMemoryUserStore();
+        await store.TryCreateAsync(new User("ruth", "shared@test.ch"), Password);
+
+        Assert.IsFalse(await store.TryCreateAsync(new User("hans", "SHARED@test.ch"), Password));
+        Assert.IsNull(await store.FindByUsernameAsync("hans"));
+    }
+
+    [TestMethod]
+    public async Task ConcurrentTryCreatesOnOneNameProduceExactlyOneWinner()
+    {
+        // The race the endpoint used to lose. Without an atomic create every one of these
+        // succeeds and the last one's password is the one that survives.
+        var store = new InMemoryUserStore();
+
+        bool[] results = await Task.WhenAll(Enumerable.Range(0, 32).Select(index =>
+            Task.Run(() => store.TryCreateAsync(new User("ruth", $"ruth{index}@test.ch"), Password))));
+
+        Assert.AreEqual(1, results.Count(created => created));
+    }
+
+    [TestMethod]
     public async Task SeededAndSavedUsersBothVerify()
     {
         var store = new InMemoryUserStore();

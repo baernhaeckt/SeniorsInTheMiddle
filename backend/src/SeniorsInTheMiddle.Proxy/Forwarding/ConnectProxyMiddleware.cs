@@ -34,6 +34,18 @@ sealed class ConnectProxyMiddleware
         Opaque,
     }
 
+    /// <summary>
+    /// Largest request head this will buffer while looking for its end.
+    ///
+    /// A CONNECT is a request line and a handful of headers. Anything past this is either not
+    /// a CONNECT or not one worth answering, and without a ceiling a client that sends headers
+    /// forever would have them held in memory forever.
+    /// </summary>
+    private const int MaxHeadBytes = 8 * 1024;
+
+    /// <summary>What ends a request head, and therefore where the client's TLS bytes start.</summary>
+    private static ReadOnlySpan<byte> HeadTerminator => "\r\n\r\n"u8;
+
     private readonly IStreamProxyFactory streamProxyFactory;
     private readonly MitmCertificateProvider certificateProvider;
     private readonly ILogger<ConnectProxyMiddleware> logger;
@@ -52,11 +64,29 @@ sealed class ConnectProxyMiddleware
     {
         PipeReader input = connection.Transport.Input;
         PipeWriter output = connection.Transport.Output;
-        ReadResult readResult = await input.ReadAsync(connection.ConnectionClosed);
-        ReadOnlySequence<byte> buffer = readResult.Buffer;
-        SequencePosition? headerEnd = FindHeaderEnd(buffer);
 
-        if (headerEnd is null || buffer.Length == 0)
+        // Read until the head is whole. A single read is not enough: a CONNECT carrying
+        // Proxy-Authorization or a long User-Agent routinely arrives in two segments, and
+        // giving up on the first one would hand the half-read request to Kestrel, which
+        // answers 400 and leaves the client with no tunnel at all.
+        ReadOnlySequence<byte> buffer;
+        SequencePosition? headerEnd;
+
+        while (true)
+        {
+            ReadResult readResult = await input.ReadAsync(connection.ConnectionClosed);
+            buffer = readResult.Buffer;
+            headerEnd = FindHeaderEnd(buffer);
+
+            if (headerEnd is not null || readResult.IsCompleted || buffer.Length >= MaxHeadBytes)
+                break;
+
+            // Nothing consumed, everything examined: this asks for more bytes rather than
+            // being handed the same incomplete head again.
+            input.AdvanceTo(buffer.Start, buffer.End);
+        }
+
+        if (headerEnd is null)
         {
             input.AdvanceTo(buffer.Start, buffer.End);
             await next(connection);
@@ -223,19 +253,23 @@ sealed class ConnectProxyMiddleware
         return parts.Length == 3 && parts[2].StartsWith("HTTP/1.", StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Where the request head ends, or null while it is still incomplete.
+    ///
+    /// Input:  "CONNECT host:443 HTTP/1.1\r\nHost: host:443\r\n\r\n\x16\x03..."
+    ///          -> the position of the \x16, the first byte of the client's TLS handshake
+    /// Input:  "CONNECT host:443 HTTP/1.1\r\nHost: ho"  -> null, read more
+    ///
+    /// Scans the sequence in place: this runs once per read while the head is being collected,
+    /// and copying the whole buffer out each time to look for four bytes is a copy per segment.
+    /// </summary>
     private static SequencePosition? FindHeaderEnd(ReadOnlySequence<byte> buffer)
     {
-        var bytes = buffer.ToArray();
-        for (var index = 3; index < bytes.Length; index++)
-        {
-            if (bytes[index - 3] == '\r' && bytes[index - 2] == '\n' &&
-                bytes[index - 1] == '\r' && bytes[index] == '\n')
-            {
-                return buffer.GetPosition(index + 1);
-            }
-        }
+        SequenceReader<byte> reader = new(buffer);
 
-        return null;
+        return reader.TryReadTo(out ReadOnlySequence<byte> _, HeadTerminator, advancePastDelimiter: true)
+            ? reader.Position
+            : null;
     }
 
     private static bool TryParseConnectTarget(string requestLine, out string host, out int port)
