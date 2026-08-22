@@ -78,7 +78,7 @@ Eine Schicht, die man nicht sieht, wird nicht geglaubt. Der Proxy sendet jeden S
 
 == Bausteinsicht
 
-Aalla @bausteinsicht zeigt blablbala..
+Die @bausteinsicht zeigt die Struktur des Software Systems. Der Proxy ist die zentrale Komponente, die den Verkehr abfängt und an die Erkennung weiterleitet. Die Erkennung ist in einem eigenen Service gekapselt, der über einen Unix-Socket angesprochen wird. Das Dashboard visualisiert die Telemetrie und ermöglicht die Überwachung des Datenflusses. Der Privacy Checker ist ein optionaler Bestandteil, der die Erkennung und Ersetzung überprüft, bevor die Anfrage an den Zielserver weitergeleitet wird.
 
 #figure(
   image("/assets/bausteinsicht.svg"),
@@ -87,9 +87,11 @@ Aalla @bausteinsicht zeigt blablbala..
   ],
 ) <bausteinsicht>
 
+#pagebreak()
+
 == Laufzeitsicht
 
-Aalla @laufzeitsicht zeigt blablbala..
+Die @laufzeitsicht zeigt exemplarisch den Ablauf einer Anfrage durch das System. Der Proxy empfängt die Anfrage, leitet sie an den Erkennungsservice weiter, ersetzt erkannte PII durch Tokens und sendet die modifizierte Anfrage an den Zielserver. Die Antwort wird ebenfalls durch den Proxy geleitet, wobei Tokens wieder in die echten Werte zurückübersetzt werden, bevor sie an den Client zurückgegeben wird.
 
 #figure(
   image("/assets/laufzeitsicht.svg"),
@@ -98,9 +100,11 @@ Aalla @laufzeitsicht zeigt blablbala..
   ],
 ) <laufzeitsicht>
 
+#pagebreak()
+
 == Verteilungssicht
 
-Die @verteilsicht zeigt blablbala..
+Die @verteilsicht zeigt die Verteilung der Komponenten des Software Systems über verschiedene Hosts und Container. Der Proxy und die flankierenden Services laufen im selben Container, das Dashboard in einem eigenen. Der Proxy ist der zentrale Punkt, der den gesamten Verkehr abfängt und die Kommunikation zwischen den Komponenten steuert; die Kommunikation zwischen den flankierenden Services und dem Proxy erfolgt über Unix-Sockets.
 
 
 #figure(
@@ -126,6 +130,9 @@ Die @verteilsicht zeigt blablbala..
   [Qualität], [ESLint, Stylelint, Prettier, Knip, EditorConfig, Nullable Reference Types],
   [Betrieb], [Docker, GitHub Actions, GitHub Container Registry, Azure Container Apps],
 )
+
+
+#pagebreak()
 
 = Abgrenzung / Offene Punkte
 
@@ -156,6 +163,9 @@ Wir zeigen die Schicht selbst, nicht eine fertige Betriebslösung. Bewusst ausse
 
 - Anhang 1: Repository mit Quellcode, Dokumentation und Pitch-Material: #link("https://github.com/baernhaeckt/SeniorsInTheMiddle")
 - Anhang 2: Challenge-Beschreibung "Swiss Data Airlock" von Natron Tech. #link("https://www.bernhackt.ch/challenges/2026-swiss-data-airlock")
+
+
+#pagebreak()
 
 == Challange Beschreibung
 
