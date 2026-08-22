@@ -131,5 +131,7 @@ class PiiDetector:
         Returns:
             str: The replacement text.
         """
+        logger.info(f"Creating replacement text for PII type '{pii_type}'.")
+        
         pii_mapping = get_pii_risk_mapping(pii_type)
         return pii_mapping.faker
