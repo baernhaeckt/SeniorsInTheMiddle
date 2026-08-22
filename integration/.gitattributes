@@ -1,0 +1,2 @@
+# The certgen script runs in a Linux container; CRLF would break it.
+*.sh text eol=lf

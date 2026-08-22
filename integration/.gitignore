@@ -1,0 +1,2 @@
+# Local overrides only. .env.example is the checked-in template.
+.env

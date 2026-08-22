@@ -1,0 +1,13 @@
+{
+  "name": "sitm-harness-receiver",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Destination host for the proxy integration harness. Node core modules only, no dependencies, no build step.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.js"
+  }
+}

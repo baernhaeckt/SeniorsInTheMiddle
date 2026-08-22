@@ -1,0 +1,13 @@
+{
+  "name": "sitm-harness-sender",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Traffic generator and testing UI for the proxy integration harness. Node core modules only, no dependencies, no build step.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/main.js"
+  }
+}

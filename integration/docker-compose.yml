@@ -1,0 +1,137 @@
+# Integration harness for backend/Dockerfile.
+#
+#   certgen   issues the harness CA and the receiver's certificate, once
+#   proxy     THE THING UNDER TEST -- built from backend/Dockerfile, unmodified
+#   receiver  an ordinary destination host, reachable over HTTP and HTTPS
+#   sender    a device configured to use the proxy, plus the testing UI on :3100
+#
+#   docker compose up --build              run the harness
+#   docker compose --profile dashboard up  ... and the dashboard SPA on :8081
+#
+# The proxy image is used exactly as it is built. Everything it needs from the harness
+# arrives as environment variables and mounted volumes, so nothing here can paper over a
+# problem in the image itself -- which is the only reason this harness is worth having.
+
+name: sitm-harness
+
+services:
+  # ---------------------------------------------------------------- certificates
+  certgen:
+    image: alpine/openssl:latest
+    # The script is bind-mounted from a Windows checkout as often as not, so strip CR
+    # before running it rather than depending on the checkout's line endings.
+    entrypoint: ["/bin/sh", "-c", "tr -d '\\r' < /scripts/gen-certs.sh > /tmp/gen-certs.sh && sh /tmp/gen-certs.sh"]
+    volumes:
+      - ./pki:/scripts:ro
+      - pki:/pki
+    networks: [harness]
+
+  # ------------------------------------------------------------------- the proxy
+  proxy:
+    image: ${PROXY_IMAGE:-sitm-proxy:harness}
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    depends_on:
+      certgen:
+        condition: service_completed_successfully
+    environment:
+      # Without a key the JwtBearer registration builds a SymmetricSecurityKey over zero
+      # bytes and the app fails to start. appsettings.json ships it empty on purpose.
+      Jwt__Key: ${JWT_KEY:-aGFybmVzcy1vbmx5LWtleS1ub3QtYS1zZWNyZXQtMDAwMQ==}
+      Proxy__HttpPort: "8080"
+      Proxy__HttpsPort: "8443"
+      # Added to the dashboard certificate and used by ForwardProxyMiddleware to spot an
+      # absolute-form request that points back at this app.
+      Proxy__HostNames__0: proxy
+      # Only relevant with the dashboard profile below, but harmless otherwise.
+      Cors__AllowedOrigins__0: http://localhost:8081
+      # The receiver's certificate is signed by the harness CA, and ConnectProxyMiddleware
+      # validates upstream certificates normally. This bundle is the image's own trust
+      # store plus that CA -- .NET on Linux resolves trust through OpenSSL, which honours
+      # SSL_CERT_FILE. Nothing in the image is changed.
+      SSL_CERT_FILE: /pki/bundle.pem
+      Logging__LogLevel__Default: ${PROXY_LOG_LEVEL:-Information}
+    volumes:
+      # The volume backend/Dockerfile asks for: one MITM CA that survives a restart, so
+      # clients do not have to trust a new root every time the container is recreated.
+      - certs:/app/certs
+      - pki:/pki:ro
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+    networks: [harness]
+
+  # -------------------------------------------------------- the destination host
+  receiver:
+    build:
+      context: ./receiver
+    depends_on:
+      certgen:
+        condition: service_completed_successfully
+    environment:
+      HTTP_PORT: "3000"
+      HTTPS_PORT: "3443"
+      TLS_CERT: /pki/receiver.crt
+      TLS_KEY: /pki/receiver.key
+    volumes:
+      - pki:/pki:ro
+    # Published for manual pokes only. The sender never uses these; it goes through the
+    # proxy, which is the point.
+    ports:
+      - "3000:3000"
+      - "3443:3443"
+    networks:
+      harness:
+        aliases:
+          - receiver.sitm.local
+
+  # ------------------------------------------------- the client, and the test UI
+  sender:
+    build:
+      context: ./sender
+    depends_on:
+      - proxy
+      - receiver
+    environment:
+      PROXY_HOST: proxy
+      PROXY_PORT: "8080"
+      TARGET_HOST: receiver.sitm.local
+      TARGET_HTTP_PORT: "3000"
+      TARGET_HTTPS_PORT: "3443"
+      RECEIVER_STATS_URL: http://receiver:3000/_harness/stats
+      UI_PORT: "3100"
+      RATE_PER_MINUTE: ${RATE_PER_MINUTE:-120}
+      CONCURRENCY: ${CONCURRENCY:-4}
+      HTTPS_RATIO: ${HTTPS_RATIO:-0.5}
+      PII_RATIO: ${PII_RATIO:-0.35}
+      SEED: ${SEED:-20260822}
+      BURST: ${BURST:-0}
+      MIN_SUCCESS_RATE: ${MIN_SUCCESS_RATE:-0.95}
+      STARTUP_TIMEOUT_MS: ${STARTUP_TIMEOUT_MS:-120000}
+    ports:
+      - "3100:3100"
+    # The sender gives up if the proxy has not answered /ca.crt within two minutes,
+    # rather than hanging forever. Restarting is how it waits for a slow first build.
+    restart: unless-stopped
+    networks: [harness]
+
+  # ------------------------------------------------------- optional, off by default
+  # The dashboard SPA. It stays on its demo feed until the proxy grows a telemetry
+  # stream; it is here so the setup screen and the CA download can be walked through
+  # against a running proxy.
+  dashboard:
+    profiles: [dashboard]
+    build:
+      context: ../frontend
+    ports:
+      - "8081:8080"
+    networks: [harness]
+
+volumes:
+  pki:
+  certs:
+
+networks:
+  harness:
+    driver: bridge
