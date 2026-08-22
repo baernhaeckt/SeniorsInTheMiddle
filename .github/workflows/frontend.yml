@@ -2,6 +2,10 @@ name: build-deploy-frontend
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend.yml"
   push:
     branches: ["main"]
     paths:
@@ -9,7 +13,33 @@ on:
       - ".github/workflows/frontend.yml"
 
 jobs:
+  quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            frontend
+          sparse-checkout-cone: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm run knip
+      - run: npm test
+      - run: npm run build
+
   build-and-deploy:
+    needs: quality
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -72,6 +102,3 @@ jobs:
           registryPassword: ${{ secrets.GHCR_PAT }}
           ingress: external
           targetPort: 8080
-          # Add more environment variables here if needed, space separated
-          # e.g. ASPNETCORE_ENVIRONMENT=Production ANOTHER_VAR=Value 
-          environmentVariables: MY_ENV_VARIABLE=${{ vars.MY_ENV_VARIABLE }}
