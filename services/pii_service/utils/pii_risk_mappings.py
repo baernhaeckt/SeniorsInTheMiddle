@@ -401,6 +401,13 @@ PII_TYPE_MAPPINGS: dict[str, PiiMapping] = {
         pii_enum=PiiTypes.TH_TNIN,
         faker=faker.bban()
     ),
+    "MISC": PiiMapping(
+        information_type="MISC Text",
+        hipaa_category=HipaaCategory.NON_PHI,
+        risk_level=RiskLevel.LEVEL_ONE,
+        pii_enum=PiiTypes.MISC,
+        faker=faker.text()
+    ),
 }
 
 def get_pii_risk_mapping(pii_type: str) -> PiiMapping:
