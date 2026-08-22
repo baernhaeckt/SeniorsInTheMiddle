@@ -95,6 +95,8 @@ class PiiDetector:
 
             detection_entities = list()
             for detection in detections:
+                logger.info(f"Detected PII: {detection}")
+
                 pii_type_name = PiiTypes(detection.entity_type).name
                 pii_mapping = get_pii_risk_mapping(pii_type_name)
                 detected_text = text[detection.start:detection.end]
