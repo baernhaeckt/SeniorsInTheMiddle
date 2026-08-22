@@ -163,27 +163,8 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    /// <summary>Restores the saved session, or opens the start page if there is nothing to restore.</summary>
-    public async Task RestoreSessionAsync(SessionState? session)
-    {
-        if (session is null || session.TabUrls.Count == 0)
-        {
-            await OpenTabAsync(_settingsService.Current.StartPage, activate: true);
-            return;
-        }
-
-        var activeIndex = Math.Clamp(session.ActiveTabIndex, 0, session.TabUrls.Count - 1);
-        for (var i = 0; i < session.TabUrls.Count; i++)
-        {
-            await OpenTabAsync(session.TabUrls[i], activate: i == activeIndex);
-        }
-    }
-
-    public SessionState CaptureSession() => new()
-    {
-        TabUrls = Tabs.Select(t => t.Source).Where(s => !string.IsNullOrWhiteSpace(s)).ToList(),
-        ActiveTabIndex = ActiveTab is null ? 0 : Math.Max(0, Tabs.IndexOf(ActiveTab)),
-    };
+    /// <summary>Every launch starts fresh with a single tab on the configured start page.</summary>
+    public Task OpenStartPageAsync() => OpenTabAsync(_settingsService.Current.StartPage, activate: true);
 
     /// <summary>Navigates the active tab to whatever the address bar contains (URL, bare host or search query).</summary>
     public void NavigateFromAddressBar()

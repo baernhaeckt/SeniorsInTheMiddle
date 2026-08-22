@@ -8,7 +8,8 @@ namespace DemoBrowser.Services;
 /// Owns the single <see cref="CoreWebView2Environment"/> shared by every tab.
 ///
 /// WHY one environment: all tabs share the same UserDataFolder, and therefore the same cookies,
-/// session storage and cache, across tabs and across restarts.
+/// session storage and cache, across tabs. The folder is wiped on every start and on exit, so nothing
+/// survives a restart: each launch of the demo browser is a clean profile.
 ///
 /// WHY the proxy is an environment-time argument: Chromium reads <c>--proxy-server</c> only from the
 /// command line of the browser process, which WebView2 launches when the environment is created.
@@ -21,6 +22,11 @@ public sealed class BrowserEnvironmentService
     private Task<CoreWebView2Environment>? _creation;
 
     public CoreWebView2Environment? Environment { get; private set; }
+
+    /// <summary>PID of the shared browser process; reported by the first tab once its CoreWebView2 is up.</summary>
+    public static uint? BrowserProcessId { get; private set; }
+
+    public static void RegisterBrowserProcess(uint processId) => BrowserProcessId ??= processId;
 
     /// <summary>Returns the installed Evergreen runtime version, or <c>null</c> if no runtime is available.</summary>
     public static string? GetInstalledRuntimeVersion()
@@ -70,8 +76,29 @@ public sealed class BrowserEnvironmentService
         return await _creation.ConfigureAwait(true);
     }
 
+    /// <summary>Blocks (bounded) until the shared browser process has exited, so its profile files are unlocked.</summary>
+    public void WaitForBrowserProcessExit(TimeSpan timeout)
+    {
+        if (BrowserProcessId is not { } pid)
+        {
+            return;
+        }
+
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById((int)pid);
+            process.WaitForExit((int)timeout.TotalMilliseconds);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            // Already gone (or inaccessible): nothing to wait for.
+        }
+    }
+
     private async Task<CoreWebView2Environment> CreateAsync(AppSettings settings)
     {
+        // Fresh profile on every launch: no history, cookies or cache from a previous run.
+        AppPaths.WipeBrowserData();
         Directory.CreateDirectory(AppPaths.UserDataFolder);
 
         var options = new CoreWebView2EnvironmentOptions

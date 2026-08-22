@@ -18,15 +18,12 @@ public partial class MainWindow : Window
 {
     private readonly MainViewModel _viewModel;
     private readonly SettingsService _settingsService;
-    private readonly SessionService _sessionService;
-    private bool _sessionSaved;
 
-    public MainWindow(MainViewModel viewModel, SettingsService settingsService, SessionService sessionService)
+    public MainWindow(MainViewModel viewModel, SettingsService settingsService)
     {
         InitializeComponent();
         _viewModel = viewModel;
         _settingsService = settingsService;
-        _sessionService = sessionService;
         DataContext = viewModel;
 
         viewModel.Tabs.CollectionChanged += OnTabsChanged;
@@ -43,8 +40,8 @@ public partial class MainWindow : Window
         ApplyWindowState();
     }
 
-    /// <summary>Restores the previous session (or opens the start page). Called once by App after the window is shown.</summary>
-    public Task RestoreSessionAsync(SessionState? session) => _viewModel.RestoreSessionAsync(session);
+    /// <summary>Opens the start page in a fresh tab. Called once by App after the window is shown.</summary>
+    public Task OpenStartPageAsync() => _viewModel.OpenStartPageAsync();
 
     /// <summary>
     /// With WindowStyle=None a maximized window overhangs the screen edges by the resize border, so we
@@ -144,18 +141,6 @@ public partial class MainWindow : Window
     {
         var dialog = new SettingsWindow(_settingsService) { Owner = this };
         dialog.ShowDialog();
-    }
-
-    protected override async void OnClosing(CancelEventArgs e)
-    {
-        base.OnClosing(e);
-        if (_sessionSaved)
-        {
-            return;
-        }
-
-        _sessionSaved = true;
-        await _sessionService.SaveAsync(_viewModel.CaptureSession());
     }
 
     protected override void OnClosed(EventArgs e)

@@ -174,6 +174,7 @@ public sealed class TabViewModel : ObservableObject, IDisposable
         }
 
         var core = WebView.CoreWebView2;
+        BrowserEnvironmentService.RegisterBrowserProcess(core.BrowserProcessId);
 
         // Must be subscribed BEFORE the first navigation, otherwise that navigation's certificate error is missed.
         core.ServerCertificateErrorDetected += (_, args) =>

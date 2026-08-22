@@ -33,8 +33,7 @@ All state lives under `%LOCALAPPDATA%\DemoBrowser\`:
 | Path | Purpose |
 |------|---------|
 | `settings.json` | Proxy, CA URL and start page (schema below). Created with defaults on first run. |
-| `session.json` | URLs of the open tabs, written on close, restored on start. Missing/corrupt → one tab at `StartPage`. |
-| `WebView2\` | The WebView2 user data folder: cookies, cache, local storage — shared by all tabs and across restarts. |
+| `WebView2\` | The WebView2 user data folder: cookies, cache, history, local storage — shared by all tabs **within one run only**. It is deleted on every start and again on exit, so each launch is a clean profile with a single tab on `StartPage`. Nothing (tabs, history, cookies) is restored from a previous run. |
 
 ### settings.json schema
 
@@ -69,7 +68,7 @@ The gear button opens a dialog that edits all of these with validation.
 
 in `CoreWebView2EnvironmentOptions.AdditionalBrowserArguments` (values unquoted — the string is whitespace-split
 and quotes would be passed to Chromium verbatim). Every tab calls `EnsureCoreWebView2Async(environment)` with
-that same instance, so every tab uses the proxy and shares one session.
+that same instance, so every tab uses the proxy and shares one (per-run) session.
 
 No `--ignore-certificate-errors` or other blanket TLS switch is used.
 
@@ -105,10 +104,10 @@ process exits.
 
 | Type | Role |
 |------|------|
-| `SettingsService` / `SessionService` | JSON persistence via a source-generated `JsonSerializerContext`. |
+| `SettingsService` | JSON persistence via a source-generated `JsonSerializerContext`. |
 | `CertificateService` | Download, parse, hold the CA; shared `HandleServerCertificateError`. |
 | `BrowserEnvironmentService` | One-time, guarded creation of the shared `CoreWebView2Environment`. |
 | `TabViewModel` | Title / Source / IsActive / loading state and the tab's own `WebView2` instance. |
-| `MainViewModel` | Tab collection, active tab, toolbar commands, address resolution, session capture/restore. |
+| `MainViewModel` | Tab collection, active tab, toolbar commands, address resolution. |
 | `MainWindow` | Header-only tab strip (`ItemsControl`) plus a single `Grid` hosting **all** WebView2 controls simultaneously; switching tabs only toggles `Visibility`. WebView2 controls are never re-parented, so the CoreWebView2 survives tab switches. |
 | `SettingsWindow` | Settings editor with validation and the restart notice. |
