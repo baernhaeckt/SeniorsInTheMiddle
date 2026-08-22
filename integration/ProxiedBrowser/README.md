@@ -40,10 +40,10 @@ All state lives under `%LOCALAPPDATA%\DemoBrowser\`:
 ```json
 {
   "ProxyScheme": "http",
-  "ProxyHost": "seniorsinthemiddle-backend.greensea-158b1300.northeurope.azurecontainerapps.io",
+  "ProxyHost": "seniorsinthemiddle-backend.icymushroom-561b0fa4.northeurope.azurecontainerapps.io",
   "ProxyPort": 3128,
   "ProxyBypassList": "",
-  "CaCertUrl": "http://seniorsinthemiddle-backend.greensea-158b1300.northeurope.azurecontainerapps.io:3128/ca.cer",
+  "CaCertUrl": "http://seniorsinthemiddle-backend.icymushroom-561b0fa4.northeurope.azurecontainerapps.io:3128/ca.cer",
   "StartPage": "https://example.com"
 }
 ```

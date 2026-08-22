@@ -15,7 +15,7 @@ public sealed class AppSettings
 
     public const int DefaultHttpsProxyPort = 3127;
 
-    public string ProxyHost { get; set; } = "seniorsinthemiddle-backend.greensea-158b1300.northeurope.azurecontainerapps.io";
+    public string ProxyHost { get; set; } = "seniorsinthemiddle-backend.icymushroom-561b0fa4.northeurope.azurecontainerapps.io";
 
     public int ProxyPort { get; set; } = DefaultHttpProxyPort;
 
@@ -26,7 +26,7 @@ public sealed class AppSettings
     /// URL from which the proxy CA certificate (PEM or DER) is downloaded. The proxy serves it (together with
     /// proxy.pac) on its plain-HTTP port. If the URL is https, full TLS validation is applied.
     /// </summary>
-    public string CaCertUrl { get; set; } = "http://seniorsinthemiddle-backend.greensea-158b1300.northeurope.azurecontainerapps.io:3128/ca.cer";
+    public string CaCertUrl { get; set; } = "http://seniorsinthemiddle-backend.icymushroom-561b0fa4.northeurope.azurecontainerapps.io:3128/ca.cer";
 
     public string StartPage { get; set; } = "https://example.com";
 

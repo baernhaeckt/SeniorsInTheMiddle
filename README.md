@@ -15,8 +15,8 @@
 
 ## Deployment
 
-- Frontend: https://seniorsinthemiddle-frontend.greensea-158b1300.northeurope.azurecontainerapps.io
-- Backend: https://seniorsinthemiddle-backend.greensea-158b1300.northeurope.azurecontainerapps.io/swagger
+- Frontend: https://seniorsinthemiddle-frontend.icymushroom-561b0fa4.northeurope.azurecontainerapps.io
+- Backend: https://seniorsinthemiddle-backend.icymushroom-561b0fa4.northeurope.azurecontainerapps.io/swagger
   - Proxy-CA: `/ca.crt` — PAC: `/proxy.pac`
 - CI/CD Pipelines: https://github.com/baernhaeckt/SeniorsInTheMiddle/actions
 - Deployments: https://github.com/orgs/baernhaeckt/packages?repo_name=SeniorsInTheMiddle

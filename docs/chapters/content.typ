@@ -11,8 +11,8 @@
 
 == Deployment
 
-- Frontend: #link("https://seniorsinthemiddle-frontend.greensea-158b1300.northeurope.azurecontainerapps.io/")
-- Backend: #link("https://seniorsinthemiddle-backend.greensea-158b1300.northeurope.azurecontainerapps.io/swagger")
+- Frontend: #link("https://seniorsinthemiddle-frontend.icymushroom-561b0fa4.northeurope.azurecontainerapps.io/")
+- Backend: #link("https://seniorsinthemiddle-backend.icymushroom-561b0fa4.northeurope.azurecontainerapps.io/swagger")
 - CI/CD Pipelines: #link("https://github.com/baernhaeckt/SeniorsInTheMiddle/actions")
 - Deployments: #link("https://github.com/orgs/baernhaeckt/packages?repo_name=SeniorsInTheMiddle")
 
