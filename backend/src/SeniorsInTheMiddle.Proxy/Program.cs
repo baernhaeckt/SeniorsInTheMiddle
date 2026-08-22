@@ -2,6 +2,7 @@
 using SeniorsInTheMiddle.Proxy.Auth;
 using SeniorsInTheMiddle.Proxy.Auth.Api;
 using SeniorsInTheMiddle.Proxy.Forwarding;
+using SeniorsInTheMiddle.Proxy.Services;
 using SeniorsInTheMiddle.Proxy.Telemetry;
 
 WebApplicationBuilder builder = WebApplication.CreateSlimBuilder(args);
@@ -18,6 +19,8 @@ builder.Services.AddAppCors(builder.Configuration);
 builder.Services.AddAuthServices();
 builder.Services.AddForwardProxyServices();
 builder.Services.AddTelemetryServices();
+// The python services next to this process, one unix socket each (Services:*:SocketPath).
+builder.Services.AddPythonServices(builder.Configuration);
 
 WebApplication app = builder.Build();
 
@@ -34,5 +37,6 @@ app.UseTelemetryOriginGuard();
 app.RegisterAuthEndpoints();
 app.RegisterProxyEndpoints();
 app.MapTelemetryHub();
+app.MapServiceHealth();
 
 app.Run();

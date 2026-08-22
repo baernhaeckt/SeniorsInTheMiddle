@@ -33,8 +33,9 @@ services:
   proxy:
     image: ${PROXY_IMAGE:-sitm-proxy:harness}
     build:
-      context: ../backend
-      dockerfile: Dockerfile
+      # Repo root: backend/Dockerfile also bundles the python services.
+      context: ..
+      dockerfile: backend/Dockerfile
     depends_on:
       certgen:
         condition: service_completed_successfully

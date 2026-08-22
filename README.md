@@ -4,6 +4,10 @@
 
 - /backend : Enthält das Backend der Applikation. Forward-Proxy, WebAPI und der
   Telemetry-Stream laufen als ein Prozess (`backend/src/SeniorsInTheMiddle.Proxy`).
+  Das Image (`backend/Dockerfile`, Build-Context ist das Repo-Root) enthält zusätzlich
+  die Python-Services aus `/services` als Daemons unter supervisord.
+- /services : Python-Services (PII-Erkennung mit Presidio/spaCy) und die gemeinsame
+  Unix-Socket-Runtime, die im Backend-Container neben dem Proxy laufen.
 - /frontend : Enthält das Frontend der Applikation. Eigenes, schlankes nginx-Image.
 - /Worker1 : TODO
 - /docs : Enthält die Dokumentation für die Jury

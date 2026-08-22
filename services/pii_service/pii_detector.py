@@ -1,13 +1,14 @@
 import logging
+import os
 import statistics
 
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 
-from services.pii_service.config import settings
-from services.pii_service.models.analyze_result import AnalyzeResult
-from services.pii_service.models.detection_result import DetectionResultItem, DetectionResult, to_dict
-from services.pii_service.pii_types import PiiTypes
-from services.pii_service.utils.pii_risk_mappings import get_pii_risk_mapping
+from .config import settings
+from .models.analyze_result import AnalyzeResult
+from .models.detection_result import DetectionResultItem, DetectionResult, to_dict
+from .pii_types import PiiTypes
+from .utils.pii_risk_mappings import get_pii_risk_mapping
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +27,17 @@ class PiiDetector:
             logger.info(f"Loading spacy package '{spacy_package_name}'")
 
             if not spacy.util.is_package(spacy_package_name):
-                # Install the model if it is not already installed
-                spacy.cli.download(spacy_package_name)
+                # In the container the model is baked in at build time (see backend/Dockerfile,
+                # SPACY_MODELS). A runtime download needs network access and a writable
+                # site-packages, so it is opt-in for local development only.
+                if os.environ.get("PII_ALLOW_MODEL_DOWNLOAD", "") == "1":
+                    logger.warning(f"spaCy model '{spacy_package_name}' missing, downloading it")
+                    spacy.cli.download(spacy_package_name)
+                else:
+                    raise RuntimeError(
+                        f"spaCy model '{spacy_package_name}' is not installed. Run "
+                        f"'python -m spacy download {spacy_package_name}' or set PII_ALLOW_MODEL_DOWNLOAD=1."
+                    )
 
             # Initialize the AnalyzerEngine and configure it for German
             configuration = {

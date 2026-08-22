@@ -123,7 +123,9 @@ service methods:
 
 `ServiceClient` is the python client, for calls between python services and for
 poking at a service by hand. The dotnet side has an equivalent implementation in
-[`test-host/ServiceSocketClient.cs`](test-host/ServiceSocketClient.cs).
+[`test-host/ServiceSocketClient.cs`](test-host/ServiceSocketClient.cs); the proxy
+carries a copy under `backend/src/SeniorsInTheMiddle.Proxy/Services/` with a
+reconnecting `ServiceConnection` per service on top.
 
 ```python
 from service_runtime import ServiceClient
@@ -152,10 +154,36 @@ lets the dotnet test host call it over that socket and finally checks that
 SIGTERM shuts the service down cleanly. It exits non-zero if anything fails.
 
 
+## Running in the backend image
+
+In the deployment the services run next to the dotnet proxy in the backend
+image (`backend/Dockerfile`, built from the repository root), supervised by
+supervisord (`backend/supervisord.conf`). Each service is one `[program:..]`
+block with its own socket under `/run/services/`, and the proxy is told where
+to find it with `Services__<Name>__SocketPath`. The uv lock at the repo root
+provides the python dependencies; spaCy models are downloaded at build time
+(`SPACY_MODELS`, default `de_core_news_lg en_core_web_lg`) so nothing is
+fetched at runtime.
+
+```bash
+docker build -f backend/Dockerfile -t sitm-proxy .
+docker run --rm -p 8080:8080 -e Jwt__Key=... sitm-proxy
+curl http://localhost:8080/healthz        # pings every configured service
+docker exec <id> supervisorctl status      # pii-service, proxy
+```
+
 ## Adding a new service
 
-1. Copy `example_service`, rename the directory.
-2. Implement `handle` (and `start`/`stop` if you need them).
-3. Pick a socket path in `service.py`, e.g. `/run/services/<name>.sock`.
-4. Give the container a process for it (`python -m <package>`) and let the
-   dotnet side connect to that path with `ServiceSocketClient`.
+1. Copy `example_service`, rename the directory. Use relative imports inside
+   the package and `from service_runtime import ...` for the runtime; the
+   package root is `services/` (`PYTHONPATH=/srv/services` in the image).
+2. Implement `handle` (and `start`/`stop` if you need them). Load models in
+   `start`, not per request.
+3. Pick a socket path, e.g. `/run/services/<name>.sock`, and add a
+   `__main__.py` so `python -m <package>` starts it.
+4. Wire it into the backend image:
+   - `COPY services/<package> /srv/services/<package>` in `backend/Dockerfile`,
+     plus a `<NAME>_SOCKET_PATH` / `Services__<Name>__SocketPath` env pair;
+   - a `[program:<name>]` block in `backend/supervisord.conf`;
+   - on the dotnet side a name in `ServiceConnections.KnownServices` and a typed
+     client next to `Services/Pii/` (`backend/src/SeniorsInTheMiddle.Proxy/Services`).

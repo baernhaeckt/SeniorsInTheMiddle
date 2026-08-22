@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from services.pii_service.models.detection_result import DetectionResultItem
+from .detection_result import DetectionResultItem
 
 
 @dataclass(frozen=True)

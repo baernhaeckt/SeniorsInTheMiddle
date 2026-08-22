@@ -3,8 +3,8 @@ from typing import NamedTuple, Any
 
 from faker import Faker
 
-from services.pii_service.config import settings
-from services.pii_service.pii_types import PiiTypes
+from ..config import settings
+from ..pii_types import PiiTypes
 
 locale = "de_DE" if settings.DEFAULT_LANGUAGE == "de" else "en_US"
 faker = Faker(locale)

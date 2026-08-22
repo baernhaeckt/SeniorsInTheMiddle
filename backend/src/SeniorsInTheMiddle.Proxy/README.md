@@ -131,6 +131,24 @@ which is how the tests and `curl` reach it.
 | `Proxy:Region` | machine name | Shown in the dashboard header. |
 | `Proxy:Policy` | `observe-only` | Shown in the dashboard header. |
 
+## Python services
+
+The PII detection lives in a python process (`services/pii_service`) that runs next
+to this one in the container image, supervised by supervisord. Each python service
+owns one unix socket and is configured by name:
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `Services:Pii:SocketPath` | empty | Unix socket of the PII service. Empty disables it, which is the normal state on a Windows dev box. The image sets `/run/services/pii-service.sock`. |
+| `Services:Pii:ConnectTimeoutSeconds` | `30` | How long the first connect keeps retrying while the daemon loads its model. |
+| `Services:Pii:MaxFrameBytes` | `8388608` | Largest reply accepted; matches `SERVICE_MAX_FRAME_BYTES` on the python side. |
+
+`IPiiServiceClient` (`Services/Pii`) is the typed client; `ServiceConnection` behind it
+reconnects when supervisord restarts the daemon. `GET /healthz` on the API port pings
+every configured service and answers 503 with one line per service when one is down.
+A startup probe logs each service's `$info` once, so a wrong path shows up in the
+container log immediately. The wire format is described in `services/README.md`.
+
 ## Certificates
 
 No key material is committed or baked into the image. On first start the app generates a

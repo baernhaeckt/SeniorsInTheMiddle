@@ -1,0 +1,50 @@
+# Build context for backend/Dockerfile is the repository root (it needs backend/,
+# services/ and the uv lock). Everything else stays out of the context.
+frontend
+integration
+docs
+notebooks
+pitch
+plan
+worker1
+.cursor
+.github
+.venv
+*.md
+!services/README.md
+
+# dotnet
+**/bin
+**/obj
+**/.vs
+**/*.user
+**/.dockerignore
+**/docker-compose*
+backend/Dockerfile*
+backend/test
+
+# the services integration image has its own build
+services/test-host
+services/Dockerfile*
+services/docker-entrypoint.sh
+services/example_service
+
+# python
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ipynb_checkpoints
+
+# git / editors
+.git
+!.git/HEAD
+!.git/config
+!.git/packed-refs
+!.git/refs/heads/**
+.gitignore
+.idea
+.vscode
+
+# Never bake key material into the image.
+**/certs
+**/.env

@@ -6,6 +6,11 @@ on:
     branches: ["main"]
     paths:
       - "backend/**"
+      - "services/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".python-version"
+      - ".dockerignore"
       - ".github/workflows/backend.yml"
 
 jobs:
@@ -36,6 +41,11 @@ jobs:
           sparse-checkout: |
             .github/workflows
             backend
+            services
+            pyproject.toml
+            uv.lock
+            .python-version
+            .dockerignore
           sparse-checkout-cone: true
 
       - name: Login to GHCR
@@ -48,7 +58,9 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: backend
+          # Repo root: backend/Dockerfile also copies services/ and the uv lock.
+          context: .
+          file: backend/Dockerfile
           push: true
           tags: |
             ${{ env.IMAGE_REPO }}:${{ github.sha }}
