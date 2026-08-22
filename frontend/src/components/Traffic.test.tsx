@@ -28,7 +28,7 @@ describe('Traffic', () => {
   it('only treated rows are buttons, and clicking pins then unpins', async () => {
     for (const frame of frames) store.apply(frame)
     render(<Traffic />)
-    const buttons = screen.getAllByRole('button')
+    const buttons = Array.from(document.querySelectorAll('button.tr'))
     expect(buttons).toHaveLength(1)
     const row = buttons[0]
     if (!row) throw new Error('no row')
@@ -40,12 +40,26 @@ describe('Traffic', () => {
     expect(store.getSnapshot().pinnedId).toBeNull()
   })
 
-  it('shows the latest proxy log line', () => {
+  it('shows the proxy log lines with their level, newest first', () => {
     render(<Traffic />)
     expect(screen.getByText(/waiting for the proxy/i)).toBeInTheDocument()
     act(() => {
       store.apply({ type: 'log', at: 1, level: 'info', message: 'hello there' })
+      store.apply({ type: 'log', at: 2, level: 'block', message: 'held at the boundary' })
     })
-    expect(screen.getByText('hello there')).toBeInTheDocument()
+    const lines = Array.from(document.querySelectorAll('.ticker__line'))
+    expect(lines[0]).toHaveTextContent('held at the boundary')
+    expect(lines[0]).toHaveAttribute('data-level', 'block')
+    expect(lines[1]).toHaveTextContent('hello there')
+  })
+
+  it('a log line that names an exchange pins it when clicked', async () => {
+    for (const frame of frames) store.apply(frame)
+    render(<Traffic />)
+    const line = document.querySelector('button.ticker__line')
+    if (!line) throw new Error('no clickable log line')
+    expect(line).toHaveTextContent('held at the boundary')
+    await userEvent.click(line)
+    expect(store.getSnapshot().pinnedId).toBe('x-1')
   })
 })

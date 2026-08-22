@@ -36,6 +36,34 @@ export interface Run {
   entity?: Entity
 }
 
+/**
+ * The raw request body, cut at the offsets the proxy reported. Exact where
+ * `splitByValues` has to guess: a value that occurs twice, or inside another,
+ * is marked where it was found and nowhere else. Falls back to the search when
+ * an offset does not land on its value -- the body was pretty-printed, say.
+ */
+export function splitByOffsets(text: string, entities: Entity[]): Run[] {
+  if (!text) return []
+  const placed = [...entities]
+    .filter((entity) => entity.end > entity.start && entity.end <= text.length)
+    .sort((a, b) => a.start - b.start)
+
+  if (placed.length === 0) return splitByValues(text, entities, false)
+
+  const runs: Run[] = []
+  let cursor = 0
+  for (const entity of placed) {
+    if (entity.start < cursor) continue
+    if (text.slice(entity.start, entity.end) !== entity.value)
+      return splitByValues(text, entities, false)
+    if (entity.start > cursor) runs.push({ text: text.slice(cursor, entity.start) })
+    runs.push({ text: entity.value, entity })
+    cursor = entity.end
+  }
+  if (cursor < text.length) runs.push({ text: text.slice(cursor) })
+  return runs
+}
+
 export function splitByValues(text: string, entities: Entity[], useToken: boolean): Run[] {
   if (!text) return []
   const needles = entities

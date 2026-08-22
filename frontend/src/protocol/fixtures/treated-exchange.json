@@ -1,12 +1,25 @@
 [
   {
     "type": "hello",
-    "version": 2,
+    "version": 3,
     "proxy": {
       "name": "sitm-edge-01",
       "region": "Bern",
-      "mode": "transparent http/https",
-      "policy": "strict-ch"
+      "mode": "intercept",
+      "policy": "rewrite"
+    },
+    "policy": {
+      "rewrite": true,
+      "bypassHosts": ["challenges.cloudflare.com"],
+      "inspectOnly": {
+        "chatgpt.com": ["/backend-api/conversation"]
+      },
+      "maxBodyBytes": 1048576,
+      "confidenceThreshold": 0.6,
+      "services": {
+        "pii": "ok",
+        "privacyCheck": "disabled"
+      }
     }
   },
   {
@@ -74,7 +87,10 @@
         "token": "[PERSON_1]",
         "start": 9,
         "end": 24,
-        "confidence": 0.97
+        "confidence": 0.97,
+        "informationType": "Full Name",
+        "riskLevel": 3,
+        "hipaaCategory": "Not Protected Health Information"
       },
       {
         "id": "e2",
@@ -83,7 +99,23 @@
         "token": "[AHV_1]",
         "start": 33,
         "end": 49,
-        "confidence": 0.99
+        "confidence": 0.99,
+        "informationType": "Social Security Number",
+        "riskLevel": 3,
+        "hipaaCategory": "Protected Health Information"
+      }
+    ],
+    "riskScoreMean": 0.98,
+    "typeFrequencies": {
+      "PERSON": 1,
+      "AHV": 1
+    },
+    "suppressed": 0,
+    "nearMisses": [
+      {
+        "kind": "LOCATION",
+        "value": "Bern",
+        "confidence": 0.42
       }
     ]
   },
@@ -126,7 +158,14 @@
     "type": "exchange.delivered",
     "exchangeId": "x-1",
     "at": 1756000001310,
-    "totalMs": 310
+    "totalMs": 310,
+    "timing": {
+      "bufferMs": 3,
+      "detectMs": 14,
+      "upstreamMs": 265,
+      "rehydrateMs": 2,
+      "overheadMs": 26
+    }
   },
   {
     "type": "request.completed",
@@ -135,5 +174,19 @@
     "status": 201,
     "responseBytes": 52,
     "durationMs": 310
+  },
+  {
+    "type": "privacy.assessed",
+    "exchangeId": "x-1",
+    "at": 1756000003500,
+    "risks": [
+      {
+        "token": "[PERSON_1]",
+        "probability": 1.0
+      }
+    ],
+    "maxProbability": 1.0,
+    "assessedMs": 2190,
+    "status": "ok"
   }
 ]

@@ -1,13 +1,16 @@
 import { memo } from 'react'
 import { shownExchange, store, type Exchange } from '../engine/store'
-import { prettyBody, splitByValues } from '../engine/text'
+import { prettyBody, splitByOffsets, splitByValues } from '../engine/text'
 import { useStore } from '../engine/useStore'
 import type { Entity } from '../protocol/types'
+import { Insights } from './Insights'
+import { chipTitle, isPhi } from '../engine/entityFacts'
 
 export function Inspector() {
   const exchanges = useStore((state) => state.exchanges)
   const pinnedId = useStore((state) => state.pinnedId)
   const hoveredToken = useStore((state) => state.hoveredToken)
+  const policy = useStore((state) => state.policy)
   const shown = shownExchange(exchanges, pinnedId)
   const following = pinnedId === null
 
@@ -78,6 +81,8 @@ export function Inspector() {
           />
         </div>
       </div>
+
+      <Insights exchange={shown} policy={policy} />
     </section>
   )
 }
@@ -115,7 +120,11 @@ const Cell = memo(function Cell({ exchange, hoveredToken, field, tone, open, row
   }
 
   const text = prettyBody(raw, exchange.contentType)
-  const runs = splitByValues(text, exchange.entities, tone === 'token')
+  // The raw request is the one body the offsets describe; the others are searched.
+  const runs =
+    field === 'requestBody' && text === raw
+      ? splitByOffsets(text, exchange.entities)
+      : splitByValues(text, exchange.entities, tone === 'token')
 
   return (
     <div className={className}>
@@ -154,9 +163,11 @@ function Chip({ entity, text, tone, hot }: ChipProps) {
     <span
       className={`chip chip--${tone}`}
       data-hot={hot}
+      data-risk={entity.riskLevel}
+      data-phi={isPhi(entity.hipaaCategory)}
       onMouseEnter={hover}
       onMouseLeave={leave}
-      title={`${entity.kind} · ${Math.round(entity.confidence * 100)}% confidence`}
+      title={chipTitle(entity)}
     >
       {text}
     </span>

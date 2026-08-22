@@ -52,6 +52,9 @@ describe('splitByValues', () => {
     start: 0,
     end: 0,
     confidence: 1,
+    informationType: '',
+    riskLevel: 0,
+    hipaaCategory: '',
   })
 
   it('returns one run for text with no needles', () => {

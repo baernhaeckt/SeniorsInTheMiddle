@@ -25,9 +25,11 @@ const byType = <T extends ServerEvent['type']>(type: T): EventOf<T> => {
 
 function replay(events: ServerEvent[], from: AppState = initialState): AppState {
   let seq = 0
+  let logSeq = 0
   return events.reduce((state, event) => {
     if (event.type === 'request.observed') seq += 1
-    return reduce(state, event, seq)
+    if (event.type === 'log') logSeq += 1
+    return reduce(state, event, seq, logSeq)
   }, from)
 }
 
@@ -46,6 +48,9 @@ function exchange(id: string, stage: Stage, extra: Partial<Exchange> = {}): Exch
     contentType: 'application/json',
     requestBody: '{}',
     entities: [],
+    typeFrequencies: {},
+    suppressed: 0,
+    nearMisses: [],
     ...extra,
   }
 }
@@ -90,6 +95,7 @@ describe('reduce: happy path', () => {
       requests: 2,
       treated: 1,
       identifiersHeld: 2,
+      blocks: 1,
       latencies: [310],
     })
     expect(state.traffic.map((entry) => entry.seq)).toEqual([2, 1])
@@ -103,11 +109,106 @@ describe('reduce: happy path', () => {
 
   it('records the protocol version and flags a mismatch in the log line', () => {
     const ok = reduce(initialState, byType('hello'))
-    expect(ok.protocolVersion).toBe(2)
-    expect(ok.lastLog).toContain('attached')
-    const bad = reduce(initialState, { ...byType('hello'), version: 3 })
-    expect(bad.protocolVersion).toBe(3)
-    expect(bad.lastLog).toContain('expects v2')
+    expect(ok.protocolVersion).toBe(3)
+    expect(ok.policy).toEqual(byType('hello').policy)
+    expect(ok.logs[0]?.message).toContain('attached')
+    expect(ok.logs[0]?.level).toBe('info')
+    const bad = reduce(initialState, { ...byType('hello'), version: 99 })
+    expect(bad.protocolVersion).toBe(99)
+    expect(bad.logs[0]?.message).toContain('expects v3')
+    expect(bad.logs[0]?.level).toBe('warn')
+  })
+
+  it('stores what detection reported beyond the entities', () => {
+    const state = replay(frames)
+    expect(state.exchanges[0]).toMatchObject({
+      riskScoreMean: 0.98,
+      typeFrequencies: { PERSON: 1, AHV: 1 },
+      suppressed: 0,
+      nearMisses: [{ kind: 'LOCATION', value: 'Bern', confidence: 0.42 }],
+      restored: 1,
+      timing: { bufferMs: 3, detectMs: 14, upstreamMs: 265, rehydrateMs: 2, overheadMs: 26 },
+    })
+  })
+
+  it('privacy.assessed fills in the verdict without moving the stage', () => {
+    const delivered = replay(frames.filter((frame) => frame.type !== 'privacy.assessed'))
+    const before = delivered.exchanges[0]
+    expect(before?.privacy).toBeUndefined()
+    const assessed = reduce(delivered, byType('privacy.assessed'))
+    const after = assessed.exchanges[0]
+    expect(after?.stage).toBe(before?.stage)
+    expect(after?.stageAt).toBe(before?.stageAt)
+    expect(after?.privacy).toEqual({
+      status: 'ok',
+      risks: [{ token: '[PERSON_1]', probability: 1 }],
+      maxProbability: 1,
+      assessedMs: 2190,
+      reason: undefined,
+    })
+    // Also lands on a settled exchange, which the late verdict usually meets.
+    const done = reduce(delivered, { type: 'view.settle', exchangeId: 'x-1', at: 9 })
+    expect(reduce(done, byType('privacy.assessed')).exchanges[0]?.stage).toBe('done')
+  })
+
+  it('privacy.assessed for an unknown exchange is a no-op', () => {
+    const state = replay(frames)
+    expect(reduce(state, { ...byType('privacy.assessed'), exchangeId: 'ghost' })).toBe(state)
+  })
+
+  it('keeps log lines newest first and counts blocks', () => {
+    const log = (level: 'info' | 'warn' | 'block', message: string): EventOf<'log'> => ({
+      type: 'log',
+      at: 1,
+      level,
+      message,
+    })
+    const state = replay([log('info', 'one'), log('block', 'two'), log('block', 'three')])
+    expect(state.logs.map((line) => [line.seq, line.message])).toEqual([
+      [3, 'three'],
+      [2, 'two'],
+      [1, 'one'],
+    ])
+    expect(state.metrics.blocks).toBe(2)
+  })
+
+  it('caps the log', () => {
+    const many: ServerEvent[] = Array.from({ length: LIMITS.logs + 5 }, (_, i) => ({
+      type: 'log',
+      at: i,
+      level: 'info',
+      message: `m${i}`,
+    }))
+    const state = replay(many)
+    expect(state.logs).toHaveLength(LIMITS.logs)
+    expect(state.logs[0]?.message).toBe(`m${LIMITS.logs + 4}`)
+  })
+
+  it('tallies devices from the traffic', () => {
+    const state = replay(frames)
+    expect(state.devices).toHaveLength(1)
+    expect(state.devices[0]).toMatchObject({
+      clientLabel: 'Tablet · Studer',
+      clientIp: '192.168.1.44',
+      seen: 2,
+      treated: 1,
+      identifiers: 2,
+      maxRisk: 3,
+      lastSeenAt: 1756000001020,
+    })
+  })
+
+  it('keeps one line per device, most recent first', () => {
+    const observed = byType('request.observed')
+    const state = replay([
+      { ...observed, requestId: 'a', clientLabel: 'A', clientIp: '10.0.0.1', at: 1 },
+      { ...observed, requestId: 'b', clientLabel: 'B', clientIp: '10.0.0.2', at: 2 },
+      { ...observed, requestId: 'c', clientLabel: 'A', clientIp: '10.0.0.1', at: 3 },
+    ])
+    expect(state.devices.map((device) => [device.clientLabel, device.seen])).toEqual([
+      ['A', 2],
+      ['B', 1],
+    ])
   })
 
   it('ignores stage events for an unknown exchange without throwing', () => {
@@ -176,6 +277,9 @@ describe('mergeVault', () => {
     start: 0,
     end: 1,
     confidence: 1,
+    informationType: '',
+    riskLevel: 0,
+    hipaaCategory: '',
   })
 
   it('adds new tokens at the front and bumps uses for repeats', () => {

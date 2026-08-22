@@ -7,6 +7,8 @@ interface PeekProps {
   note?: string
   /** Which edge of the trigger the panel lines up with. */
   align?: 'start' | 'center' | 'end'
+  /** Anything else worth a look while the panel is open. */
+  extra?: ReactNode
   className?: string
   children: ReactNode
 }
@@ -19,7 +21,7 @@ interface PeekProps {
  * addresses someone is about to type into a device. It stays open while the
  * pointer is anywhere inside, including on the panel itself.
  */
-export function Peek({ value, note, align = 'center', className, children }: PeekProps) {
+export function Peek({ value, note, align = 'center', className, children, extra }: PeekProps) {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
 
@@ -62,6 +64,7 @@ export function Peek({ value, note, align = 'center', className, children }: Pee
           <div className="peek__card" role="tooltip">
             <span className="peek__value u-mono">{value}</span>
             {note && <span className="peek__note">{note}</span>}
+            {extra}
           </div>
         </div>
       )}

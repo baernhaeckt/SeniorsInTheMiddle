@@ -18,6 +18,9 @@ function make(id: string, stage: Stage, stageAt: number): Exchange {
     contentType: 'application/json',
     requestBody: '{}',
     entities: [],
+    typeFrequencies: {},
+    suppressed: 0,
+    nearMisses: [],
   }
 }
 

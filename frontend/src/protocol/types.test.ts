@@ -45,9 +45,68 @@ describe('parseServerEvent', () => {
   })
 
   it('rejects a known type with a missing field and names the field', () => {
-    const result = parseServerEvent(JSON.stringify({ type: 'hello', version: 2 }))
+    const result = parseServerEvent(JSON.stringify({ type: 'hello', version: 3 }))
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.detail).toContain('hello at proxy')
+  })
+
+  it('rejects a hello without the policy block', () => {
+    const { policy: _dropped, ...frame } = treated[0] as Record<string, unknown>
+    const result = parseServerEvent(JSON.stringify(frame))
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.detail).toContain('hello at policy')
+  })
+
+  it('fills in defaults for an entity and a detection without the v3 extras', () => {
+    const detection = treated.find((frame) => frame.type === 'detection.completed') as Record<
+      string,
+      unknown
+    >
+    const {
+      riskScoreMean: _r,
+      typeFrequencies: _t,
+      suppressed: _s,
+      nearMisses: _n,
+      ...rest
+    } = detection
+    const frame = {
+      ...rest,
+      entities: [
+        {
+          id: 'e1',
+          kind: 'PERSON',
+          value: 'Rosmarie Studer',
+          token: '[PERSON_1]',
+          start: 9,
+          end: 24,
+          confidence: 0.97,
+        },
+      ],
+    }
+    const result = parseServerEvent(JSON.stringify(frame))
+    expect(result.ok).toBe(true)
+    if (result.ok && result.event.type === 'detection.completed') {
+      expect(result.event.entities[0]).toMatchObject({
+        informationType: '',
+        riskLevel: 0,
+        hipaaCategory: '',
+      })
+      expect(result.event.riskScoreMean).toBeUndefined()
+      expect(result.event.typeFrequencies).toEqual({})
+      expect(result.event.suppressed).toBe(0)
+      expect(result.event.nearMisses).toEqual([])
+    }
+  })
+
+  it('accepts a privacy verdict and leaves the stage where it was', () => {
+    let state = initialState
+    for (const frame of treated) {
+      const result = parseServerEvent(JSON.stringify(frame))
+      if (!result.ok) throw new Error(result.detail)
+      state = reduce(state, result.event)
+    }
+    expect(state.exchanges[0]?.privacy?.status).toBe('ok')
+    expect(state.exchanges[0]?.stage).toBe('deliver')
   })
 
   it('rejects a known type with a wrong value', () => {

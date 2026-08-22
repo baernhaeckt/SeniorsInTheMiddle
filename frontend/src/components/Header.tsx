@@ -1,3 +1,4 @@
+import { Fragment, type ReactNode } from 'react'
 import type { Session } from '../auth/session'
 import { hasProxyAddress, proxyAddressOf, type RuntimeConfig } from '../config'
 import { COPY } from '../copy'
@@ -8,7 +9,9 @@ import type { LinkState } from '../transport/types'
 import { Mark, Wordmark } from './Brand'
 import { Clip } from './Clip'
 import { Peek } from './Peek'
+import { Sparkline } from './Sparkline'
 import { UserBubble } from './UserBubble'
+import type { ProxyPolicy, ServiceState } from '../protocol/types'
 
 const LINK_COPY: Record<LinkState, string> = {
   idle: 'not attached',
@@ -31,6 +34,7 @@ export function Header({ config, onOpenGuide, onReconfigure, session, onSignOut 
   const metrics = useStore((state) => state.metrics)
   const link = useStore((state) => state.link)
   const protocolVersion = useStore((state) => state.protocolVersion)
+  const policy = useStore((state) => state.policy)
   const p50 = median(metrics.latencies)
   const configured = hasProxyAddress(config)
   const mismatch = protocolVersion !== null && protocolVersion !== PROTOCOL_VERSION
@@ -74,10 +78,23 @@ export function Header({ config, onOpenGuide, onReconfigure, session, onSignOut 
           <Stat label="Requests" value={metrics.requests} />
           <Stat label="Treated" value={metrics.treated} variant="treated" />
           <Stat label="Identifiers held" value={metrics.identifiersHeld} variant="held" />
-          <Stat label="Round trip" value={p50 ?? '—'} unit={p50 === null ? '' : 'ms'} />
+          {metrics.blocks > 0 && <Stat label="Blocks" value={metrics.blocks} variant="blocks" />}
+          <Stat
+            label="Round trip"
+            value={p50 ?? '—'}
+            unit={p50 === null ? '' : 'ms'}
+            variant="trip"
+            lead={<Sparkline values={metrics.latencies} />}
+          />
         </div>
 
-        <Peek className="head__link" value={link.endpoint} note={linkNote} align="end">
+        <Peek
+          className="head__link"
+          value={link.endpoint}
+          note={linkNote}
+          align="end"
+          extra={policy ? <PolicySheet policy={policy} /> : undefined}
+        >
           <div
             className="link"
             data-state={link.state}
@@ -96,6 +113,12 @@ export function Header({ config, onOpenGuide, onReconfigure, session, onSignOut 
                 <span className="link__warn">&nbsp;· {link.dropped} dropped</span>
               ) : null}
             </span>
+            {policy && (
+              <span className="services" aria-label="Detector services">
+                <Service name="pii" state={policy.services.pii} />
+                <Service name="privacy" state={policy.services.privacyCheck} />
+              </span>
+            )}
           </div>
         </Peek>
 
@@ -113,17 +136,60 @@ interface StatProps {
   label: string
   value: number | string
   unit?: string
-  variant?: 'held' | 'treated'
+  variant?: 'held' | 'treated' | 'blocks' | 'trip'
+  /** Something drawn before the number, a sparkline say. */
+  lead?: ReactNode
 }
 
-function Stat({ label, value, unit, variant }: StatProps) {
+function Stat({ label, value, unit, variant, lead }: StatProps) {
   return (
     <div className={`stat${variant ? ` stat--${variant}` : ''}`}>
       <div className="stat__value">
-        {value}
-        {unit ? <small>{unit}</small> : null}
+        {lead}
+        <span>
+          {value}
+          {unit ? <small>{unit}</small> : null}
+        </span>
       </div>
       <div className="u-label stat__label">{label}</div>
     </div>
+  )
+}
+
+const SERVICE_COPY: Record<ServiceState, string> = {
+  ok: 'answering',
+  disabled: 'not configured',
+  down: 'not answering',
+}
+
+function Service({ name, state }: { name: string; state: ServiceState }) {
+  return (
+    <span className="service" data-state={state} title={`${name} service ${SERVICE_COPY[state]}`}>
+      <span className="service__dot" />
+      {name}
+    </span>
+  )
+}
+
+/** What the proxy said it does, under the link address in the popover. */
+function PolicySheet({ policy }: { policy: ProxyPolicy }) {
+  const scoped = Object.entries(policy.inspectOnly)
+  return (
+    <dl className="policy">
+      <dt>bodies</dt>
+      <dd>{policy.rewrite ? 'rewritten before they leave' : 'observed, never changed'}</dd>
+      <dt>threshold</dt>
+      <dd>{Math.round(policy.confidenceThreshold * 100)}% confidence</dd>
+      <dt>max body</dt>
+      <dd>{Math.round(policy.maxBodyBytes / 1024)} kB</dd>
+      <dt>bypassed</dt>
+      <dd>{policy.bypassHosts.length === 0 ? 'nothing' : policy.bypassHosts.join(', ')}</dd>
+      {scoped.map(([host, paths]) => (
+        <Fragment key={host}>
+          <dt>{host}</dt>
+          <dd>only {paths.join(', ')}</dd>
+        </Fragment>
+      ))}
+    </dl>
   )
 }

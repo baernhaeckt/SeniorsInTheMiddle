@@ -1,4 +1,4 @@
-import type { Entity, EntityKind } from '../protocol/types'
+import type { Entity, EntityKind, NearMiss } from '../protocol/types'
 
 /**
  * Demo material: a plausible hour of traffic from one household behind the
@@ -24,6 +24,10 @@ export interface TreatedScenario {
   request: string
   /** Response body, written against the tokens the proxy hands out. */
   response: string
+  /** Findings under the threshold, for the ones worth showing. */
+  nearMisses?: NearMiss[]
+  /** Findings nested inside another, which the proxy counts but does not replace. */
+  suppressed?: number
 }
 
 export interface PlainRequest {
@@ -54,6 +58,8 @@ export const TREATED: TreatedScenario[] = [
     status: 201,
     request: `{"insuredName":"{{PERSON|Rosmarie Studer}}","ahv":"{{AHV|756.1234.5678.97}}","address":"{{ADDRESS|Aarbergergasse 12, 3011 Bern}}","policy":"{{INSURANCE|42-118-9903}}","treatment":"{{HEALTH|Hüftoperation}}","amountChf":4820.55,"note":"Rechnung wurde bis heute nicht bezahlt"}`,
     response: `{"claimId":"CLM-88213","status":"received","insuredName":"{{PERSON}}","policy":"{{INSURANCE}}","estimatedDays":14}`,
+    nearMisses: [{ kind: 'LOCATION', value: 'Bern', confidence: 0.42 }],
+    suppressed: 1,
   },
   {
     ...PHONE,
@@ -64,6 +70,10 @@ export const TREATED: TreatedScenario[] = [
     status: 200,
     request: `{"sessionId":"sess-8812","message":"Mein Enkel schreibt mir per Mail an {{EMAIL|h.baumgartner@bluewin.ch}} und sagt, er sitze im Ausland fest und brauche 3000 Franken. Ich bin {{PERSON|Heidi Baumgartner}}, {{ADDRESS|Länggassstrasse 44, 3012 Bern}}. Soll ich das Geld schicken?"}`,
     response: `{"reply":"Bitte schicken Sie nichts, {{PERSON}}. Das ist das bekannteste Enkeltrick-Muster: Druck, Ausland, sofort Geld. Antworten Sie nicht auf die Mail an {{EMAIL}}, sondern rufen Sie Ihren Enkel unter der Nummer an, die Sie schon lange kennen.","confidence":0.94}`,
+    nearMisses: [
+      { kind: 'PERSON', value: 'Enkel', confidence: 0.35 },
+      { kind: 'LOCATION', value: 'Ausland', confidence: 0.51 },
+    ],
   },
   {
     ...LAPTOP,
@@ -94,6 +104,7 @@ export const TREATED: TreatedScenario[] = [
     status: 200,
     request: `{"patient":{"name":"{{PERSON|Peter Hofstetter}}","birthDate":"{{BIRTHDATE|02.11.1951}}","insurer":"{{INSURANCE|CSS 77-390-1122}}"},"symptoms":"{{HEALTH|Diabetes Typ 2}}, Schwindel am Morgen","question":"Was darf ich noch essen?"}`,
     response: `{"advice":"Bei {{HEALTH}} geht es weniger um Verbote als um Rhythmus, {{PERSON}}. Drei Mahlzeiten, wenig Zucker in Getränken, Vollkorn statt Weissmehl.","urgency":"low","insurer":"{{INSURANCE}}"}`,
+    nearMisses: [{ kind: 'MEDICAL_LICENSE', value: 'Schwindel', confidence: 0.33 }],
   },
 ]
 
@@ -315,6 +326,61 @@ const TOKEN_PREFIX: Record<EntityKind, string> = {
   INSURANCE: 'INSURANCE',
 }
 
+/**
+ * What the detector would say about each kind: its label, how identifying it is
+ * (1 not, 2 semi, 3 fully -- after Schwartz & Solove), and whether it is health data.
+ */
+export const KIND_FACTS: Record<
+  EntityKind,
+  { informationType: string; riskLevel: number; hipaaCategory: string }
+> = {
+  PERSON: {
+    informationType: 'Full Name',
+    riskLevel: 3,
+    hipaaCategory: 'Not Protected Health Information',
+  },
+  AHV: {
+    informationType: 'Social Security Number',
+    riskLevel: 3,
+    hipaaCategory: 'Protected Health Information',
+  },
+  IBAN: {
+    informationType: 'International Banking Account Number',
+    riskLevel: 3,
+    hipaaCategory: 'Not Protected Health Information',
+  },
+  ADDRESS: {
+    informationType: 'Street Address',
+    riskLevel: 2,
+    hipaaCategory: 'Not Protected Health Information',
+  },
+  PHONE: {
+    informationType: 'Home Phone Number, Cell Phone Number',
+    riskLevel: 2,
+    hipaaCategory: 'Not Protected Health Information',
+  },
+  EMAIL: {
+    informationType: 'Email Address',
+    riskLevel: 3,
+    hipaaCategory: 'Not Protected Health Information',
+  },
+  BIRTHDATE: {
+    informationType: 'Date of Birth',
+    riskLevel: 2,
+    hipaaCategory: 'Protected Health Information',
+  },
+  HEALTH: {
+    informationType: 'Medical Condition, Treatment',
+    riskLevel: 2,
+    hipaaCategory: 'Protected Health Information',
+  },
+  INSURANCE: {
+    informationType: 'Health Insurance Number',
+    riskLevel: 3,
+    hipaaCategory: 'Protected Health Information',
+  },
+}
+
 const MARKER = /\{\{([A-Z]+)\|([^}]*)\}\}/g
 
 export interface CompiledExchange {
@@ -323,6 +389,10 @@ export interface CompiledExchange {
   entities: Entity[]
   tokenizedResponseBody: string
   responseBody: string
+  riskScoreMean: number | undefined
+  typeFrequencies: Record<string, number>
+  suppressed: number
+  nearMisses: NearMiss[]
 }
 
 /** Turn a marked-up scenario into the exact shape the protocol carries. */
@@ -358,6 +428,7 @@ export function compileExchange(scenario: TreatedScenario, seq: number): Compile
       start: requestBody.length,
       end: requestBody.length + value.length,
       confidence: 0.87 + ((value.length * 7) % 12) / 100,
+      ...KIND_FACTS[kind],
     })
 
     requestBody += value
@@ -384,11 +455,24 @@ export function compileExchange(scenario: TreatedScenario, seq: number): Compile
     responseBody = responseBody.split(entity.token).join(entity.value)
   }
 
+  const typeFrequencies: Record<string, number> = {}
+  for (const entity of entities)
+    typeFrequencies[entity.kind] = (typeFrequencies[entity.kind] ?? 0) + 1
+
   return {
     requestBody,
     redactedRequestBody,
     entities,
     tokenizedResponseBody,
     responseBody,
+    riskScoreMean:
+      entities.length === 0
+        ? undefined
+        : Math.round(
+            (entities.reduce((sum, entity) => sum + entity.confidence, 0) / entities.length) * 1000,
+          ) / 1000,
+    typeFrequencies,
+    suppressed: scenario.suppressed ?? 0,
+    nearMisses: scenario.nearMisses ?? [],
   }
 }

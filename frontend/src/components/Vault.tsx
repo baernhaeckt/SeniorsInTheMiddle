@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import { store, type VaultRecord } from '../engine/store'
 import { useStore } from '../engine/useStore'
+import { isPhi } from '../engine/entityFacts'
 
 export function Vault() {
   const vault = useStore((state) => state.vault)
@@ -37,7 +38,7 @@ const VaultRow = memo(function VaultRow({ record, hot }: { record: VaultRecord; 
     store.hover(null)
   }
   return (
-    <div className="vrow" data-hot={hot}>
+    <div className="vrow" data-hot={hot} data-uses={record.uses > 1}>
       <span className="vrow__token">{record.token}</span>
       <span className="vrow__arrow" aria-hidden="true">
         ↔
@@ -53,7 +54,15 @@ const VaultRow = memo(function VaultRow({ record, hot }: { record: VaultRecord; 
       >
         {record.value}
       </button>
-      <span className="vrow__kind">{record.kind}</span>
+      {record.uses > 1 && <span className="vrow__uses">×{record.uses}</span>}
+      <span
+        className="vrow__kind"
+        data-risk={record.riskLevel}
+        data-phi={isPhi(record.hipaaCategory)}
+        title={record.informationType || record.kind}
+      >
+        {record.kind}
+      </span>
     </div>
   )
 })

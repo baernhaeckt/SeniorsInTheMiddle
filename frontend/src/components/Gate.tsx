@@ -5,6 +5,7 @@ import type { GateCard } from '../engine/useGateStack'
 import { cssVars } from '../ui/cssVars'
 import { Clip } from './Clip'
 import { Morph } from './Morph'
+import { Waterfall } from './Waterfall'
 
 type Tone = 'warm' | 'alert' | 'cool'
 
@@ -152,7 +153,7 @@ function Card({ exchange, proxy, leaving = false }: CardProps) {
           <span className="gate__nokinds">no identifiers held</span>
         ) : (
           kinds.map((entry) => (
-            <span key={entry.kind} className="gate__kind">
+            <span key={entry.kind} className="gate__kind" data-risk={entry.risk}>
               {entry.kind.toLowerCase()}
               {entry.count > 1 && <small>&times;{entry.count}</small>}
             </span>
@@ -161,13 +162,20 @@ function Card({ exchange, proxy, leaving = false }: CardProps) {
       </div>
 
       <div className="gate__feet">
-        <Foot label="scan" value={msOf(exchange?.scannedMs)} />
-        <Foot label="upstream" value={msOf(exchange?.upstreamMs)} />
+        <Foot label="total" value={msOf(exchange?.totalMs ?? exchange?.upstreamMs)} />
         <Foot label="payload" value={formatBytes(exchange?.bytes)} />
         <Foot
           label="status"
           value={exchange?.status === undefined ? '—' : String(exchange.status)}
         />
+        <Foot
+          label="restored"
+          value={exchange?.restored === undefined ? '—' : String(exchange.restored)}
+        />
+      </div>
+
+      <div className="gate__timing">
+        <Waterfall timing={exchange?.timing} totalMs={exchange?.totalMs} />
       </div>
     </article>
   )
@@ -214,16 +222,22 @@ function msOf(value: number | undefined): string {
 interface KindCount {
   kind: string
   count: number
+  /** Highest risk level among the entities of this kind. */
+  risk: number
 }
 
 /** What is being held, by category, in the order the proxy found them. */
 function kindsOf(exchange: Exchange | null): KindCount[] {
   if (!exchange) return []
-  const counts = new Map<string, number>()
+  const counts = new Map<string, { count: number; risk: number }>()
   for (const entity of exchange.entities) {
-    counts.set(entity.kind, (counts.get(entity.kind) ?? 0) + 1)
+    const prior = counts.get(entity.kind) ?? { count: 0, risk: 0 }
+    counts.set(entity.kind, {
+      count: prior.count + 1,
+      risk: Math.max(prior.risk, entity.riskLevel),
+    })
   }
-  return [...counts].map(([kind, count]) => ({ kind, count }))
+  return [...counts].map(([kind, { count, risk }]) => ({ kind, count, risk }))
 }
 
 type Readout =

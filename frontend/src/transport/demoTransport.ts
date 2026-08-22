@@ -1,5 +1,5 @@
 import type { PlainRequest } from '../demo/scenarios'
-import type { ServerEvent } from '../protocol/types'
+import { PROTOCOL_VERSION, type ServerEvent } from '../protocol/types'
 import { CLEAN, PASSTHROUGH, TREATED, compileExchange } from '../demo/scenarios'
 import { createEmitter, type LinkStatus, type Transport } from './types'
 
@@ -122,6 +122,10 @@ export function createDemoTransport(): Transport {
         at: Date.now(),
         entities: compiled.entities,
         scannedMs,
+        riskScoreMean: compiled.riskScoreMean,
+        typeFrequencies: compiled.typeFrequencies,
+        suppressed: compiled.suppressed,
+        nearMisses: compiled.nearMisses,
       })
     })
 
@@ -173,8 +177,18 @@ export function createDemoTransport(): Transport {
     })
 
     after(jitter(9000, 400), () => {
-      const totalMs = scannedMs + upstreamMs + Math.round(jitter(14, 22))
-      events.emit({ type: 'exchange.delivered', exchangeId, at: Date.now(), totalMs })
+      const bufferMs = Math.round(jitter(2, 6))
+      const detectMs = scannedMs + Math.round(jitter(1, 3))
+      const rehydrateMs = Math.round(jitter(1, 4))
+      const overheadMs = Math.round(jitter(6, 14))
+      const totalMs = bufferMs + detectMs + upstreamMs + rehydrateMs + overheadMs
+      events.emit({
+        type: 'exchange.delivered',
+        exchangeId,
+        at: Date.now(),
+        totalMs,
+        timing: { bufferMs, detectMs, upstreamMs, rehydrateMs, overheadMs },
+      })
       events.emit({
         type: 'request.completed',
         requestId,
@@ -182,6 +196,40 @@ export function createDemoTransport(): Transport {
         status: scenario.status,
         responseBytes: compiled.responseBody.length,
         durationMs: totalMs,
+      })
+    })
+
+    // The re-identification check takes its time and answers after the packet has landed.
+    after(jitter(10600, 900), () => {
+      const names = compiled.entities.filter((entity) => entity.kind === 'PERSON')
+      if (names.length === 0) {
+        events.emit({
+          type: 'privacy.assessed',
+          exchangeId,
+          at: Date.now(),
+          risks: [],
+          maxProbability: 0,
+          assessedMs: 0,
+          status: 'skipped',
+          reason: 'no names',
+        })
+        return
+      }
+      // Softmax over the names: one name alone is always 1.0, which is how the model behaves.
+      const weights = names.map((entity, index) => 1 + ((entity.value.length + index * 3) % 5))
+      const sum = weights.reduce((a, b) => a + b, 0)
+      const risks = names.map((entity, index) => ({
+        token: entity.token,
+        probability: Math.round(((weights[index] ?? 1) / sum) * 1000) / 1000,
+      }))
+      events.emit({
+        type: 'privacy.assessed',
+        exchangeId,
+        at: Date.now(),
+        risks,
+        maxProbability: Math.max(...risks.map((risk) => risk.probability)),
+        assessedMs: Math.round(jitter(1800, 2400)),
+        status: 'ok',
       })
     })
   }
@@ -215,12 +263,20 @@ export function createDemoTransport(): Transport {
       after(420, () => {
         events.emit({
           type: 'hello',
-          version: 2,
+          version: PROTOCOL_VERSION,
           proxy: {
             name: 'sitm-edge-01',
             region: 'Bern',
-            mode: 'transparent http/https',
-            policy: 'strict-ch',
+            mode: 'intercept',
+            policy: 'rewrite',
+          },
+          policy: {
+            rewrite: true,
+            bypassHosts: ['challenges.cloudflare.com'],
+            inspectOnly: { 'chatgpt.com': ['/backend-api/conversation'] },
+            maxBodyBytes: 1048576,
+            confidenceThreshold: 0.6,
+            services: { pii: 'ok', privacyCheck: 'ok' },
           },
         })
         last = {

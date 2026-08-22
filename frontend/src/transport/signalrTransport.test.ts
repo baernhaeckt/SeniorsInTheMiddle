@@ -74,8 +74,16 @@ class FakeHub implements HubLike {
 const latest = () => FakeHub.instances[FakeHub.instances.length - 1]
 const HELLO = JSON.stringify({
   type: 'hello',
-  version: 2,
+  version: 3,
   proxy: { name: 'p', region: 'r', mode: 'm', policy: 'x' },
+  policy: {
+    rewrite: true,
+    bypassHosts: [],
+    inspectOnly: {},
+    maxBodyBytes: 1024,
+    confidenceThreshold: 0.6,
+    services: { pii: 'ok', privacyCheck: 'ok' },
+  },
 })
 
 function setup() {

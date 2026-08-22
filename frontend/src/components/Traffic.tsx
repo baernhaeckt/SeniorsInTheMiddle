@@ -2,6 +2,7 @@ import { memo } from 'react'
 import { store, type TrafficEntry } from '../engine/store'
 import { clockOf, formatBytes, typeTag } from '../engine/text'
 import { useStore } from '../engine/useStore'
+import { Ticker } from './Ticker'
 
 /**
  * Every request the proxy saw, newest first, marked with what it did about it.
@@ -12,7 +13,7 @@ export function Traffic() {
   const traffic = useStore((state) => state.traffic)
   const { requests, treated } = useStore((state) => state.metrics)
   const pinnedId = useStore((state) => state.pinnedId)
-  const lastLog = useStore((state) => state.lastLog)
+  const hoveredDevice = useStore((state) => state.hoveredDevice)
 
   return (
     <section className="panel" aria-label="All requests through the proxy">
@@ -32,17 +33,31 @@ export function Traffic() {
             key={entry.requestId}
             entry={entry}
             pinned={entry.exchangeId !== undefined && pinnedId === entry.exchangeId}
+            deviceHot={hoveredDevice === entry.clientLabel}
           />
         ))}
       </div>
 
-      <div className="traffic__foot">{lastLog ?? 'waiting for the proxy'}</div>
+      <Ticker />
     </section>
   )
 }
 
-const Row = memo(function Row({ entry, pinned }: { entry: TrafficEntry; pinned: boolean }) {
+interface RowProps {
+  entry: TrafficEntry
+  pinned: boolean
+  deviceHot: boolean
+}
+
+const Row = memo(function Row({ entry, pinned, deviceHot }: RowProps) {
   const treated = entry.treatment === 'treated'
+  const brief = [
+    entry.status ? `${entry.status}` : '…',
+    `${formatBytes(entry.requestBytes)} → ${formatBytes(entry.responseBytes)}`,
+    entry.durationMs === undefined ? '' : `${Math.round(entry.durationMs)} ms`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
   const detail = [
     entry.status ? `${entry.status}` : 'in flight',
     formatBytes(entry.responseBytes),
@@ -61,6 +76,7 @@ const Row = memo(function Row({ entry, pinned }: { entry: TrafficEntry; pinned: 
         <b>{entry.host}</b>
         {entry.path}
       </span>
+      <span className="tr__detail">{brief}</span>
       <span className={`tr__mark tr__mark--${entry.treatment}`}>{markOf(entry)}</span>
       {/* The title tooltip is mouse-only; say the same thing to assistive tech. */}
       <span className="u-sr-only">{detail}</span>
@@ -69,7 +85,12 @@ const Row = memo(function Row({ entry, pinned }: { entry: TrafficEntry; pinned: 
 
   if (!treated) {
     return (
-      <div className="tr" data-treatment={entry.treatment} title={detail}>
+      <div
+        className="tr"
+        data-treatment={entry.treatment}
+        data-device-hot={deviceHot}
+        title={detail}
+      >
         {inner}
       </div>
     )
@@ -81,6 +102,7 @@ const Row = memo(function Row({ entry, pinned }: { entry: TrafficEntry; pinned: 
       className="tr"
       data-treatment="treated"
       data-active={pinned}
+      data-device-hot={deviceHot}
       aria-pressed={pinned}
       title={detail}
       onClick={() => {

@@ -25,7 +25,7 @@
 
 import * as v from 'valibot'
 
-export const PROTOCOL_VERSION = 2
+export const PROTOCOL_VERSION = 3
 
 /** What the proxy decided to do with a request. */
 export const TreatmentSchema = v.picklist([
@@ -75,8 +75,44 @@ export const EntitySchema = v.object({
   end: v.pipe(v.number(), v.minValue(0)),
   /** 0..1, as reported by the detector. */
   confidence: v.pipe(v.number(), v.minValue(0), v.maxValue(1)),
+  /** The detector's human-readable label for the kind, e.g. `Full Name`. Empty when it has none. */
+  informationType: v.optional(v.string(), ''),
+  /** 1..3 after Schwartz & Solove: not, semi, fully identifiable. 0 when the detector did not say. */
+  riskLevel: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(3)), 0),
+  /** Whether the kind is protected health information, in the detector's words. */
+  hipaaCategory: v.optional(v.string(), ''),
 })
 export type Entity = v.InferOutput<typeof EntitySchema>
+
+/** A finding below the confidence threshold. Reported, never replaced. No offsets. */
+export const NearMissSchema = v.object({
+  kind: v.pipe(v.string(), v.minLength(1)),
+  value: v.string(),
+  confidence: v.pipe(v.number(), v.minValue(0), v.maxValue(1)),
+})
+export type NearMiss = v.InferOutput<typeof NearMissSchema>
+
+export const ServiceStateSchema = v.picklist(['ok', 'disabled', 'down'])
+export type ServiceState = v.InferOutput<typeof ServiceStateSchema>
+
+/** What the proxy does and does not look at. Announced once, in `hello`. */
+export const ProxyPolicySchema = v.object({
+  /** True when bodies are rewritten; false when the proxy only watches. */
+  rewrite: v.boolean(),
+  /** Hosts tunnelled unread. */
+  bypassHosts: v.array(v.string()),
+  /** Hosts on which only the listed paths are inspected. */
+  inspectOnly: v.record(v.string(), v.array(v.string())),
+  /** Largest body offered to the rewrite. */
+  maxBodyBytes: v.pipe(v.number(), v.minValue(0)),
+  /** The detector's score below which a finding is a near miss. */
+  confidenceThreshold: v.pipe(v.number(), v.minValue(0), v.maxValue(1)),
+  services: v.object({
+    pii: ServiceStateSchema,
+    privacyCheck: ServiceStateSchema,
+  }),
+})
+export type ProxyPolicy = v.InferOutput<typeof ProxyPolicySchema>
 
 export const ServerHelloSchema = v.object({
   type: v.literal('hello'),
@@ -88,6 +124,7 @@ export const ServerHelloSchema = v.object({
     mode: v.string(),
     policy: v.string(),
   }),
+  policy: ProxyPolicySchema,
 })
 
 /**
@@ -144,6 +181,13 @@ export const DetectionCompletedSchema = v.object({
   at: Epoch,
   entities: v.array(EntitySchema),
   scannedMs: Millis,
+  /** Mean confidence over the entities. Absent when there are none. */
+  riskScoreMean: v.optional(v.pipe(v.number(), v.minValue(0), v.maxValue(1))),
+  /** How many of each kind were replaced. */
+  typeFrequencies: v.optional(v.record(v.string(), v.pipe(v.number(), v.minValue(0))), {}),
+  /** Findings reported but not replaced on their own: nested in another, or unplaceable. */
+  suppressed: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0)), 0),
+  nearMisses: v.optional(v.array(NearMissSchema), []),
 })
 
 export const RedactionCompletedSchema = v.object({
@@ -182,11 +226,43 @@ export const RehydrationCompletedSchema = v.object({
   restored: v.pipe(v.number(), v.minValue(0)),
 })
 
+/** Where the round trip went. Steps the exchange never reached are 0. */
+export const ExchangeTimingSchema = v.object({
+  bufferMs: Millis,
+  detectMs: Millis,
+  upstreamMs: Millis,
+  rehydrateMs: Millis,
+  overheadMs: Millis,
+})
+export type ExchangeTiming = v.InferOutput<typeof ExchangeTimingSchema>
+
 export const ExchangeDeliveredSchema = v.object({
   type: v.literal('exchange.delivered'),
   exchangeId: Id,
   at: Epoch,
   totalMs: Millis,
+  timing: v.optional(ExchangeTimingSchema),
+})
+
+/**
+ * How recoverable the replaced names still are from the redacted text. Runs off the
+ * request path and arrives late, usually after `exchange.delivered`; a status other
+ * than `ok` says why there is no number.
+ */
+export const PrivacyAssessedSchema = v.object({
+  type: v.literal('privacy.assessed'),
+  exchangeId: Id,
+  at: Epoch,
+  risks: v.array(
+    v.object({
+      token: v.pipe(v.string(), v.minLength(1)),
+      probability: v.pipe(v.number(), v.minValue(0), v.maxValue(1)),
+    }),
+  ),
+  maxProbability: v.pipe(v.number(), v.minValue(0), v.maxValue(1)),
+  assessedMs: Millis,
+  status: v.picklist(['ok', 'skipped', 'failed']),
+  reason: v.optional(v.string()),
 })
 
 export const ProxyLogSchema = v.object({
@@ -208,6 +284,7 @@ export const ServerEventSchema = v.variant('type', [
   UpstreamRespondedSchema,
   RehydrationCompletedSchema,
   ExchangeDeliveredSchema,
+  PrivacyAssessedSchema,
   ProxyLogSchema,
 ])
 export type ServerEvent = v.InferOutput<typeof ServerEventSchema>

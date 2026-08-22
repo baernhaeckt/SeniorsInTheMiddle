@@ -8,7 +8,7 @@
 
 .vrow {
   display: grid;
-  grid-template-columns: 1fr 12px 1fr auto;
+  grid-template-columns: 1fr 12px 1fr auto auto;
   align-items: center;
   gap: 7px;
   padding: 6px 12px;

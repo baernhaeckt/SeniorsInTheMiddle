@@ -1,4 +1,12 @@
-import { PROTOCOL_VERSION, type Entity, type ServerEvent, type Treatment } from '../protocol/types'
+import {
+  PROTOCOL_VERSION,
+  type Entity,
+  type ExchangeTiming,
+  type NearMiss,
+  type ProxyPolicy,
+  type ServerEvent,
+  type Treatment,
+} from '../protocol/types'
 import type { LinkStatus } from '../transport/types'
 
 /**
@@ -75,6 +83,25 @@ export interface Exchange {
   scannedMs?: number
   upstreamMs?: number
   totalMs?: number
+  /** Mean confidence over the entities; absent until detection, or when there were none. */
+  riskScoreMean?: number
+  typeFrequencies: Record<string, number>
+  /** Findings reported but not replaced on their own. */
+  suppressed: number
+  nearMisses: NearMiss[]
+  /** How many stand-ins were put back in the response. */
+  restored?: number
+  timing?: ExchangeTiming
+  /** The re-identification verdict. Absent until it arrives. */
+  privacy?: PrivacyVerdict
+}
+
+export interface PrivacyVerdict {
+  status: 'ok' | 'skipped' | 'failed'
+  risks: { token: string; probability: number }[]
+  maxProbability: number
+  assessedMs: number
+  reason?: string
 }
 
 export interface VaultRecord {
@@ -83,6 +110,9 @@ export interface VaultRecord {
   value: string
   firstSeenAt: number
   uses: number
+  informationType: string
+  riskLevel: number
+  hipaaCategory: string
 }
 
 export interface ProxyInfo {
@@ -92,28 +122,54 @@ export interface ProxyInfo {
   policy: string
 }
 
+export interface LogLine {
+  seq: number
+  at: number
+  level: 'info' | 'warn' | 'block'
+  message: string
+  exchangeId?: string
+}
+
+/** What one device behind the proxy has done so far. */
+export interface DeviceStats {
+  clientLabel: string
+  clientIp: string
+  seen: number
+  treated: number
+  identifiers: number
+  /** Highest risk level among the identifiers it sent; 0 when none or unknown. */
+  maxRisk: number
+  lastSeenAt: number
+}
+
 interface Metrics {
   requests: number
   treated: number
   identifiersHeld: number
+  blocks: number
   latencies: number[]
 }
 
 export interface AppState {
   link: LinkStatus
   proxy: ProxyInfo | null
+  /** What the proxy said it does, in `hello`. Null until it has. */
+  policy: ProxyPolicy | null
   /** What the proxy announced in `hello`. Null until it has. */
   protocolVersion: number | null
   traffic: TrafficEntry[]
   exchanges: Exchange[]
   vault: VaultRecord[]
   metrics: Metrics
-  /** Latest thing the proxy said, shown under the traffic list. */
-  lastLog: string | null
+  devices: DeviceStats[]
+  /** What the proxy said, newest first. */
+  logs: LogLine[]
   /** Exchange shown in the inspector. Null means "follow the newest". */
   pinnedId: string | null
   /** Entity the person is pointing at, highlighted everywhere at once. */
   hoveredToken: string | null
+  /** Device tile the person is pointing at; its rows light up in the traffic list. */
+  hoveredDevice: string | null
 }
 
 export const LIMITS = {
@@ -121,19 +177,24 @@ export const LIMITS = {
   exchanges: 12,
   vault: 40,
   latencies: 60,
+  logs: 80,
+  devices: 12,
 } as const
 
 export const initialState: AppState = {
   link: { state: 'idle', endpoint: '—' },
   proxy: null,
+  policy: null,
   protocolVersion: null,
   traffic: [],
   exchanges: [],
   vault: [],
-  metrics: { requests: 0, treated: 0, identifiersHeld: 0, latencies: [] },
-  lastLog: null,
+  metrics: { requests: 0, treated: 0, identifiersHeld: 0, blocks: 0, latencies: [] },
+  devices: [],
+  logs: [],
   pinnedId: null,
   hoveredToken: null,
+  hoveredDevice: null,
 }
 
 /** Actions the view raises itself. Protocol events are the other kind of input. */
@@ -141,6 +202,7 @@ type ViewAction =
   | { type: 'view.settle'; exchangeId: string; at: number }
   | { type: 'view.pin'; exchangeId: string | null }
   | { type: 'view.hover'; token: string | null }
+  | { type: 'view.hoverDevice'; clientLabel: string | null }
   | { type: 'view.link'; link: LinkStatus }
   | { type: 'view.reset' }
 
@@ -154,6 +216,7 @@ export interface Store {
   setLink: (link: LinkStatus) => void
   pin: (exchangeId: string | null) => void
   hover: (token: string | null) => void
+  hoverDevice: (clientLabel: string | null) => void
   /** Finish an animation-driven stage: egress → thinking, deliver → done. */
   settle: (exchangeId: string, at?: number) => void
   reset: () => void
@@ -166,6 +229,7 @@ export interface Store {
 export function createStore(seed: AppState = initialState): Store {
   let state = seed
   let trafficSeq = 0
+  let logSeq = 0
   const listeners = new Set<() => void>()
 
   const commit = (next: AppState) => {
@@ -176,7 +240,8 @@ export function createStore(seed: AppState = initialState): Store {
 
   const dispatch = (action: Action) => {
     if (action.type === 'request.observed') trafficSeq += 1
-    commit(reduce(state, action, trafficSeq))
+    if (action.type === 'log') logSeq += 1
+    commit(reduce(state, action, trafficSeq, logSeq))
   }
 
   return {
@@ -200,6 +265,9 @@ export function createStore(seed: AppState = initialState): Store {
     hover: (token) => {
       dispatch({ type: 'view.hover', token })
     },
+    hoverDevice: (clientLabel) => {
+      dispatch({ type: 'view.hoverDevice', clientLabel })
+    },
     settle: (exchangeId, at = Date.now()) => {
       dispatch({ type: 'view.settle', exchangeId, at })
     },
@@ -221,6 +289,44 @@ function patchExchange(
 ): Exchange[] {
   return exchanges.map((exchange) =>
     exchange.id === id ? { ...exchange, ...change, stage, stageAt: at } : exchange,
+  )
+}
+
+/** Replace fields on one exchange without moving it along the band. */
+function patchExchangeFields(
+  exchanges: Exchange[],
+  id: string,
+  change: Partial<Exchange>,
+): Exchange[] {
+  return exchanges.map((exchange) => (exchange.id === id ? { ...exchange, ...change } : exchange))
+}
+
+/** One line per device, newest activity first, capped. */
+function touchDevice(
+  devices: DeviceStats[],
+  clientLabel: string,
+  clientIp: string,
+  at: number,
+  change: (device: DeviceStats) => DeviceStats,
+): DeviceStats[] {
+  const existing = devices.find((device) => device.clientLabel === clientLabel)
+  const base: DeviceStats = existing ?? {
+    clientLabel,
+    clientIp,
+    seen: 0,
+    treated: 0,
+    identifiers: 0,
+    maxRisk: 0,
+    lastSeenAt: at,
+  }
+  const next = change({
+    ...base,
+    clientIp: clientIp || base.clientIp,
+    lastSeenAt: Math.max(base.lastSeenAt, at),
+  })
+  return [next, ...devices.filter((device) => device.clientLabel !== clientLabel)].slice(
+    0,
+    LIMITS.devices,
   )
 }
 
@@ -272,6 +378,9 @@ export function mergeVault(vault: VaultRecord[], entities: Entity[], at: number)
         value: entity.value,
         firstSeenAt: at,
         uses: 1,
+        informationType: entity.informationType,
+        riskLevel: entity.riskLevel,
+        hipaaCategory: entity.hipaaCategory,
       })
     }
   }
@@ -282,7 +391,7 @@ export function mergeVault(vault: VaultRecord[], entities: Entity[], at: number)
  * Pure: state and an input to the next state. `trafficSeq` is the sequence
  * number to stamp on a new traffic entry; the store counts it.
  */
-export function reduce(current: AppState, action: Action, trafficSeq = 0): AppState {
+export function reduce(current: AppState, action: Action, trafficSeq = 0, logSeq = 0): AppState {
   switch (action.type) {
     case 'view.link':
       return { ...current, link: action.link }
@@ -296,6 +405,11 @@ export function reduce(current: AppState, action: Action, trafficSeq = 0): AppSt
       return current.hoveredToken === action.token
         ? current
         : { ...current, hoveredToken: action.token }
+
+    case 'view.hoverDevice':
+      return current.hoveredDevice === action.clientLabel
+        ? current
+        : { ...current, hoveredDevice: action.clientLabel }
 
     case 'view.reset':
       return { ...initialState, link: current.link }
@@ -314,11 +428,17 @@ export function reduce(current: AppState, action: Action, trafficSeq = 0): AppSt
       return {
         ...current,
         proxy: action.proxy,
+        policy: action.policy,
         protocolVersion: action.version,
-        lastLog:
-          action.version === PROTOCOL_VERSION
-            ? `${action.proxy.name} attached · ${action.proxy.mode} · policy ${action.proxy.policy}`
-            : `${action.proxy.name} speaks protocol v${action.version}, this view expects v${PROTOCOL_VERSION}`,
+        logs: pushLog(current.logs, {
+          seq: logSeq,
+          at: Date.now(),
+          level: action.version === PROTOCOL_VERSION ? 'info' : 'warn',
+          message:
+            action.version === PROTOCOL_VERSION
+              ? `${action.proxy.name} attached · ${action.proxy.mode} · policy ${action.proxy.policy}`
+              : `${action.proxy.name} speaks protocol v${action.version}, this view expects v${PROTOCOL_VERSION}`,
+        }),
       }
 
     case 'request.observed': {
@@ -346,6 +466,17 @@ export function reduce(current: AppState, action: Action, trafficSeq = 0): AppSt
           requests: current.metrics.requests + 1,
           treated: current.metrics.treated + (action.treatment === 'treated' ? 1 : 0),
         },
+        devices: touchDevice(
+          current.devices,
+          action.clientLabel,
+          action.clientIp,
+          action.at,
+          (device) => ({
+            ...device,
+            seen: device.seen + 1,
+            treated: device.treated + (action.treatment === 'treated' ? 1 : 0),
+          }),
+        ),
       }
     }
 
@@ -374,6 +505,9 @@ export function reduce(current: AppState, action: Action, trafficSeq = 0): AppSt
         contentType: action.contentType,
         requestBody: action.requestBody,
         entities: [],
+        typeFrequencies: {},
+        suppressed: 0,
+        nearMisses: [],
       }
       return {
         ...current,
@@ -381,12 +515,18 @@ export function reduce(current: AppState, action: Action, trafficSeq = 0): AppSt
       }
     }
 
-    case 'detection.completed':
+    case 'detection.completed': {
+      const exchange = current.exchanges.find((item) => item.id === action.exchangeId)
+      const maxRisk = action.entities.reduce((max, entity) => Math.max(max, entity.riskLevel), 0)
       return {
         ...current,
         exchanges: patchExchange(current.exchanges, action.exchangeId, 'inspect', action.at, {
           entities: action.entities,
           scannedMs: action.scannedMs,
+          riskScoreMean: action.riskScoreMean,
+          typeFrequencies: action.typeFrequencies,
+          suppressed: action.suppressed,
+          nearMisses: action.nearMisses,
         }),
         traffic: patchTraffic(current.traffic, (entry) => entry.exchangeId === action.exchangeId, {
           identifiers: action.entities.length,
@@ -396,7 +536,15 @@ export function reduce(current: AppState, action: Action, trafficSeq = 0): AppSt
           ...current.metrics,
           identifiersHeld: current.metrics.identifiersHeld + action.entities.length,
         },
+        devices: exchange
+          ? touchDevice(current.devices, exchange.clientLabel, '', action.at, (device) => ({
+              ...device,
+              identifiers: device.identifiers + action.entities.length,
+              maxRisk: Math.max(device.maxRisk, maxRisk),
+            }))
+          : current.devices,
       }
+    }
 
     case 'redaction.completed':
       return {
@@ -430,6 +578,7 @@ export function reduce(current: AppState, action: Action, trafficSeq = 0): AppSt
         ...current,
         exchanges: patchExchange(current.exchanges, action.exchangeId, 'rehydrate', action.at, {
           responseBody: action.responseBody,
+          restored: action.restored,
         }),
       }
 
@@ -438,6 +587,7 @@ export function reduce(current: AppState, action: Action, trafficSeq = 0): AppSt
         ...current,
         exchanges: patchExchange(current.exchanges, action.exchangeId, 'deliver', action.at, {
           totalMs: action.totalMs,
+          timing: action.timing,
         }),
         metrics: {
           ...current.metrics,
@@ -445,9 +595,43 @@ export function reduce(current: AppState, action: Action, trafficSeq = 0): AppSt
         },
       }
 
+    // Arrives late, after the packet has left the band: the stage stays where it is.
+    case 'privacy.assessed':
+      return current.exchanges.some((exchange) => exchange.id === action.exchangeId)
+        ? {
+            ...current,
+            exchanges: patchExchangeFields(current.exchanges, action.exchangeId, {
+              privacy: {
+                status: action.status,
+                risks: action.risks,
+                maxProbability: action.maxProbability,
+                assessedMs: action.assessedMs,
+                reason: action.reason,
+              },
+            }),
+          }
+        : current
+
     case 'log':
-      return { ...current, lastLog: action.message }
+      return {
+        ...current,
+        logs: pushLog(current.logs, {
+          seq: logSeq,
+          at: action.at,
+          level: action.level,
+          message: action.message,
+          exchangeId: action.exchangeId,
+        }),
+        metrics:
+          action.level === 'block'
+            ? { ...current.metrics, blocks: current.metrics.blocks + 1 }
+            : current.metrics,
+      }
   }
+}
+
+function pushLog(logs: LogLine[], line: LogLine): LogLine[] {
+  return [line, ...logs].slice(0, LIMITS.logs)
 }
 
 export function median(values: number[]): number | null {
