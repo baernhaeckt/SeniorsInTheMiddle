@@ -129,3 +129,9 @@
 }
 
 /* ----------------------------------------------------------- responsive -- */
+
+@media (max-width: 1279px) {
+  .matrix {
+    grid-template-columns: 40px 1fr 1fr;
+  }
+}

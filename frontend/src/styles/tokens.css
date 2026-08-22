@@ -1,35 +1,40 @@
 /*
  * Colour carries meaning here, not decoration:
- *   warm  = data that identifies a person
- *   cool  = data that does not
+ *   warm  = data that identifies a person (the trusted side)
+ *   cool  = data that does not (the open side)
  *   alert = an identifier caught mid-flight, about to be held back
  * Nothing else gets an accent.
+ *
+ * Palette (huemint bootstrap-plus):
+ *   #0d1216 ground · #0c2a2b / #225851 surfaces · #288879 trusted
+ *   #38b5ee open · #8a3d56 alert · #a5afb4 / #949da0 / #ffffff ink
  */
 :root {
-  --void: #05080f;
-  --void-2: #080c16;
-  --panel: #0b1020;
-  --panel-hi: #0f1628;
-  --line: #1b2337;
-  --line-soft: #131a2a;
+  --void: #0d1216;
+  --void-2: #0b1619;
+  --panel: #0c2a2b;
+  --panel-hi: #103536;
+  --line: #225851;
+  --line-soft: #183f3c;
 
-  --ink: #e9edf9;
-  --ink-2: #98a3bd;
-  --ink-3: #59637f;
+  --ink: #ffffff;
+  --ink-2: #a5afb4;
+  --ink-3: #7d8689;
 
-  --warm: #ffb05c;
-  --warm-2: #ff8a3d;
-  --warm-soft: rgba(255, 176, 92, 0.14);
-  --warm-line: rgba(255, 176, 92, 0.34);
+  --warm: #3fb39c;
+  --warm-2: #288879;
+  --warm-soft: rgba(40, 136, 121, 0.18);
+  --warm-line: rgba(40, 136, 121, 0.55);
 
-  --cool: #57dde6;
-  --cool-2: #2cb5c6;
-  --cool-soft: rgba(87, 221, 230, 0.12);
-  --cool-line: rgba(87, 221, 230, 0.32);
+  --cool: #38b5ee;
+  --cool-2: #2a93c4;
+  --cool-soft: rgba(56, 181, 238, 0.14);
+  --cool-line: rgba(56, 181, 238, 0.4);
 
-  --alert: #ff4e77;
-  --alert-soft: rgba(255, 78, 119, 0.16);
-  --alert-line: rgba(255, 78, 119, 0.42);
+  --alert: #d4708d;
+  --alert-2: #8a3d56;
+  --alert-soft: rgba(138, 61, 86, 0.28);
+  --alert-line: rgba(212, 112, 141, 0.5);
 
   --display: 'Archivo Variable', 'Archivo', 'Segoe UI', system-ui, sans-serif;
   --body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
@@ -38,7 +43,10 @@
   /* Below this the band switches to its narrow layout. Mirrored as BREAKPOINT_NARROW in ui/hooks.ts. */
   --bp-narrow: 760px;
 
-  --gap: 14px;
+  /* Spacing breathes with the viewport: tight on a tablet, roomy on a large desktop. */
+  --gap: clamp(10px, 1vw, 16px);
+  --pad-x: clamp(10px, 1.2vw, 20px);
+  --pad-y: clamp(10px, 1vh, 16px);
   --radius: 3px;
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);

@@ -8,7 +8,7 @@
   place-items: center;
   padding: 28px;
   overflow: auto;
-  background: rgba(4, 6, 12, 0.74);
+  background: rgba(13, 18, 22, 0.74);
   backdrop-filter: blur(6px);
   animation: fade 200ms var(--ease) both;
 }
@@ -28,7 +28,7 @@
   border-radius: 4px;
   box-shadow:
     0 40px 120px rgba(0, 0, 0, 0.7),
-    0 0 90px rgba(255, 176, 92, 0.05);
+    0 0 90px rgba(40, 136, 121, 0.05);
   animation: sheet-in 260ms var(--ease) both;
 }
 
@@ -149,7 +149,7 @@
   padding: 6px 8px;
   border: 1px solid var(--line);
   border-radius: 2px;
-  background: rgba(5, 8, 15, 0.6);
+  background: rgba(13, 18, 22, 0.6);
 }
 
 .field__label {

@@ -20,15 +20,15 @@
 .band__zone--trusted {
   left: 0;
   background:
-    radial-gradient(60% 70% at 20% 50%, rgba(255, 138, 61, 0.07), transparent 70%),
-    linear-gradient(90deg, rgba(255, 176, 92, 0.05), transparent);
+    radial-gradient(60% 70% at 20% 50%, rgba(40, 136, 121, 0.07), transparent 70%),
+    linear-gradient(90deg, rgba(40, 136, 121, 0.05), transparent);
 }
 
 .band__zone--open {
   right: 0;
   background:
-    radial-gradient(60% 70% at 80% 50%, rgba(44, 181, 198, 0.07), transparent 70%),
-    linear-gradient(270deg, rgba(87, 221, 230, 0.05), transparent);
+    radial-gradient(60% 70% at 80% 50%, rgba(56, 181, 238, 0.07), transparent 70%),
+    linear-gradient(270deg, rgba(56, 181, 238, 0.05), transparent);
 }
 
 .band__zonelabel {
@@ -83,8 +83,8 @@
     90deg,
     transparent,
     var(--warm-line) 12%,
-    rgba(255, 176, 92, 0.18) 46%,
-    rgba(87, 221, 230, 0.18) 54%,
+    rgba(40, 136, 121, 0.18) 46%,
+    rgba(56, 181, 238, 0.18) 54%,
     var(--cool-line) 88%,
     transparent
   );
@@ -96,7 +96,7 @@
   inset: 0;
   background-image: repeating-linear-gradient(
     90deg,
-    rgba(233, 237, 249, 0.5) 0 5px,
+    rgba(255, 255, 255, 0.5) 0 5px,
     transparent 5px 16px
   );
   mask-image: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent);
@@ -175,12 +175,12 @@
   background:
     linear-gradient(
       90deg,
-      rgba(255, 176, 92, 0.14),
+      rgba(40, 136, 121, 0.14),
       transparent 45%,
       transparent 55%,
-      rgba(87, 221, 230, 0.14)
+      rgba(56, 181, 238, 0.14)
     ),
-    repeating-linear-gradient(180deg, rgba(233, 237, 249, 0.08) 0 1px, transparent 1px 9px);
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 9px);
   mask-image: linear-gradient(180deg, transparent, #000 12%, #000 88%, transparent);
   animation: drift 7s linear infinite;
 }
@@ -231,12 +231,12 @@
 
 .wall__glow--warm {
   left: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 138, 61, 0.34));
+  background: linear-gradient(90deg, transparent, rgba(40, 136, 121, 0.34));
 }
 
 .wall__glow--cool {
   left: 80px;
-  background: linear-gradient(270deg, transparent, rgba(44, 181, 198, 0.34));
+  background: linear-gradient(270deg, transparent, rgba(56, 181, 238, 0.34));
 }
 
 .wall__core {
@@ -248,13 +248,13 @@
   background: linear-gradient(
     180deg,
     transparent,
-    rgba(233, 237, 249, 0.55) 10%,
+    rgba(255, 255, 255, 0.55) 10%,
     #fff 50%,
-    rgba(233, 237, 249, 0.55) 90%,
+    rgba(255, 255, 255, 0.55) 90%,
     transparent
   );
   opacity: 0.7;
-  box-shadow: 0 0 22px rgba(233, 237, 249, 0.36);
+  box-shadow: 0 0 22px rgba(255, 255, 255, 0.36);
 }
 
 .wall__ripple {
@@ -293,7 +293,7 @@
   top: 50%;
   transform: translate(-50%, -50%);
   z-index: 4;
-  width: 180px;
+  width: clamp(110px, 14vw, 180px);
   text-align: center;
   animation: rise 700ms var(--ease) both;
 }
@@ -306,8 +306,8 @@
 }
 
 .node__ring {
-  width: 88px;
-  height: 88px;
+  width: clamp(64px, 7vw, 88px);
+  height: clamp(64px, 7vw, 88px);
   margin: 0 auto 13px;
   border-radius: 50%;
   display: grid;
@@ -345,13 +345,13 @@
 .node--trusted .node__ring {
   color: var(--warm);
   border-color: var(--warm-line);
-  box-shadow: 0 0 30px rgba(255, 138, 61, 0.14);
+  box-shadow: 0 0 30px rgba(40, 136, 121, 0.14);
 }
 
 .node--open .node__ring {
   color: var(--cool);
   border-color: var(--cool-line);
-  box-shadow: 0 0 30px rgba(44, 181, 198, 0.14);
+  box-shadow: 0 0 30px rgba(56, 181, 238, 0.14);
 }
 
 .node__title {
@@ -387,13 +387,13 @@
   top: 50%;
   transform: translate(-50%, -50%);
   z-index: 6;
-  width: 344px;
-  background: linear-gradient(180deg, rgba(19, 26, 45, 0.97), rgba(9, 13, 24, 0.97));
+  width: clamp(230px, 30vw, 344px);
+  background: linear-gradient(180deg, rgba(16, 53, 54, 0.97), rgba(11, 26, 28, 0.97));
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow:
-    0 0 0 1px rgba(5, 8, 15, 0.9),
-    0 0 70px rgba(233, 237, 249, 0.09),
+    0 0 0 1px rgba(13, 18, 22, 0.9),
+    0 0 70px rgba(255, 255, 255, 0.09),
     0 24px 70px rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(3px);
   animation: rise 700ms 120ms var(--ease) both;
@@ -466,7 +466,7 @@
   padding: 10px 11px;
   border: 1px solid var(--line-soft);
   border-radius: 2px;
-  background: rgba(5, 8, 15, 0.72);
+  background: rgba(13, 18, 22, 0.72);
   font-family: var(--mono);
   font-size: 13px;
   line-height: 1.58;
@@ -488,11 +488,11 @@
   left: 0;
   top: 0;
   z-index: 5;
-  width: 208px;
-  margin: -26px 0 0 -104px;
+  width: clamp(150px, 17vw, 208px);
+  margin: -26px 0 0 calc(clamp(150px, 17vw, 208px) / -2);
   border-radius: var(--radius);
   border: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(17, 24, 43, 0.96), rgba(8, 12, 22, 0.96));
+  background: linear-gradient(180deg, rgba(16, 53, 54, 0.96), rgba(11, 26, 28, 0.96));
   padding: 6px 8px 7px;
   will-change: transform;
   transition:
@@ -502,23 +502,23 @@
 
 .pk--warm {
   border-color: var(--warm-line);
-  box-shadow: 0 0 22px rgba(255, 138, 61, 0.16);
+  box-shadow: 0 0 22px rgba(40, 136, 121, 0.16);
 }
 
 .pk--cool {
   border-color: var(--cool-line);
-  box-shadow: 0 0 22px rgba(44, 181, 198, 0.16);
+  box-shadow: 0 0 22px rgba(56, 181, 238, 0.16);
 }
 
 .pk--scanned {
   border-color: var(--alert-line);
-  box-shadow: 0 0 26px rgba(255, 78, 119, 0.28);
+  box-shadow: 0 0 26px rgba(212, 112, 141, 0.28);
   animation: scanned 620ms var(--ease-in-out) infinite alternate;
 }
 
 @keyframes scanned {
   to {
-    box-shadow: 0 0 34px rgba(255, 78, 119, 0.5);
+    box-shadow: 0 0 34px rgba(212, 112, 141, 0.5);
   }
 }
 
@@ -608,26 +608,9 @@
 
 /* ---------------------------------------------------------------- floor -- */
 
-@media (max-width: 760px) {
-  .gate {
-    width: 214px;
-  }
-
-  .node {
-    width: 104px;
-  }
-
-  .pk {
-    width: 150px;
-    margin-left: -75px;
-  }
-
-  .stats {
-    gap: 14px;
-  }
-
-  .matrix {
-    grid-template-columns: 34px 1fr 1fr;
+@media (max-width: 759px) {
+  .band__caption {
+    display: none;
   }
 }
 
@@ -651,7 +634,7 @@
 
 .mote--clean {
   background: var(--cool-2);
-  box-shadow: 0 0 7px rgba(44, 181, 198, 0.8);
+  box-shadow: 0 0 7px rgba(56, 181, 238, 0.8);
 }
 
 @keyframes cross {
@@ -710,7 +693,7 @@
   color: var(--alert);
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 1023px) {
   .legend {
     display: none;
   }

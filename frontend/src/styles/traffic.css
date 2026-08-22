@@ -29,11 +29,11 @@
 }
 
 .tr[data-treatment='treated']:hover {
-  background: rgba(255, 78, 119, 0.08);
+  background: rgba(212, 112, 141, 0.08);
 }
 
 .tr[data-active='true'] {
-  background: rgba(255, 176, 92, 0.1);
+  background: rgba(40, 136, 121, 0.1);
 }
 
 .tr__at {

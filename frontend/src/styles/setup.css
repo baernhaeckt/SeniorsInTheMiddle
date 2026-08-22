@@ -16,7 +16,7 @@
   border-radius: 4px;
   box-shadow:
     0 40px 120px rgba(0, 0, 0, 0.6),
-    0 0 90px rgba(255, 176, 92, 0.05);
+    0 0 90px rgba(40, 136, 121, 0.05);
   animation: sheet-in 320ms var(--ease) both;
 }
 
@@ -116,7 +116,7 @@
 .input__box {
   width: 100%;
   padding: 8px 10px;
-  background: rgba(5, 8, 15, 0.7);
+  background: rgba(13, 18, 22, 0.7);
   border: 1px solid var(--line);
   border-radius: 2px;
   color: var(--ink);
@@ -132,7 +132,7 @@
 .input__box:focus {
   outline: none;
   border-color: var(--warm);
-  box-shadow: 0 0 0 2px rgba(255, 176, 92, 0.16);
+  box-shadow: 0 0 0 2px rgba(40, 136, 121, 0.16);
 }
 
 .input[data-invalid='true'] .input__box {
@@ -165,7 +165,7 @@
   padding: 10px 11px;
   border: 1px solid var(--line);
   border-radius: 2px;
-  background: rgba(5, 8, 15, 0.5);
+  background: rgba(13, 18, 22, 0.5);
   cursor: pointer;
   transition:
     border-color 160ms var(--ease),
@@ -229,11 +229,11 @@
 
 .btn--go {
   background: var(--warm);
-  color: #0b0f1a;
+  color: #0d1216;
 }
 
 .btn--go:hover {
-  background: #ffc27f;
+  background: #5ccab3;
 }
 
 .btn--quiet {
