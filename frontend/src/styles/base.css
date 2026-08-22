@@ -71,3 +71,30 @@ button {
     transition-duration: 0.001ms !important;
   }
 }
+
+/*
+ * An address too long for its box, shortened in the middle rather than at the
+ * end. The whole string stays in the DOM, so selecting and copying still give
+ * back all of it — see `components/Clip.tsx`.
+ */
+.clip {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/*
+ * `pre`, not `nowrap`: a space landing on the split between the two halves is
+ * trailing whitespace inside a flex item, which `nowrap` throws away.
+ */
+.clip__head {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+
+.clip__tail {
+  flex: none;
+  white-space: pre;
+}

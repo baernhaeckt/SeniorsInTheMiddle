@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { Entity } from '../protocol/types'
-import { clockOf, excerptAround, formatBytes, prettyBody, splitByValues, typeTag } from './text'
+import {
+  clipParts,
+  clockOf,
+  excerptAround,
+  formatBytes,
+  prettyBody,
+  splitByValues,
+  typeTag,
+} from './text'
 
 describe('excerptAround', () => {
   it('handles empty text', () => {
@@ -93,6 +101,15 @@ describe('formatting', () => {
   it('clockOf pads every part', () => {
     const date = new Date(2026, 0, 1, 7, 5, 9)
     expect(clockOf(date.getTime())).toBe('07:05:09')
+  })
+
+  it('clipParts keeps the end of an address, where the port and path are', () => {
+    const long = 'http://backend.northeurope.azurecontainerapps.io:3128/ca.crt'
+    const parts = clipParts(long)
+
+    expect(parts.head + parts.tail).toBe(long)
+    expect(parts.tail).toBe(':3128/ca.crt')
+    expect(clipParts('host:3128')).toEqual({ head: 'host:3128', tail: '' })
   })
 
   it('typeTag', () => {

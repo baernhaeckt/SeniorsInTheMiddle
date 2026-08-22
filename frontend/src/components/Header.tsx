@@ -6,6 +6,8 @@ import { useStore } from '../engine/useStore'
 import { PROTOCOL_VERSION } from '../protocol/types'
 import type { LinkState } from '../transport/types'
 import { Mark, Wordmark } from './Brand'
+import { Clip } from './Clip'
+import { Peek } from './Peek'
 import { UserBubble } from './UserBubble'
 
 const LINK_COPY: Record<LinkState, string> = {
@@ -33,8 +35,9 @@ export function Header({ config, onOpenGuide, onReconfigure, session, onSignOut 
   const configured = hasProxyAddress(config)
   const mismatch = protocolVersion !== null && protocolVersion !== PROTOCOL_VERSION
 
-  const linkDetail = [
-    link.detail ?? link.endpoint,
+  const address = configured ? proxyAddressOf(config) : ''
+  const linkNote = [
+    link.detail,
     link.dropped ? `${link.dropped} frame${link.dropped === 1 ? '' : 's'} dropped` : '',
   ]
     .filter(Boolean)
@@ -52,13 +55,19 @@ export function Header({ config, onOpenGuide, onReconfigure, session, onSignOut 
         </div>
       </div>
 
-      <button type="button" className="setupcta" data-unset={!configured} onClick={onOpenGuide}>
-        <span className="setupcta__label">Proxy address</span>
-        <span className="setupcta__addr">{configured ? proxyAddressOf(config) : 'not set'}</span>
-        <span className="setupcta__go" aria-hidden="true">
-          &rarr;
-        </span>
-      </button>
+      <Peek className="head__cta" value={address}>
+        <button type="button" className="setupcta" data-unset={!configured} onClick={onOpenGuide}>
+          <span className="setupcta__label">Proxy address</span>
+          {configured ? (
+            <Clip className="setupcta__addr" value={address} />
+          ) : (
+            <span className="setupcta__addr">not set</span>
+          )}
+          <span className="setupcta__go" aria-hidden="true">
+            &rarr;
+          </span>
+        </button>
+      </Peek>
 
       <div className="head__right">
         <div className="stats">
@@ -68,24 +77,27 @@ export function Header({ config, onOpenGuide, onReconfigure, session, onSignOut 
           <Stat label="Round trip" value={p50 ?? '—'} unit={p50 === null ? '' : 'ms'} />
         </div>
 
-        <div
-          className="link"
-          data-state={link.state}
-          data-warn={mismatch || Boolean(link.dropped)}
-          title={linkDetail}
-        >
-          <span className="link__dot" />
-          <span>
-            {LINK_COPY[link.state]} · {link.endpoint}
-            {mismatch && (
-              <span className="link__warn">
-                {' '}
-                · protocol v{protocolVersion}, expected v{PROTOCOL_VERSION}
-              </span>
-            )}
-            {link.dropped ? <span className="link__warn"> · {link.dropped} dropped</span> : null}
-          </span>
-        </div>
+        <Peek className="head__link" value={link.endpoint} note={linkNote} align="end">
+          <div
+            className="link"
+            data-state={link.state}
+            data-warn={mismatch || Boolean(link.dropped)}
+          >
+            <span className="link__dot" />
+            <span className="link__text">
+              <span className="link__state">{LINK_COPY[link.state]}&nbsp;·&nbsp;</span>
+              <Clip value={link.endpoint} />
+              {mismatch && (
+                <span className="link__warn">
+                  &nbsp;· protocol v{protocolVersion}, expected v{PROTOCOL_VERSION}
+                </span>
+              )}
+              {link.dropped ? (
+                <span className="link__warn">&nbsp;· {link.dropped} dropped</span>
+              ) : null}
+            </span>
+          </div>
+        </Peek>
 
         <button type="button" className="reconf" onClick={onReconfigure}>
           Reconfigure

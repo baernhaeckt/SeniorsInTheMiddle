@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { COPY } from '../copy'
 import { edgeX, laneY } from '../engine/geometry'
-import { activeExchange, type Stage } from '../engine/store'
+import { type Stage } from '../engine/store'
+import { useGateStack } from '../engine/useGateStack'
 import { useStore } from '../engine/useStore'
 import { cssVars } from '../ui/cssVars'
 import { BREAKPOINT_NARROW } from '../ui/hooks'
@@ -139,7 +140,11 @@ export function FlowBand() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [traffic])
 
-  const active = activeExchange(exchanges)
+  // The gate holds a finished exchange for a few seconds, so the nodes follow
+  // its front card rather than the newest event: the middle of the band tells
+  // one story at a time.
+  const cards = useGateStack(exchanges)
+  const active = cards.find((card) => !card.leaving)?.exchange ?? null
   const near = edgeX(size.width)
   const narrow = size.width < BREAKPOINT_NARROW
 
@@ -212,14 +217,10 @@ export function FlowBand() {
           <OriginGlyph />
         </div>
         <div className="node__title">Destination</div>
-        <div className="node__meta">
-          {active ? active.host : 'any host'}
-          <br />
-          sees tokens only
-        </div>
+        <div className="node__meta">{active ? active.host : 'any host'}</div>
       </div>
 
-      <Gate active={active} proxy={proxy} />
+      <Gate cards={cards} proxy={proxy} />
 
       <PacketLayer exchanges={exchanges} width={size.width} height={size.height} />
 

@@ -165,26 +165,45 @@ export async function me(apiBase: string, token: string): Promise<AuthResult<Pro
   }
 }
 
-/**
- * The demo credentials, when the backend has been told to publish them.
- *
- * A 404 is the ordinary answer and the only one on a real deployment, so this returns null
- * for every failure rather than an error: there is nothing here for a user to act on.
- */
-export async function demoAccount(apiBase: string): Promise<DemoAccount | null> {
-  try {
-    const response = await fetch(`${apiBase}/api/v1/auth/demo-account`)
-    if (!response.ok) return null
+export interface AuthProbe {
+  /** Something answered at the address, whatever it said. A 404 counts. */
+  reached: boolean
+  /** The seeded credentials, when the backend has been told to publish them. */
+  demo: DemoAccount | null
+}
 
+/**
+ * The two things the login screen wants to know before anyone types: whether the address
+ * answers at all, and whether it offers a demo account.
+ *
+ * They are worth telling apart. A 404 is the ordinary answer on a real deployment and means
+ * only that there is nothing to prefill. A dead socket means the address itself is wrong,
+ * and that is worth saying before a password is typed against it rather than after — the
+ * API and the proxy listen on different ports, and a dev box has more than one of each.
+ */
+export async function probeAuth(apiBase: string): Promise<AuthProbe> {
+  if (!apiBase) return { reached: false, demo: null }
+
+  let response: Response
+  try {
+    response = await fetch(`${apiBase}/api/v1/auth/demo-account`)
+  } catch {
+    return { reached: false, demo: null }
+  }
+  if (!response.ok) return { reached: true, demo: null }
+
+  try {
     const body: unknown = await response.json()
     const record = (body as Record<string, unknown> | null) ?? {}
     const { username, password } = record
 
-    if (typeof username !== 'string' || typeof password !== 'string') return null
-    if (!username || !password) return null
+    if (typeof username !== 'string' || typeof password !== 'string') {
+      return { reached: true, demo: null }
+    }
+    if (!username || !password) return { reached: true, demo: null }
 
-    return { username, password }
+    return { reached: true, demo: { username, password } }
   } catch {
-    return null
+    return { reached: true, demo: null }
   }
 }

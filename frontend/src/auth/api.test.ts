@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { demoAccount, login, me, register } from './api'
+import { login, me, probeAuth, register } from './api'
 
 const API = 'http://proxy:8080'
 
@@ -121,30 +121,40 @@ describe('me', () => {
   })
 })
 
-describe('demoAccount', () => {
+describe('probeAuth', () => {
   it('returns the advertised credentials', async () => {
     stubFetch(() => json({ username: 'demo', password: 'demo' }))
 
-    expect(await demoAccount(API)).toEqual({ username: 'demo', password: 'demo' })
+    expect(await probeAuth(API)).toEqual({
+      reached: true,
+      demo: { username: 'demo', password: 'demo' },
+    })
   })
 
-  it('is null on a 404, which is the normal answer', async () => {
+  it('counts a 404 as reached: it is the normal answer on a real deployment', async () => {
     stubFetch(() => new Response(null, { status: 404 }))
 
-    expect(await demoAccount(API)).toBeNull()
+    expect(await probeAuth(API)).toEqual({ reached: true, demo: null })
   })
 
-  it('is null when nothing answers', async () => {
+  it('reports an address nothing answers at', async () => {
     stubFetch(() => {
       throw new TypeError('Failed to fetch')
     })
 
-    expect(await demoAccount(API)).toBeNull()
+    expect(await probeAuth(API)).toEqual({ reached: false, demo: null })
   })
 
-  it('is null for a half-filled answer', async () => {
+  it('has no demo account for a half-filled answer', async () => {
     stubFetch(() => json({ username: 'demo' }))
 
-    expect(await demoAccount(API)).toBeNull()
+    expect(await probeAuth(API)).toEqual({ reached: true, demo: null })
+  })
+
+  it('does not go looking when there is no address', async () => {
+    const calls = stubFetch(() => json({ username: 'demo', password: 'demo' }))
+
+    expect(await probeAuth('')).toEqual({ reached: false, demo: null })
+    expect(calls).toHaveLength(0)
   })
 })

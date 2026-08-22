@@ -99,9 +99,10 @@
     row-gap: 10px;
   }
 
-  .setupcta {
+  /* Onto its own row, still centred there by the auto margins in header.css. */
+  .head__cta {
     order: 3;
-    margin-inline: 0;
+    max-width: 100%;
   }
 }
 
@@ -139,6 +140,10 @@
   .head__right {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .head__link {
+    max-width: 100%;
   }
 }
 

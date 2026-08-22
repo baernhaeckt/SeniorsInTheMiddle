@@ -24,8 +24,27 @@ export function edgeX(width: number): number {
   return width * (width < 760 ? 0.16 : 0.125)
 }
 
+/** Mirrors the `.gatestack` width clamp in band.css. */
+function gateWidth(width: number): number {
+  return Math.min(Math.max(280, width * 0.34), 520)
+}
+
+/** Mirrors the `.pk` width clamp in band.css. */
+function packetWidth(width: number): number {
+  return Math.min(Math.max(150, width * 0.17), 208)
+}
+
+/**
+ * How far either side of the middle a packet parks while the gate works on it.
+ *
+ * Derived from the two things it has to clear — half the gate and half itself —
+ * rather than picked, so widening the gate cannot leave a packet tucked under
+ * its corner. Capped short of the far slot, or a packet would travel backwards
+ * on its way out.
+ */
 function dockOffset(width: number): number {
-  return width < 760 ? 200 : 292
+  const clear = (gateWidth(width) + packetWidth(width)) / 2 + 24
+  return Math.min(clear, Math.max(0, width / 2 - edgeX(width) - 12))
 }
 
 /** Where a packet belongs right now, in pixels inside the band. */

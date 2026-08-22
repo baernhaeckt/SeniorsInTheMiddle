@@ -109,3 +109,23 @@ export function typeTag(contentType?: string): string {
   if (contentType.includes('json')) return 'json'
   return contentType.split('/')[1] ?? 'asset'
 }
+
+/** Characters an address keeps at its end: enough for a port and a short path. */
+const CLIP_TAIL = 12
+
+export interface ClipParts {
+  head: string
+  tail: string
+}
+
+/**
+ * Split an address so the ellipsis lands in the middle rather than at the end.
+ * The tail of a URL carries the port and the path — the part someone reads to
+ * check it against a device — so it is the head that gives way when the space
+ * runs out. Rendered by `components/Clip.tsx`.
+ */
+export function clipParts(value: string, tail: number = CLIP_TAIL): ClipParts {
+  if (value.length <= tail) return { head: value, tail: '' }
+  const cut = value.length - tail
+  return { head: value.slice(0, cut), tail: value.slice(cut) }
+}

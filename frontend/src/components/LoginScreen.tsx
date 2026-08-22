@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { demoAccount, login, me, register } from '../auth/api'
+import { login, me, probeAuth, register } from '../auth/api'
 import type { Session } from '../auth/session'
 import { apiBaseOf, type RuntimeConfig } from '../config'
 import { COPY } from '../copy'
@@ -32,6 +32,8 @@ export function LoginScreen({ config, onSignedIn, onReconfigure }: LoginScreenPr
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [prefilled, setPrefilled] = useState(false)
+  /** Null until the address has been tried, so nothing is claimed before it is known. */
+  const [reached, setReached] = useState<boolean | null>(null)
 
   // A late demo response must not overwrite something already being typed.
   const touched = useRef(false)
@@ -43,10 +45,12 @@ export function LoginScreen({ config, onSignedIn, onReconfigure }: LoginScreenPr
   useEffect(() => {
     let cancelled = false
 
-    void demoAccount(apiBase).then((account) => {
-      if (cancelled || !account || touched.current) return
-      setUsername(account.username)
-      setPassword(account.password)
+    void probeAuth(apiBase).then((probe) => {
+      if (cancelled) return
+      setReached(probe.reached)
+      if (!probe.demo || touched.current) return
+      setUsername(probe.demo.username)
+      setPassword(probe.demo.password)
       setPrefilled(true)
     })
 
@@ -201,6 +205,15 @@ export function LoginScreen({ config, onSignedIn, onReconfigure }: LoginScreenPr
             <p className="signin__demo u-label">Demo account · prefilled, press sign in</p>
           )}
 
+          {reached === false && (
+            <p className="signin__offline" role="status">
+              No answer from <span className="u-mono">{apiBase || 'no address set'}</span>. Either
+              nothing is listening there, or this origin —{' '}
+              <span className="u-mono">{window.location.origin}</span> — is not one the proxy
+              allows.
+            </p>
+          )}
+
           {error && (
             <p className="signin__error" role="alert">
               {error}
@@ -211,7 +224,7 @@ export function LoginScreen({ config, onSignedIn, onReconfigure }: LoginScreenPr
             {pending ? 'Working…' : mode === 'register' ? 'Create account' : 'Sign in'}
           </button>
 
-          <p className="signin__where">
+          <p className="signin__where" data-offline={reached === false}>
             <span className="u-mono">{apiBase || 'no address set'}</span>
             <button type="button" className="group__more" onClick={onReconfigure}>
               Change

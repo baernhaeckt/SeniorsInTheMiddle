@@ -7,6 +7,9 @@
   overflow: hidden;
   background: var(--void-2);
   min-height: 0;
+
+  /* So the caption can stand down when the gate stack needs its room. */
+  container-type: size;
 }
 
 .band__zone {
@@ -49,7 +52,13 @@
   opacity: 0.7;
 }
 
+/*
+ * Centred under the wall, which is also where the waiting cards hang. The band is rarely
+ * tall enough for both, so the line only appears once there is room for it underneath a
+ * full stack rather than through it.
+ */
 .band__caption {
+  display: none;
   position: absolute;
   left: 50%;
   bottom: 12px;
@@ -61,6 +70,12 @@
   color: var(--ink-3);
   letter-spacing: 0.04em;
   white-space: nowrap;
+}
+
+@container (min-height: 510px) {
+  .band__caption {
+    display: block;
+  }
 }
 
 /* ---------------------------------------------------------------- rails -- */
@@ -371,23 +386,51 @@
   color: var(--cool);
 }
 
+/*
+ * Two lines are reserved whether or not there are two to show, so both nodes
+ * keep their titles on the same line as each other and a long host name does
+ * not push the ring off centre.
+ */
 .node__meta {
   margin-top: 5px;
+  min-height: 32px;
   font-family: var(--mono);
   font-size: 11px;
   color: var(--ink-3);
   line-height: 1.45;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* ----------------------------------------------------------------- gate -- */
 
-.gate {
+/*
+ * The stack is anchored, not the cards: its height is the front card's, which
+ * never changes, so promoting a card or queueing one behind it cannot move the
+ * readout. Waiting cards hang below without taking part in the layout.
+ *
+ * Mirrored in geometry.ts, which parks packets clear of the widest gate.
+ */
+.gatestack {
   position: absolute;
   left: 50%;
-  top: 50%;
+  top: 46%;
   transform: translate(-50%, -50%);
   z-index: 6;
-  width: clamp(230px, 30vw, 344px);
+  width: clamp(280px, 34vw, 520px);
+  animation: rise 700ms 120ms var(--ease) both;
+}
+
+/*
+ * Fixed at every row: the box sits in the middle of a wall display, and one
+ * that resizes each time an exchange arrives or clears reads as a fault. Rows
+ * that have nothing to say hold their height and show a dash.
+ */
+.gate {
+  position: relative;
   background: linear-gradient(180deg, rgba(16, 53, 54, 0.97), rgba(11, 26, 28, 0.97));
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -396,7 +439,101 @@
     0 0 70px rgba(255, 255, 255, 0.09),
     0 24px 70px rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(3px);
-  animation: rise 700ms 120ms var(--ease) both;
+  animation: cardin 380ms var(--ease) both;
+}
+
+/* Delivered and being held: the same card, one notch quieter. */
+.gate[data-held='true'] {
+  border-color: var(--line-soft);
+}
+
+/*
+ * Out of flow, so the card taking its place is already sitting where it will
+ * stay while this one animates off the top.
+ */
+.gate--leaving {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  pointer-events: none;
+  animation: cardout 460ms var(--ease) forwards;
+}
+
+@keyframes cardin {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+@keyframes cardout {
+  to {
+    opacity: 0;
+    transform: translateY(-22px);
+  }
+}
+
+/* -------------------------------------------------------- waiting cards -- */
+
+.gatestack__queue {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  padding-top: 6px;
+  display: grid;
+  gap: 4px;
+}
+
+.gateq {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - var(--depth) * 18px);
+  margin-inline: auto;
+  padding: 4px 9px;
+  border: 1px solid var(--line-soft);
+  border-left: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(16, 53, 54, 0.94), rgba(11, 26, 28, 0.94));
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-3);
+  opacity: calc(1 - var(--depth) * 0.28);
+  animation: cardin 320ms var(--ease) both;
+}
+
+.gateq[data-tone='warm'] {
+  border-left-color: var(--warm);
+}
+
+.gateq[data-tone='alert'] {
+  border-left-color: var(--alert);
+}
+
+.gateq[data-tone='cool'] {
+  border-left-color: var(--cool);
+}
+
+.gateq__method {
+  flex: none;
+  color: var(--ink-2);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.gateq__url {
+  min-width: 0;
+  flex: 1;
+}
+
+.gateq__stage {
+  flex: none;
+  color: var(--ink-3);
+  letter-spacing: 0.04em;
 }
 
 .gate__top {
@@ -423,6 +560,37 @@
   border: 1px solid var(--line);
   border-radius: 2px;
   padding: 1px 5px;
+}
+
+.gate__route {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 27px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line-soft);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-2);
+}
+
+.gate__method {
+  flex: none;
+  color: var(--warm);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.gate__method[data-idle='true'] {
+  color: var(--ink-3);
+}
+
+.gate__url {
+  min-width: 0;
+}
+
+.gate__url--idle {
+  color: var(--ink-3);
 }
 
 .gate__stagerow {
@@ -455,30 +623,140 @@
   padding: 7px 11px 0;
   display: flex;
   justify-content: space-between;
+  gap: 10px;
   font-family: var(--mono);
   font-size: 10px;
   color: var(--ink-3);
 }
 
+.gate__stage {
+  flex: none;
+}
+
+.gate__meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .gate__readout {
-  margin: 9px 11px 12px;
-  min-height: 78px;
+  margin: 8px 11px;
+  height: 88px;
   padding: 10px 11px;
   border: 1px solid var(--line-soft);
   border-radius: 2px;
   background: rgba(13, 18, 22, 0.72);
   font-family: var(--mono);
-  font-size: 13px;
-  line-height: 1.58;
+  font-size: 12.5px;
+  line-height: 1.5;
   overflow-wrap: anywhere;
+  overflow: hidden;
   display: flex;
   align-items: center;
+}
+
+/* A body longer than the box loses its tail rather than pushing the box open. */
+.gate__body {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/*
+ * A short viewport gives the band about 330px to work with, which the card and
+ * one waiting strip only just fit into. Taller screens spend the room on the
+ * readout, which is the row worth reading from across an office.
+ */
+@media (min-height: 860px) {
+  .gate__readout {
+    height: 152px;
+    font-size: 13px;
+  }
+
+  .gate__body {
+    -webkit-line-clamp: 7;
+  }
+}
+
+/* A short viewport has room for the card and one waiting strip, and no more. */
+@media (max-height: 859px) {
+  .gatestack__queue > :nth-child(n + 2) {
+    display: none;
+  }
 }
 
 .gate__idle {
   color: var(--ink-3);
   font-size: 10px;
   letter-spacing: 0.04em;
+}
+
+.gate__kinds {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 11px;
+  overflow: hidden;
+}
+
+.gate__kind {
+  flex: none;
+  border: 1px solid var(--alert-line);
+  background: var(--alert-soft);
+  color: var(--alert);
+  border-radius: 2px;
+  padding: 1px 5px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+.gate__kind small {
+  font-size: 9px;
+  opacity: 0.75;
+  margin-left: 3px;
+}
+
+.gate__nokinds {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--ink-3);
+  letter-spacing: 0.04em;
+}
+
+.gate__feet {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 8px 11px 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.gate__foot {
+  min-width: 0;
+}
+
+.gate__footvalue {
+  display: block;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  line-height: 1.2;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gate__footlabel {
+  display: block;
+  margin-top: 1px;
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
 }
 
 /* -------------------------------------------------------------- packets -- */
@@ -607,12 +885,6 @@
 }
 
 /* ---------------------------------------------------------------- floor -- */
-
-@media (max-width: 759px) {
-  .band__caption {
-    display: none;
-  }
-}
 
 /* -------------------------------------------------------------- traffic -- */
 

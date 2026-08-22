@@ -232,6 +232,27 @@
   letter-spacing: 0.14em;
 }
 
+/*
+ * Said before a password is typed rather than after. A wrong address and a blocked origin
+ * both reject a fetch with the same opaque error, so the note names each of them: the
+ * address someone may have to change, and the origin they may have to allow.
+ */
+.signin__offline {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px dashed var(--alert-line);
+  border-radius: 2px;
+  background: var(--alert-soft);
+  color: var(--ink-2);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.signin__offline .u-mono {
+  color: var(--alert);
+  overflow-wrap: anywhere;
+}
+
 .signin__error {
   margin: 0 0 12px;
   padding: 8px 10px;
@@ -267,6 +288,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.signin__where[data-offline='true'] .u-mono {
+  color: var(--alert);
 }
 
 /* ---------------------------------------------------------------- narrow -- */

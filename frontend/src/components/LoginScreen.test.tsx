@@ -232,6 +232,31 @@ describe('LoginScreen', () => {
     })
   })
 
+  describe('an address that does not answer', () => {
+    it('names the address and this origin, since a fetch cannot tell them apart', async () => {
+      // A blocked origin and a dead socket both reject with the same opaque TypeError, so
+      // the note has to cover both — and the origin is the string someone needs when it
+      // turns out to be the allow-list.
+      vi.stubGlobal('fetch', () => Promise.reject(new TypeError('Failed to fetch')))
+      render(<LoginScreen config={CONFIG} onSignedIn={vi.fn()} onReconfigure={vi.fn()} />)
+
+      const note = await screen.findByRole('status')
+
+      expect(note).toHaveTextContent('No answer from')
+      expect(note).toHaveTextContent(API)
+      expect(note).toHaveTextContent(window.location.origin)
+    })
+
+    it('stays quiet when the address answers, demo account or not', async () => {
+      renderScreen()
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Username')).toHaveValue('')
+      })
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    })
+  })
+
   it('offers a way back to the setup screen', async () => {
     const { onReconfigure } = renderScreen()
 
