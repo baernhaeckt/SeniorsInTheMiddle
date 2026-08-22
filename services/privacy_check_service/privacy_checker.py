@@ -13,6 +13,7 @@ class PrivacyChecker:
         """
         Initializes the PrivacyChecker class.
         """
+        logger.info(f"Start downloading embedding model")
         self.encoder_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
     @staticmethod
@@ -149,16 +150,20 @@ class PrivacyChecker:
             float: A score indicating the level of privacy risk. A higher score indicates a higher risk.
         """
         # Create embeddings for the text and replaced names
+        logger.info("Create embeddings for the text and the names.")
         text_embeddings = self.encoder_model.encode(text)
         name_embeddings = self.encoder_model.encode(replaced_names)
 
         # Calculate cosine similarities between the text and each replaced name
+        logger.info("Calculate the similarity of the embeddings.")
         similarities = name_embeddings @ text_embeddings
 
         # Generate feature list
+        logger.info("Extract features from the text and the names.")
         features_list = [self._make_features(similarities, text, name, sim) for name, sim in zip(replaced_names, similarities)]
         features_list = np.array(features_list)
 
+        logger.info(f"Calculate the risk probabilities per name.")
         probabilities = self._calculate_probability(features_list)
 
         similarity_probabilities = list()
