@@ -110,6 +110,15 @@ public static class Registrar
         return app;
     }
 
+    /// <summary>
+    /// Both endpoints are deliberately anonymous, against the app's deny-by-default policy.
+    ///
+    /// They are what a device fetches to start trusting the proxy at all, which happens long
+    /// before anyone has an account or a browser pointed at the dashboard. Requiring a token
+    /// here would mean a device could only be onboarded once it was already onboarded.
+    /// Neither leaks anything private: the CA's public certificate is public by definition,
+    /// and the PAC file only restates the address the caller already used to reach us.
+    /// </summary>
     public static void RegisterProxyEndpoints(this IEndpointRouteBuilder routes)
     {
         // The root certificate a device must trust before HTTPS can be read. The setup
@@ -119,7 +128,8 @@ public static class Registrar
                 "application/x-x509-ca-cert",
                 "sitm-ca.crt"))
             .WithName("DownloadCaCertificate")
-            .WithTags("Proxy");
+            .WithTags("Proxy")
+            .AllowAnonymous();
 
         // Auto-configuration, for devices that take a PAC URL instead of host and port.
         // The address is taken from the request, so the file describes whichever name
@@ -147,6 +157,7 @@ public static class Registrar
                     "application/x-ns-proxy-autoconfig");
             })
             .WithName("ProxyAutoConfiguration")
-            .WithTags("Proxy");
+            .WithTags("Proxy")
+            .AllowAnonymous();
     }
 }

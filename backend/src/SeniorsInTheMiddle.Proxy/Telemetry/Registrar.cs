@@ -29,6 +29,14 @@ public static class Registrar
         return app;
     }
 
+    /// <summary>
+    /// The stream carries decrypted request bodies, including the personal data found in
+    /// them, so it takes a signed-in user. The fallback policy would cover this on its own;
+    /// it is spelled out here because this is the endpoint a reader checks.
+    ///
+    /// A browser sends the token in the handshake's query string — see the
+    /// <c>OnMessageReceived</c> hook in <see cref="InfrastructureRegistrations"/>.
+    /// </summary>
     public static void MapTelemetryHub(this IEndpointRouteBuilder routes)
-        => routes.MapHub<TelemetryHub>(TelemetryRoutes.HubPath);
+        => routes.MapHub<TelemetryHub>(TelemetryRoutes.HubPath).RequireAuthorization();
 }

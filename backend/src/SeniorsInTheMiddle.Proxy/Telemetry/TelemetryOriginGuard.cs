@@ -5,12 +5,16 @@ namespace SeniorsInTheMiddle.Proxy.Telemetry;
 ///
 /// CORS does not help here. A browser applies neither a preflight nor an origin check to a
 /// WebSocket handshake, and the dashboard connects with negotiation skipped, so no
-/// credentialed XHR ever reaches <c>UseCors</c>. Without this, any page a viewer happens to
-/// visit could open the hub and read decrypted request bodies off it — the port is
-/// externally reachable in the deployed setup.
+/// credentialed XHR ever reaches <c>UseCors</c>. Without this, a page a signed-in viewer
+/// happens to visit could open the hub from their browser — carrying their session with it —
+/// and read decrypted request bodies off it. The port is externally reachable in the
+/// deployed setup.
 ///
 /// A request with no Origin header is not a browser, so it passes: that is the .NET client
-/// the tests use, and curl. A browser always sends one.
+/// the tests use, and curl. A browser always sends one. That used to be the whole story and
+/// it left the stream open to anything that was not a browser; the hub now also requires a
+/// signed-in user (see <c>MapTelemetryHub</c>), so this guard is the browser half of two
+/// checks rather than the only one.
 /// </summary>
 sealed class TelemetryOriginGuard
 {

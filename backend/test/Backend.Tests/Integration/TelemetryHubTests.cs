@@ -25,7 +25,7 @@ public class TelemetryHubTests
     public async Task Connecting_DeliversHelloFirst()
     {
         List<string> frames = [];
-        await using HubConnection connection = Connect(frames);
+        await using HubConnection connection = await ConnectAsync(frames);
 
         await connection.StartAsync(TestContext.CancellationTokenSource.Token);
         string hello = await WaitForFrameAsync(frames, 0);
@@ -38,7 +38,7 @@ public class TelemetryHubTests
     public async Task PublishedEvents_ReachTheDashboard()
     {
         List<string> frames = [];
-        await using HubConnection connection = Connect(frames);
+        await using HubConnection connection = await ConnectAsync(frames);
         await connection.StartAsync(TestContext.CancellationTokenSource.Token);
         await WaitForFrameAsync(frames, 0);
 
@@ -55,10 +55,65 @@ public class TelemetryHubTests
     }
 
     [TestMethod]
+    public async Task AnUnauthenticatedConnectionIsRefused()
+    {
+        // The regression test for the hole this stream used to have: the origin guard lets
+        // anything without an Origin header through, so before the hub required a user, any
+        // non-browser caller could read decrypted traffic off it.
+        List<string> frames = [];
+        await using HubConnection connection = Build(frames, token: null);
+
+        // The transport decides what it throws when an upgrade is refused, so this asserts
+        // that the connection failed rather than pinning an exception type.
+        Exception? caught = null;
+        try
+        {
+            await connection.StartAsync(TestContext.CancellationTokenSource.Token);
+        }
+        catch (Exception exception)
+        {
+            caught = exception;
+        }
+
+        Assert.IsNotNull(caught, "An unauthenticated caller reached the telemetry stream.");
+        Assert.AreNotEqual(HubConnectionState.Connected, connection.State);
+    }
+
+    [TestMethod]
+    public async Task ATokenInTheQueryStringIsAccepted()
+    {
+        // How a browser actually authenticates here. It cannot put a header on a WebSocket
+        // handshake, so the SignalR client appends the token to the URL and the server picks
+        // it up in OnMessageReceived. Negotiate sits under the same path and the same hook.
+        HttpClient client = _factory.CreateClient();
+        string token = await TestAuth.TokenAsync(client, TestContext.CancellationTokenSource.Token);
+
+        HttpResponseMessage response = await client.PostAsync(
+            $"/hub/telemetry/negotiate?negotiateVersion=1&access_token={Uri.EscapeDataString(token)}",
+            content: null,
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task AGarbageTokenInTheQueryStringIsRefused()
+    {
+        HttpClient client = _factory.CreateClient();
+
+        HttpResponseMessage response = await client.PostAsync(
+            "/hub/telemetry/negotiate?negotiateVersion=1&access_token=not-a-jwt",
+            content: null,
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [TestMethod]
     public async Task AForeignOriginIsRefused()
     {
-        // A WebSocket handshake never reaches CORS, so this is the only thing standing
-        // between the stream and any page the viewer happens to have open.
+        // A WebSocket handshake never reaches CORS, so this stops a page a signed-in viewer
+        // happens to visit from opening the stream with their session.
         HttpClient client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("Origin", "https://not-the-dashboard.example");
 
@@ -70,22 +125,51 @@ public class TelemetryHubTests
     }
 
     [TestMethod]
+    public async Task AForeignOriginIsRefused_EvenWithAValidToken()
+    {
+        // The threat the origin guard actually exists for. A signed-in viewer visits some
+        // other page; that page opens the hub and the browser attaches their session to it.
+        // Authentication cannot catch this, because the token is genuine.
+        HttpClient client = _factory.CreateClient();
+        string token = await TestAuth.TokenAsync(client, TestContext.CancellationTokenSource.Token);
+        client.DefaultRequestHeaders.Add("Origin", "https://not-the-dashboard.example");
+
+        HttpResponseMessage response = await client.PostAsync(
+            $"/hub/telemetry/negotiate?negotiateVersion=1&access_token={Uri.EscapeDataString(token)}",
+            content: null,
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.AreEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [TestMethod]
     public async Task AConfiguredOriginIsLetThrough()
     {
         // CustomWebApplicationFactory runs in Development, whose Cors:AllowedOrigins lists
-        // the Vite dev server.
+        // the Vite dev server. Origin is the browser check; the token is the other one, so
+        // this needs both to reach 200.
         HttpClient client = _factory.CreateClient();
+        string token = await TestAuth.TokenAsync(client, TestContext.CancellationTokenSource.Token);
         client.DefaultRequestHeaders.Add("Origin", "http://localhost:5173");
 
         HttpResponseMessage response = await client.PostAsync(
-            "/hub/telemetry/negotiate?negotiateVersion=1",
+            $"/hub/telemetry/negotiate?negotiateVersion=1&access_token={Uri.EscapeDataString(token)}",
             content: null,
             TestContext.CancellationTokenSource.Token);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
     }
 
-    private HubConnection Connect(List<string> frames)
+    private async Task<HubConnection> ConnectAsync(List<string> frames)
+    {
+        string token = await TestAuth.TokenAsync(
+            _factory.CreateClient(),
+            TestContext.CancellationTokenSource.Token);
+
+        return Build(frames, token);
+    }
+
+    private HubConnection Build(List<string> frames, string? token)
     {
         TestServer server = _factory.Server;
 
@@ -95,7 +179,24 @@ public class TelemetryHubTests
                 options.Transports = HttpTransportType.WebSockets;
                 options.HttpMessageHandlerFactory = _ => server.CreateHandler();
                 options.WebSocketFactory = async (context, cancellationToken) =>
-                    await server.CreateWebSocketClient().ConnectAsync(context.Uri, cancellationToken);
+                {
+                    WebSocketClient client = server.CreateWebSocketClient();
+
+                    // TestServer's WebSocket client ignores the ClientWebSocketOptions SignalR
+                    // would normally have put the token on, so it goes on by hand. A real
+                    // browser cannot set this header at all and uses the query string instead
+                    // — covered by ATokenInTheQueryStringIsAccepted.
+                    if (token is not null)
+                    {
+                        client.ConfigureRequest = request =>
+                            request.Headers["Authorization"] = $"Bearer {token}";
+                    }
+
+                    return await client.ConnectAsync(context.Uri, cancellationToken);
+                };
+
+                if (token is not null)
+                    options.AccessTokenProvider = () => Task.FromResult<string?>(token);
             })
             .Build();
 

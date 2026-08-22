@@ -75,4 +75,19 @@ public class AuthEndpointTests
         ProfileResponse? responseContent = await meResponse.Content.ReadFromJsonAsync<ProfileResponse>();
         Assert.IsNotNull(responseContent?.Email);
     }
+
+    [TestMethod]
+    public async Task AuthLoginEndpoint_ShouldReturn401_ForTheWrongPassword()
+    {
+        HttpClient client = _factory.CreateClient();
+        HttpResponseMessage registered = await client.PostAsJsonAsync("/api/v1/auth/register",
+            new RegisterRequest("testuser", "tester@test.ch", "Test123"));
+        registered.EnsureSuccessStatusCode();
+
+        HttpResponseMessage response = await client.PostAsJsonAsync("/api/v1/auth/login",
+            new LoginRequest("testuser", "NotThePassword"));
+
+        Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
 }

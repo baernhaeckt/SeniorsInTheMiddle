@@ -3,6 +3,7 @@ using SeniorsInTheMiddle.Proxy.Auth.Security;
 using SeniorsInTheMiddle.Proxy.Auth.Storage;
 
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace SeniorsInTheMiddle.Proxy.Auth.Api;
 
@@ -34,7 +35,9 @@ public static class AuthEndpoints
             return Results.Ok(new LoginResponse(token));
         })
         .WithName("Login")
-        .WithTags("Authentication");
+        .WithTags("Authentication")
+        // Anonymous, or there would be no way to obtain the token this asks for.
+        .AllowAnonymous();
 
         // Register endpoint
         auth.MapPost("/register", async (
@@ -65,7 +68,27 @@ public static class AuthEndpoints
             return Results.Ok(new { message = "User registered successfully" });
         })
         .WithName("Register")
-        .WithTags("Authentication");
+        .WithTags("Authentication")
+        // Self-registration: the whole point is that the caller has no account yet.
+        .AllowAnonymous();
+
+        // What the login screen prefills its fields from, so a demo is one click rather than
+        // a typed password.
+        //
+        // This hands out a working credential, so it answers only when an operator has both
+        // seeded an account and explicitly switched advertising on. It is off unless
+        // configured, and it must stay off anywhere real household traffic is flowing.
+        auth.MapGet("/demo-account", (IOptions<SeedUserOptions> options) =>
+        {
+            SeedUserOptions seed = options.Value;
+
+            return seed.Advertise && seed.IsConfigured
+                ? Results.Ok(new DemoAccountResponse(seed.Username, seed.Password))
+                : Results.NotFound();
+        })
+        .WithName("GetDemoAccount")
+        .WithTags("Authentication")
+        .AllowAnonymous();
 
         // Get current user endpoint (protected)
         auth.MapGet("/me", async (

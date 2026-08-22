@@ -19,7 +19,7 @@ Three listeners, one role each. None of them does two jobs.
 |--------|-------------------|---------------------------------------------------------------|
 | `3128` | `Proxy:HttpPort`  | Proxy traffic, plus `/ca.crt` and `/proxy.pac`. Nothing else. |
 | `3127` | `Proxy:HttpsPort` | The same proxy inside TLS. Set to `0` to disable.             |
-| `8080` | `Proxy:ApiPort`   | The WebAPI, Swagger and the telemetry stream. Never proxies.  |
+| `8080` | `Proxy:ApiPort`   | The WebAPI, Swagger, the telemetry stream and `/healthz`. Never proxies. |
 
 The three must differ; the app refuses to start otherwise rather than failing later with
 an opaque "address already in use".
