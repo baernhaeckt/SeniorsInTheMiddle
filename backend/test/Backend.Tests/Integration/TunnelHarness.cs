@@ -133,8 +133,9 @@ internal sealed class TunnelHarness : IAsyncDisposable
     public IReadOnlyList<string> PresentedIssuers => state.PresentedIssuers.ToArray();
 
     public static async Task<TunnelHarness> StartAsync(
-        IRequestBodyMutation? mutation = null,
-        RequestBodyLimits? limits = null)
+        IBodyMutationFactory? mutation = null,
+        BodyLimits? limits = null,
+        Func<HttpContext, byte[], Task>? respond = null)
     {
         HarnessState state = new();
 
@@ -145,7 +146,7 @@ internal sealed class TunnelHarness : IAsyncDisposable
         int unreachablePort = FreePort();
 
         X509Certificate2 destinationCertificate = SelfSignedFor("127.0.0.1");
-        WebApplication destinationApp = BuildDestination(state, destinationCertificate);
+        WebApplication destinationApp = BuildDestination(state, destinationCertificate, respond);
         await destinationApp.StartAsync();
         Uri destinationUri = new(destinationApp.Urls.First().Replace("[::1]", "127.0.0.1"));
 
@@ -229,7 +230,10 @@ internal sealed class TunnelHarness : IAsyncDisposable
         destinationCertificate.Dispose();
     }
 
-    private static WebApplication BuildDestination(HarnessState state, X509Certificate2 certificate)
+    private static WebApplication BuildDestination(
+        HarnessState state,
+        X509Certificate2 certificate,
+        Func<HttpContext, byte[], Task>? respond)
     {
         WebApplicationBuilder builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
@@ -257,7 +261,12 @@ internal sealed class TunnelHarness : IAsyncDisposable
                     StringComparer.OrdinalIgnoreCase),
                 body.ToArray());
 
-            await context.Response.WriteAsync("ok", context.RequestAborted);
+            // The recorder has already drained the request, so the responder is handed what it
+            // read rather than an empty stream.
+            if (respond is not null)
+                await respond(context, state.Received.Body);
+            else
+                await context.Response.WriteAsync("ok", context.RequestAborted);
         });
 
         return app;
@@ -268,8 +277,8 @@ internal sealed class TunnelHarness : IAsyncDisposable
         int proxyPort,
         int apiPort,
         X509Certificate2 destinationCertificate,
-        IRequestBodyMutation? mutation,
-        RequestBodyLimits? limits)
+        IBodyMutationFactory? mutation,
+        BodyLimits? limits)
     {
         WebApplicationBuilder builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
@@ -288,8 +297,8 @@ internal sealed class TunnelHarness : IAsyncDisposable
         builder.Services
             .AddHttpForwarder()
             .AddSingleton(new ProxyPorts(HttpProxy: proxyPort, HttpsProxy: 0, Api: apiPort))
-            .AddSingleton(limits ?? new RequestBodyLimits(RequestBodyLimits.DefaultMaxMutableBodyBytes))
-            .AddSingleton(mutation ?? new PassthroughBodyMutation())
+            .AddSingleton(limits ?? new BodyLimits(BodyLimits.DefaultMaxMutableBodyBytes))
+            .AddSingleton<IBodyMutationFactory>(mutation ?? new PassthroughMutationFactory())
             .AddSingleton<SelfHostNames>()
             .AddSingleton<MitmCertificateProvider>()
             .AddSingleton<IStreamProxyFactory, StreamProxyFactory>()
