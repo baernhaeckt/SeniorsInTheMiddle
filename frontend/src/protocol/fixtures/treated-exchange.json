@@ -1,0 +1,139 @@
+[
+  {
+    "type": "hello",
+    "version": 2,
+    "proxy": {
+      "name": "sitm-edge-01",
+      "region": "Bern",
+      "mode": "transparent http/https",
+      "policy": "strict-ch"
+    }
+  },
+  {
+    "type": "request.observed",
+    "requestId": "r-1",
+    "at": 1756000000000,
+    "clientIp": "192.168.1.44",
+    "clientLabel": "Tablet · Studer",
+    "method": "GET",
+    "scheme": "https",
+    "host": "cdn.example.ch",
+    "path": "/app.css",
+    "contentType": "text/css",
+    "requestBytes": 0,
+    "treatment": "passthrough",
+    "reason": "text/css"
+  },
+  {
+    "type": "request.completed",
+    "requestId": "r-1",
+    "at": 1756000000040,
+    "status": 200,
+    "responseBytes": 41208,
+    "durationMs": 40
+  },
+  {
+    "type": "request.observed",
+    "requestId": "r-2",
+    "at": 1756000001000,
+    "clientIp": "192.168.1.44",
+    "clientLabel": "Tablet · Studer",
+    "method": "POST",
+    "scheme": "https",
+    "host": "api.example.ch",
+    "path": "/v1/claims",
+    "contentType": "application/json",
+    "requestBytes": 120,
+    "treatment": "treated",
+    "reason": "2 identifiers",
+    "exchangeId": "x-1"
+  },
+  {
+    "type": "exchange.opened",
+    "exchangeId": "x-1",
+    "requestId": "r-2",
+    "at": 1756000001000,
+    "clientLabel": "Tablet · Studer",
+    "method": "POST",
+    "scheme": "https",
+    "host": "api.example.ch",
+    "path": "/v1/claims",
+    "contentType": "application/json",
+    "requestBody": "{\"name\":\"Rosmarie Studer\",\"ahv\":\"756.1234.5678.97\"}"
+  },
+  {
+    "type": "detection.completed",
+    "exchangeId": "x-1",
+    "at": 1756000001020,
+    "scannedMs": 12,
+    "entities": [
+      {
+        "id": "e1",
+        "kind": "PERSON",
+        "value": "Rosmarie Studer",
+        "token": "[PERSON_1]",
+        "start": 9,
+        "end": 24,
+        "confidence": 0.97
+      },
+      {
+        "id": "e2",
+        "kind": "AHV",
+        "value": "756.1234.5678.97",
+        "token": "[AHV_1]",
+        "start": 33,
+        "end": 49,
+        "confidence": 0.99
+      }
+    ]
+  },
+  {
+    "type": "redaction.completed",
+    "exchangeId": "x-1",
+    "at": 1756000001030,
+    "redactedRequestBody": "{\"name\":\"[PERSON_1]\",\"ahv\":\"[AHV_1]\"}"
+  },
+  {
+    "type": "log",
+    "at": 1756000001030,
+    "level": "block",
+    "message": "held at the boundary: PERSON, AHV",
+    "exchangeId": "x-1"
+  },
+  {
+    "type": "upstream.dispatched",
+    "exchangeId": "x-1",
+    "at": 1756000001035,
+    "target": "api.example.ch/v1/claims",
+    "bytes": 40
+  },
+  {
+    "type": "upstream.responded",
+    "exchangeId": "x-1",
+    "at": 1756000001300,
+    "status": 201,
+    "tokenizedResponseBody": "{\"claimId\":\"CLM-1\",\"insuredName\":\"[PERSON_1]\"}",
+    "upstreamMs": 265
+  },
+  {
+    "type": "rehydration.completed",
+    "exchangeId": "x-1",
+    "at": 1756000001305,
+    "responseBody": "{\"claimId\":\"CLM-1\",\"insuredName\":\"Rosmarie Studer\"}",
+    "restored": 1
+  },
+  {
+    "type": "exchange.delivered",
+    "exchangeId": "x-1",
+    "at": 1756000001310,
+    "totalMs": 310
+  },
+  {
+    "type": "request.completed",
+    "requestId": "r-2",
+    "at": 1756000001310,
+    "status": 201,
+    "responseBytes": 52,
+    "durationMs": 310
+  }
+]

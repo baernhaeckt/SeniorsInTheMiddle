@@ -31,9 +31,12 @@
   --alert-soft: rgba(255, 78, 119, 0.16);
   --alert-line: rgba(255, 78, 119, 0.42);
 
-  --display: 'Archivo', 'Segoe UI', system-ui, sans-serif;
+  --display: 'Archivo Variable', 'Archivo', 'Segoe UI', system-ui, sans-serif;
   --body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
+
+  /* Below this the band switches to its narrow layout. Mirrored as BREAKPOINT_NARROW in ui/hooks.ts. */
+  --bp-narrow: 760px;
 
   --gap: 14px;
   --radius: 3px;

@@ -1,13 +1,18 @@
-import { clockOf, formatBytes } from '../engine/text'
-import { store, type AppState, type TrafficEntry } from '../engine/store'
+import { memo } from 'react'
+import { store, type TrafficEntry } from '../engine/store'
+import { clockOf, formatBytes, typeTag } from '../engine/text'
+import { useStore } from '../engine/useStore'
 
 /**
  * Every request the proxy saw, newest first, marked with what it did about it.
  * Treated rows are the ones playing out on the band above. Click one to hold it
  * in the inspector.
  */
-export function Traffic({ state }: { state: AppState }) {
-  const { requests, treated } = state.metrics
+export function Traffic() {
+  const traffic = useStore((state) => state.traffic)
+  const { requests, treated } = useStore((state) => state.metrics)
+  const pinnedId = useStore((state) => state.pinnedId)
+  const lastLog = useStore((state) => state.lastLog)
 
   return (
     <section className="panel" aria-label="All requests through the proxy">
@@ -19,22 +24,24 @@ export function Traffic({ state }: { state: AppState }) {
       </div>
 
       <div className="panel__body">
-        {state.traffic.length === 0 && (
-          <p className="matrix__empty" style={{ padding: '10px 12px' }}>
-            Nothing has crossed yet.
-          </p>
+        {traffic.length === 0 && (
+          <p className="matrix__empty panel__empty">Nothing has crossed yet.</p>
         )}
-        {state.traffic.map((entry) => (
-          <Row key={entry.requestId} entry={entry} pinned={state.pinnedId === entry.exchangeId} />
+        {traffic.map((entry) => (
+          <Row
+            key={entry.requestId}
+            entry={entry}
+            pinned={entry.exchangeId !== undefined && pinnedId === entry.exchangeId}
+          />
         ))}
       </div>
 
-      <div className="traffic__foot">{state.lastLog ?? 'waiting for the proxy'}</div>
+      <div className="traffic__foot">{lastLog ?? 'waiting for the proxy'}</div>
     </section>
   )
 }
 
-function Row({ entry, pinned }: { entry: TrafficEntry; pinned: boolean }) {
+const Row = memo(function Row({ entry, pinned }: { entry: TrafficEntry; pinned: boolean }) {
   const treated = entry.treatment === 'treated'
   const detail = [
     entry.status ? `${entry.status}` : 'in flight',
@@ -55,6 +62,8 @@ function Row({ entry, pinned }: { entry: TrafficEntry; pinned: boolean }) {
         {entry.path}
       </span>
       <span className={`tr__mark tr__mark--${entry.treatment}`}>{markOf(entry)}</span>
+      {/* The title tooltip is mouse-only; say the same thing to assistive tech. */}
+      <span className="u-sr-only">{detail}</span>
     </>
   )
 
@@ -72,13 +81,16 @@ function Row({ entry, pinned }: { entry: TrafficEntry; pinned: boolean }) {
       className="tr"
       data-treatment="treated"
       data-active={pinned}
+      aria-pressed={pinned}
       title={detail}
-      onClick={() => store.pin(pinned ? null : (entry.exchangeId ?? null))}
+      onClick={() => {
+        store.pin(pinned ? null : (entry.exchangeId ?? null))
+      }}
     >
       {inner}
     </button>
   )
-}
+})
 
 function markOf(entry: TrafficEntry): string {
   if (entry.treatment === 'treated') {
@@ -86,15 +98,4 @@ function markOf(entry: TrafficEntry): string {
   }
   if (entry.treatment === 'clean') return 'clean'
   return typeTag(entry.contentType)
-}
-
-/** Short, honest label for why a request was waved past. */
-function typeTag(contentType?: string): string {
-  if (!contentType) return 'asset'
-  if (contentType.includes('css')) return 'css'
-  if (contentType.includes('javascript')) return 'js'
-  if (contentType.startsWith('font/')) return 'font'
-  if (contentType.startsWith('image/')) return 'image'
-  if (contentType.includes('json')) return 'json'
-  return contentType.split('/')[1] ?? 'asset'
 }

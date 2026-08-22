@@ -1,0 +1,131 @@
+/* Payload inspector: the matrix and its chips. */
+
+.matrix {
+  display: grid;
+  grid-template-columns: 62px 1fr 1fr;
+  grid-template-rows: auto 1fr 1fr;
+  height: 100%;
+  min-height: 0;
+}
+
+.matrix__corner {
+  border-right: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.matrix__colhead {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.matrix__colhead--open {
+  border-left: 1px solid var(--line-soft);
+}
+
+.matrix__rowhead {
+  border-right: 1px solid var(--line-soft);
+  display: grid;
+  place-items: center;
+  padding: 6px 0;
+}
+
+.matrix__rowhead span {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-family: var(--display);
+  font-variation-settings: 'wdth' 70;
+  font-weight: 600;
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.matrix__cell {
+  min-height: 0;
+  overflow: auto;
+  padding: 9px 12px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.62;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink-2);
+}
+
+.matrix__cell--open {
+  border-left: 1px solid var(--line-soft);
+}
+
+.matrix__cell.matrix__row2,
+.matrix__rowhead.matrix__row2 {
+  border-top: 1px solid var(--line-soft);
+}
+
+.matrix__empty {
+  color: var(--ink-3);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.chip {
+  border-radius: 2px;
+  padding: 0 3px;
+  cursor: default;
+  transition:
+    box-shadow 160ms var(--ease),
+    background 160ms var(--ease);
+}
+
+.chip--real {
+  color: var(--warm);
+  background: var(--warm-soft);
+  border-bottom: 1px solid var(--warm-line);
+}
+
+.chip--token {
+  color: var(--cool);
+  background: var(--cool-soft);
+  border-bottom: 1px solid var(--cool-line);
+}
+
+.chip[data-hot='true'] {
+  box-shadow: 0 0 0 1px currentColor;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ---------------------------------------------------------------- vault -- */
+
+.hist {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.hist__btn {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 2px 5px;
+  transition:
+    color 160ms var(--ease),
+    border-color 160ms var(--ease);
+}
+
+.hist__btn:hover {
+  color: var(--ink-2);
+  border-color: var(--ink-3);
+}
+
+.hist__btn[data-active='true'] {
+  color: var(--warm);
+  border-color: var(--warm-line);
+  background: var(--warm-soft);
+}
+
+/* ----------------------------------------------------------- responsive -- */

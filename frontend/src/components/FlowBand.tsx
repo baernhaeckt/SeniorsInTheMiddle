@@ -1,8 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { COPY } from '../copy'
+import { edgeX, laneY } from '../engine/geometry'
+import { activeExchange, type Stage } from '../engine/store'
+import { useStore } from '../engine/useStore'
+import { cssVars } from '../ui/cssVars'
+import { BREAKPOINT_NARROW } from '../ui/hooks'
 import { Gate } from './Gate'
 import { PacketLayer } from './PacketLayer'
-import { edgeX, laneY } from '../engine/geometry'
-import type { AppState, Exchange, Stage } from '../engine/store'
 
 interface Ripple {
   id: number
@@ -18,106 +22,146 @@ interface Mote {
   durationMs: number
 }
 
-let rippleSeq = 0
-let moteSeq = 0
-
 const MAX_MOTES = 26
+const RIPPLE_MS = 1000
 
-export function FlowBand({ state }: { state: AppState }) {
+/**
+ * Items that appear for a fixed time and then go. Each one owns its removal
+ * timer, so a burst of new arrivals never cancels the cleanup of the last
+ * batch. Everything pending is cleared when the component goes away.
+ */
+function useTransient<T extends { id: number }>(max?: number) {
+  const [items, setItems] = useState<T[]>([])
+  const timers = useRef(new Map<number, number>())
+
+  useEffect(() => {
+    const pending = timers.current
+    return () => {
+      for (const timer of pending.values()) window.clearTimeout(timer)
+      pending.clear()
+    }
+  }, [])
+
+  const add = (fresh: T[], lifetimeOf: (item: T) => number) => {
+    if (fresh.length === 0) return
+    setItems((current) => {
+      const next = [...current, ...fresh]
+      return max === undefined ? next : next.slice(-max)
+    })
+    for (const item of fresh) {
+      const timer = window.setTimeout(() => {
+        timers.current.delete(item.id)
+        setItems((current) => current.filter((other) => other.id !== item.id))
+      }, lifetimeOf(item))
+      timers.current.set(item.id, timer)
+    }
+  }
+
+  return [items, add] as const
+}
+
+export function FlowBand() {
+  const exchanges = useStore((state) => state.exchanges)
+  const traffic = useStore((state) => state.traffic)
+  const proxy = useStore((state) => state.proxy)
+
   const band = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
-  const [ripples, setRipples] = useState<Ripple[]>([])
-  const [motes, setMotes] = useState<Mote[]>([])
+  const [ripples, addRipples] = useTransient<Ripple>()
+  const [motes, addMotes] = useTransient<Mote>(MAX_MOTES)
+  const seq = useRef(0)
+  /** Last stage seen per exchange still on the band. Pruned with the store's list. */
   const seenStages = useRef(new Map<string, Stage>())
-  const seenRequests = useRef(new Set<string>())
+  const lastTrafficSeq = useRef(0)
 
   useLayoutEffect(() => {
     const element = band.current
     if (!element) return
-    const observer = new ResizeObserver(([entry]) => {
-      setSize({ width: entry.contentRect.width, height: entry.contentRect.height })
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (entry) setSize({ width: entry.contentRect.width, height: entry.contentRect.height })
     })
     observer.observe(element)
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+    }
   }, [])
 
   // A packet reaching the wall sends a shockwave through it, both ways.
   useEffect(() => {
     if (size.height === 0) return
+    const seen = seenStages.current
     const fresh: Ripple[] = []
+    const alive = new Set<string>()
 
-    for (const exchange of state.exchanges) {
-      const previous = seenStages.current.get(exchange.id)
+    for (const exchange of exchanges) {
+      alive.add(exchange.id)
+      const previous = seen.get(exchange.id)
       if (previous === exchange.stage) continue
-      seenStages.current.set(exchange.id, exchange.stage)
+      seen.set(exchange.id, exchange.stage)
       if (previous === undefined) continue
 
       if (exchange.stage === 'redact') {
-        rippleSeq += 1
-        fresh.push({ id: rippleSeq, top: laneY('request', size.height), tone: 'warm' })
+        seq.current += 1
+        fresh.push({ id: seq.current, top: laneY('request', size.height), tone: 'warm' })
       }
       if (exchange.stage === 'rehydrate') {
-        rippleSeq += 1
-        fresh.push({ id: rippleSeq, top: laneY('response', size.height), tone: 'cool' })
+        seq.current += 1
+        fresh.push({ id: seq.current, top: laneY('response', size.height), tone: 'cool' })
       }
     }
+    for (const id of seen.keys()) if (!alive.has(id)) seen.delete(id)
 
-    if (fresh.length === 0) return
-    setRipples((current) => [...current, ...fresh])
-    const timer = window.setTimeout(() => {
-      const ids = new Set(fresh.map((item) => item.id))
-      setRipples((current) => current.filter((item) => !ids.has(item.id)))
-    }, 1000)
-    return () => window.clearTimeout(timer)
-  }, [state.exchanges, size.height])
+    addRipples(fresh, () => RIPPLE_MS)
+    // addRipples is stable for the component's lifetime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exchanges, size.height])
 
   // Untreated traffic crosses the middle without stopping. Most of the traffic
   // on a real line looks like this.
   useEffect(() => {
     const fresh: Mote[] = []
-    for (const entry of state.traffic) {
-      if (seenRequests.current.has(entry.requestId)) continue
-      seenRequests.current.add(entry.requestId)
+    let newest = lastTrafficSeq.current
+    for (const entry of traffic) {
+      if (entry.seq <= lastTrafficSeq.current) break
+      newest = Math.max(newest, entry.seq)
       if (entry.treatment === 'treated') continue
-      moteSeq += 1
+      seq.current += 1
       fresh.push({
-        id: moteSeq,
+        id: seq.current,
         treatment: entry.treatment,
-        offset: (moteSeq % 7) * 7 - 21,
-        durationMs: 1700 + (moteSeq % 5) * 220,
+        offset: (seq.current % 7) * 7 - 21,
+        durationMs: 1700 + (seq.current % 5) * 220,
       })
     }
-    if (fresh.length === 0) return
+    lastTrafficSeq.current = newest
+    addMotes(fresh.reverse(), (mote) => mote.durationMs + 200)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [traffic])
 
-    setMotes((current) => [...current, ...fresh].slice(-MAX_MOTES))
-    const longest = Math.max(...fresh.map((mote) => mote.durationMs))
-    const timer = window.setTimeout(() => {
-      const ids = new Set(fresh.map((mote) => mote.id))
-      setMotes((current) => current.filter((mote) => !ids.has(mote.id)))
-    }, longest + 200)
-    return () => window.clearTimeout(timer)
-  }, [state.traffic])
-
-  const active = activeExchange(state.exchanges)
+  const active = activeExchange(exchanges)
   const near = edgeX(size.width)
+  const narrow = size.width < BREAKPOINT_NARROW
 
   return (
-    <section className="band" ref={band} aria-label="Live traffic across the boundary">
+    <section
+      className="band"
+      ref={band}
+      data-narrow={narrow}
+      aria-label="Live traffic across the boundary"
+    >
       <div className="band__zone band__zone--trusted" />
       <div className="band__zone band__zone--open" />
 
       <span className="u-label band__zonelabel band__zonelabel--trusted">Trusted side</span>
       <span className="u-label band__zonelabel band__zonelabel--open">Open internet</span>
 
-      <div
-        className="rail"
-        style={{ '--y': `${laneY('request', size.height)}px` } as React.CSSProperties}
-      >
+      <div className="rail" style={cssVars({ '--y': `${laneY('request', size.height)}px` })}>
         <span className="rail__tag">Treated request →</span>
       </div>
       <div
         className="rail rail--return"
-        style={{ '--y': `${laneY('response', size.height)}px` } as React.CSSProperties}
+        style={cssVars({ '--y': `${laneY('response', size.height)}px` })}
       >
         <span className="rail__tag">← Restored response</span>
       </div>
@@ -127,14 +171,12 @@ export function FlowBand({ state }: { state: AppState }) {
           <span
             key={mote.id}
             className={`mote mote--${mote.treatment}`}
-            style={
-              {
-                '--from': `${near}px`,
-                '--to': `${size.width - near}px`,
-                '--dy': `${mote.offset}px`,
-                '--dur': `${mote.durationMs}ms`,
-              } as React.CSSProperties
-            }
+            style={cssVars({
+              '--from': `${near}px`,
+              '--to': `${size.width - near}px`,
+              '--dy': `${mote.offset}px`,
+              '--dur': `${mote.durationMs}ms`,
+            })}
           />
         ))}
 
@@ -153,7 +195,7 @@ export function FlowBand({ state }: { state: AppState }) {
         ))}
       </div>
 
-      <div className="node node--trusted" style={{ left: `${size.width < 760 ? 16 : 11.5}%` }}>
+      <div className="node node--trusted">
         <div className="node__ring">
           <ClientGlyph />
         </div>
@@ -161,11 +203,11 @@ export function FlowBand({ state }: { state: AppState }) {
         <div className="node__meta">
           {active ? active.clientLabel : 'behind the proxy'}
           <br />
-          {state.proxy?.region ?? 'Bern'}
+          {proxy?.region ?? COPY.defaultRegion}
         </div>
       </div>
 
-      <div className="node node--open" style={{ left: `${size.width < 760 ? 84 : 88.5}%` }}>
+      <div className="node node--open">
         <div className="node__ring">
           <OriginGlyph />
         </div>
@@ -177,9 +219,9 @@ export function FlowBand({ state }: { state: AppState }) {
         </div>
       </div>
 
-      <Gate active={active} proxy={state.proxy} />
+      <Gate active={active} proxy={proxy} />
 
-      <PacketLayer exchanges={state.exchanges} width={size.width} height={size.height} />
+      <PacketLayer exchanges={exchanges} width={size.width} height={size.height} />
 
       <ul className="legend">
         <li className="legend__item legend__item--passthrough">Passed untouched</li>
@@ -194,14 +236,17 @@ export function FlowBand({ state }: { state: AppState }) {
   )
 }
 
-/** The newest treated exchange still in motion. Untreated traffic never lands here. */
-function activeExchange(exchanges: Exchange[]): Exchange | null {
-  return exchanges.find((exchange) => exchange.stage !== 'done') ?? null
-}
-
 function ClientGlyph() {
   return (
-    <svg width="36" height="36" viewBox="0 0 28 28" fill="none" stroke="currentColor" strokeWidth="1.3">
+    <svg
+      width="36"
+      height="36"
+      viewBox="0 0 28 28"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      aria-hidden="true"
+    >
       <rect x="4.5" y="5" width="19" height="14" rx="1.6" />
       <path d="M10 22.5h8" strokeLinecap="round" />
       <path d="M14 19v3.5" strokeLinecap="round" />
@@ -211,7 +256,15 @@ function ClientGlyph() {
 
 function OriginGlyph() {
   return (
-    <svg width="36" height="36" viewBox="0 0 28 28" fill="none" stroke="currentColor" strokeWidth="1.3">
+    <svg
+      width="36"
+      height="36"
+      viewBox="0 0 28 28"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      aria-hidden="true"
+    >
       <circle cx="14" cy="14" r="10" />
       <ellipse cx="14" cy="14" rx="4.2" ry="10" />
       <path d="M4.4 11h19.2M4.4 17h19.2" strokeLinecap="round" />

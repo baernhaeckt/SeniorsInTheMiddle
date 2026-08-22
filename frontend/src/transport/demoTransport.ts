@@ -32,7 +32,11 @@ export function createDemoTransport(): Transport {
   }
 
   const jitter = (base: number, spread: number) => base + Math.random() * spread
-  const pick = <T>(items: T[]) => items[Math.floor(Math.random() * items.length)]
+  const pick = <T>(items: readonly T[]): T => {
+    const item = items[Math.floor(Math.random() * items.length)]
+    if (item === undefined) throw new Error('demo sample list is empty')
+    return item
+  }
   const nextRequestId = () => `r-${String((requestSeq += 1)).padStart(5, '0')}`
 
   /** An asset or an uninteresting body: observed, completed, done. */
@@ -70,7 +74,7 @@ export function createDemoTransport(): Transport {
 
   /** A request with something in it: the full lifecycle, slowed to be watchable. */
   const runTreated = () => {
-    const scenario = TREATED[exchangeSeq % TREATED.length]
+    const scenario = TREATED[exchangeSeq % TREATED.length] ?? pick(TREATED)
     const compiled = compileExchange(scenario, exchangeSeq)
     const exchangeId = `x-${String(exchangeSeq).padStart(4, '0')}`
     const requestId = nextRequestId()
@@ -202,7 +206,6 @@ export function createDemoTransport(): Transport {
   }
 
   return {
-    kind: 'demo',
     start() {
       if (running) return
       running = true

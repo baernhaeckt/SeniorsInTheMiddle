@@ -1,7 +1,7 @@
-import { Morph } from './Morph'
+import { stageViewOf } from '../engine/stageView'
+import type { Exchange, ProxyInfo, Stage } from '../engine/store'
 import { excerptAround } from '../engine/text'
-import type { Exchange, Stage } from '../engine/store'
-import type { ProxyInfo } from '../engine/store'
+import { Morph } from './Morph'
 
 const STEPS: { key: string; stages: Stage[]; tone: 'warm' | 'alert' | 'cool' }[] = [
   { key: 'read', stages: ['ingress'], tone: 'warm' },
@@ -11,6 +11,8 @@ const STEPS: { key: string; stages: Stage[]; tone: 'warm' | 'alert' | 'cool' }[]
   { key: 'receive', stages: ['return'], tone: 'cool' },
   { key: 'restore', stages: ['rehydrate', 'deliver'], tone: 'warm' },
 ]
+
+const READOUT_WIDTH = 108
 
 interface GateProps {
   active: Exchange | null
@@ -69,91 +71,53 @@ type Readout =
       focusClass: string
     }
 
+const IDLE: Readout = { kind: 'idle', label: 'idle', meta: '—' }
+
+/** What the label row says at each stage. The body and focus come from `stageViewOf`. */
+function labelOf(exchange: Exchange): { label: string; meta: string; focusClass: string } | null {
+  const count = exchange.entities.length
+  const values = `${count} value${count === 1 ? '' : 's'}`
+  switch (exchange.stage) {
+    case 'ingress':
+      return { label: 'reading request', meta: exchange.id, focusClass: 'tm__real' }
+    case 'inspect':
+      return {
+        label: 'identifiers found',
+        meta: `${count} · ${exchange.scannedMs ?? 0} ms`,
+        focusClass: 'tm__pii',
+      }
+    case 'redact':
+    case 'egress':
+      return { label: 'held at the boundary', meta: values, focusClass: 'tm__token' }
+    case 'thinking':
+      return {
+        label: 'sent to destination',
+        meta: exchange.target ?? exchange.host,
+        focusClass: 'tm__token',
+      }
+    case 'return':
+      return {
+        label: 'response received',
+        meta: `${exchange.upstreamMs ?? 0} ms`,
+        focusClass: 'tm__token',
+      }
+    case 'rehydrate':
+    case 'deliver':
+      return { label: 'restored for the client', meta: values, focusClass: 'tm__real' }
+    case 'done':
+      return null
+  }
+}
+
 /**
  * The readout always frames the same identifier, so the part that changes stays
  * in the same place on screen.
  */
 function readoutOf(exchange: Exchange | null): Readout {
-  if (!exchange) return { kind: 'idle', label: 'idle', meta: '—' }
-
-  const first = exchange.entities[0]
-  const count = exchange.entities.length
-
-  const build = (
-    label: string,
-    meta: string,
-    text: string,
-    focus: string,
-    focusClass: string,
-  ): Readout => {
-    const parts = excerptAround(text, focus, 108)
-    return {
-      kind: 'text',
-      label,
-      meta,
-      before: parts.before,
-      focus: parts.focus,
-      after: parts.after,
-      focusClass,
-    }
-  }
-
-  switch (exchange.stage) {
-    case 'ingress':
-      return build('reading request', exchange.id, exchange.requestBody, first?.value ?? '', 'tm__real')
-
-    case 'inspect':
-      return build(
-        'identifiers found',
-        `${count} · ${exchange.scannedMs ?? 0} ms`,
-        exchange.requestBody,
-        first?.value ?? '',
-        'tm__pii',
-      )
-
-    case 'redact':
-    case 'egress':
-      return build(
-        'held at the boundary',
-        `${count} value${count === 1 ? '' : 's'}`,
-        exchange.redactedRequestBody ?? exchange.requestBody,
-        first?.token ?? '',
-        
-        'tm__token',
-      )
-
-    case 'thinking':
-      return build(
-        'sent to destination',
-        exchange.target ?? exchange.host,
-        exchange.redactedRequestBody ?? exchange.requestBody,
-        first?.token ?? '',
-        
-        'tm__token',
-      )
-
-    case 'return':
-      return build(
-        'response received',
-        `${exchange.upstreamMs ?? 0} ms`,
-        exchange.tokenizedResponseBody ?? '',
-        first?.token ?? '',
-        
-        'tm__token',
-      )
-
-    case 'rehydrate':
-    case 'deliver':
-      return build(
-        'restored for the client',
-        `${count} value${count === 1 ? '' : 's'}`,
-        exchange.responseBody ?? '',
-        first?.value ?? '',
-        
-        'tm__real',
-      )
-
-    default:
-      return { kind: 'idle', label: 'idle', meta: '—' }
-  }
+  if (!exchange) return IDLE
+  const label = labelOf(exchange)
+  if (!label) return IDLE
+  const view = stageViewOf(exchange)
+  const parts = excerptAround(view.text, view.focus, READOUT_WIDTH)
+  return { kind: 'text', ...label, ...parts }
 }

@@ -1,0 +1,133 @@
+/* Shell, panels and the responsive floor. */
+
+/* ---------------------------------------------------------------- shell -- */
+
+.shell {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(340px, 56fr) minmax(232px, 44fr);
+  gap: var(--gap);
+  height: 100%;
+  padding: 14px 16px 16px;
+}
+
+.panel {
+  position: relative;
+  min-height: 0;
+  background: linear-gradient(180deg, var(--panel-hi), var(--panel));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  flex: none;
+}
+
+.panel__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.panel__note {
+  font-size: 10px;
+  color: var(--ink-3);
+  font-family: var(--mono);
+}
+
+/* ----------------------------------------------------------------- head -- */
+
+.floor {
+  display: grid;
+  grid-template-columns: minmax(292px, 1.05fr) minmax(0, 2fr) minmax(236px, 0.82fr);
+  gap: var(--gap);
+  min-height: 0;
+}
+
+.floor > .panel {
+  animation: rise-flat 600ms var(--ease) both;
+}
+
+.floor > .panel:nth-child(1) {
+  animation-delay: 240ms;
+}
+
+.floor > .panel:nth-child(2) {
+  animation-delay: 320ms;
+}
+
+.floor > .panel:nth-child(3) {
+  animation-delay: 400ms;
+}
+
+@keyframes rise-flat {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* --------------------------------------------------------------- matrix -- */
+
+@media (max-width: 1180px) {
+  body {
+    overflow: auto;
+  }
+
+  .shell {
+    height: auto;
+    min-height: 100%;
+    grid-template-rows: auto 420px auto;
+  }
+
+  .floor {
+    grid-template-columns: 1fr;
+  }
+
+  .floor > .panel {
+    min-height: 240px;
+  }
+
+  .head {
+    flex-wrap: wrap;
+  }
+
+  .setupcta {
+    order: 3;
+    margin-inline: 0;
+  }
+}
+
+.panel__empty {
+  padding: 10px 12px;
+}
+
+.u-label--warm {
+  color: var(--warm);
+}
+
+.u-label--cool {
+  color: var(--cool);
+}
+
+/* Visually hidden, still read out. */
+.u-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

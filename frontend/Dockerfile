@@ -4,7 +4,7 @@ WORKDIR /app
 
 # The public registry, not an internal mirror.
 COPY package.json package-lock.json .npmrc ./
-RUN npm ci --no-audit --no-fund
+RUN npm ci --no-audit --no-fund --ignore-scripts
 
 COPY . .
 # No build-time configuration: the app asks for the proxy address on first run.

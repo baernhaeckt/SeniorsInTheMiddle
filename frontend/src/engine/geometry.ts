@@ -1,6 +1,6 @@
 import type { Stage } from './store'
 
-export type Tone = 'warm' | 'cool'
+type Tone = 'warm' | 'cool'
 export type PacketKind = 'request' | 'response'
 
 export interface Slot {

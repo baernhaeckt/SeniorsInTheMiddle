@@ -1,0 +1,110 @@
+/* Traffic list rows and markings. */
+
+.traffic__treated {
+  color: var(--alert);
+}
+
+.tr {
+  display: grid;
+  grid-template-columns: 50px 32px minmax(0, 1fr) auto;
+  gap: 7px;
+  align-items: center;
+  width: 100%;
+  padding: 3px 11px 3px 9px;
+  border-left: 2px solid var(--line);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.6;
+  text-align: left;
+  animation: slide-in 260ms var(--ease) both;
+}
+
+.tr[data-treatment='clean'] {
+  border-left-color: var(--cool-2);
+}
+
+.tr[data-treatment='treated'] {
+  border-left-color: var(--alert);
+  cursor: pointer;
+}
+
+.tr[data-treatment='treated']:hover {
+  background: rgba(255, 78, 119, 0.08);
+}
+
+.tr[data-active='true'] {
+  background: rgba(255, 176, 92, 0.1);
+}
+
+.tr__at {
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.tr__method {
+  color: var(--ink-3);
+  font-size: 9.5px;
+}
+
+.tr[data-treatment='treated'] .tr__method {
+  color: var(--ink);
+}
+
+.tr__url {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-3);
+}
+
+.tr__url b {
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+.tr[data-treatment='passthrough'] .tr__url,
+.tr[data-treatment='passthrough'] .tr__url b {
+  color: var(--ink-3);
+}
+
+.tr[data-treatment='treated'] .tr__url b {
+  color: var(--warm);
+}
+
+.tr__mark {
+  flex: none;
+  font-size: 9px;
+  padding: 0 4px;
+  border-radius: 2px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.tr__mark--treated {
+  color: var(--alert);
+  background: var(--alert-soft);
+  border-color: var(--alert-line);
+}
+
+.tr__mark--clean {
+  color: var(--cool-2);
+}
+
+.tr__mark--passthrough {
+  color: var(--ink-3);
+  opacity: 0.75;
+}
+
+.traffic__foot {
+  flex: none;
+  padding: 7px 12px;
+  border-top: 1px solid var(--line-soft);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- motes -- */

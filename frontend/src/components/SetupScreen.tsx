@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import {
   BLANK_CONFIG,
   PLACEHOLDERS,
@@ -7,6 +7,8 @@ import {
   type ConfigErrors,
   type RuntimeConfig,
 } from '../config'
+import { COPY } from '../copy'
+import { Mark, Wordmark } from './Brand'
 
 interface SetupScreenProps {
   /** Current values when reconfiguring. Null on first run. */
@@ -23,7 +25,7 @@ interface SetupScreenProps {
 export function SetupScreen({ initial, onSave, onCancel }: SetupScreenProps) {
   const [draft, setDraft] = useState<RuntimeConfig>(initial ?? BLANK_CONFIG)
   const [errors, setErrors] = useState<ConfigErrors>({})
-  const [advanced, setAdvanced] = useState(Boolean(initial?.caUrl || initial?.pacUrl))
+  const [advanced, setAdvanced] = useState(Boolean(initial?.caUrl ?? initial?.pacUrl))
   // The demo feed talks to nothing, so its proxy address is opt-in.
   const [showProxy, setShowProxy] = useState(Boolean(initial?.proxyHost))
   const proxyOptional = draft.source === 'demo'
@@ -33,7 +35,7 @@ export function SetupScreen({ initial, onSave, onCancel }: SetupScreenProps) {
     setErrors((current) => ({ ...current, [key]: undefined }))
   }
 
-  const submit = (event: React.FormEvent) => {
+  const submit = (event: FormEvent) => {
     event.preventDefault()
     const cleaned = normalize(draft)
     const found = validate(cleaned)
@@ -48,21 +50,12 @@ export function SetupScreen({ initial, onSave, onCancel }: SetupScreenProps) {
     <div className="boot">
       <form className="boot__card" onSubmit={submit} noValidate>
         <header className="boot__head">
-          <svg className="boot__mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-            <path
-              d="M16 2 4 7v9c0 7.2 5 12.4 12 14 7-1.6 12-6.8 12-14V7L16 2Z"
-              stroke="var(--warm)"
-              strokeWidth="1.4"
-            />
-            <path d="M16 2v28c7-1.6 12-6.8 12-14V7L16 2Z" fill="var(--cool)" opacity=".14" />
-            <path d="M16 2v28" stroke="var(--ink)" strokeWidth="1" opacity=".7" />
-            <rect x="11.5" y="14" width="9" height="3.6" rx="1" fill="var(--alert)" />
-          </svg>
+          <Mark className="boot__mark" />
           <div>
             <h1 className="boot__name u-display">
-              Seniors in the <em>Middle</em>
+              <Wordmark />
             </h1>
-            <p className="u-label boot__sub">Transparent http/https proxy · Bärn Häckt 2026</p>
+            <p className="u-label boot__sub">{COPY.tagline}</p>
           </div>
         </header>
 
@@ -80,7 +73,9 @@ export function SetupScreen({ initial, onSave, onCancel }: SetupScreenProps) {
               name="source"
               value="ws"
               current={draft.source}
-              onPick={() => set('source', 'ws')}
+              onPick={() => {
+                set('source', 'ws')
+              }}
               title="Live proxy"
               note="Read events from a running backend."
             />
@@ -88,7 +83,9 @@ export function SetupScreen({ initial, onSave, onCancel }: SetupScreenProps) {
               name="source"
               value="demo"
               current={draft.source}
-              onPick={() => set('source', 'demo')}
+              onPick={() => {
+                set('source', 'demo')
+              }}
               title="Demo feed"
               note="Canned traffic, no backend needed."
             />
@@ -101,7 +98,9 @@ export function SetupScreen({ initial, onSave, onCancel }: SetupScreenProps) {
               value={draft.wsUrl}
               placeholder={PLACEHOLDERS.wsUrl}
               error={errors.wsUrl}
-              onChange={(value) => set('wsUrl', value)}
+              onChange={(value) => {
+                set('wsUrl', value)
+              }}
             />
           )}
         </fieldset>
@@ -111,79 +110,95 @@ export function SetupScreen({ initial, onSave, onCancel }: SetupScreenProps) {
             <p className="group__note">
               The demo feed needs no proxy. You can still add an address for the setup guide.
             </p>
-            <button type="button" className="group__more" onClick={() => setShowProxy(true)}>
+            <button
+              type="button"
+              className="group__more"
+              onClick={() => {
+                setShowProxy(true)
+              }}
+            >
               Add a proxy address
             </button>
           </div>
         ) : (
-        <fieldset className="group">
-          <legend className="u-label group__legend">
-            Proxy address{proxyOptional ? ' (optional)' : ''}
-          </legend>
-          <p className="group__note">
-            What the setup guide tells people to type into a device.
-          </p>
+          <fieldset className="group">
+            <legend className="u-label group__legend">
+              Proxy address{proxyOptional ? ' (optional)' : ''}
+            </legend>
+            <p className="group__note">What the setup guide tells people to type into a device.</p>
 
-          <div className="group__row">
-            <Input
-              id="proxyHost"
-              label="Host"
-              value={draft.proxyHost}
-              placeholder={PLACEHOLDERS.proxyHost}
-              error={errors.proxyHost}
-              onChange={(value) => set('proxyHost', value)}
-            />
-            <Input
-              id="proxyPort"
-              label="Port"
-              value={draft.proxyPort}
-              placeholder={PLACEHOLDERS.proxyPort}
-              error={errors.proxyPort}
-              narrow
-              onChange={(value) => set('proxyPort', value)}
-            />
-          </div>
-
-          <Input
-            id="networkName"
-            label="Wi-Fi name"
-            value={draft.networkName}
-            placeholder={PLACEHOLDERS.networkName}
-            hint="The network that already routes through the proxy. Leave empty if there is none."
-            onChange={(value) => set('networkName', value)}
-          />
-
-          <button
-            type="button"
-            className="group__more"
-            onClick={() => setAdvanced((open) => !open)}
-            aria-expanded={advanced}
-          >
-            {advanced ? 'Hide' : 'Show'} certificate and PAC URLs
-          </button>
-
-          {advanced && (
-            <>
+            <div className="group__row">
               <Input
-                id="caUrl"
-                label="Certificate"
-                value={draft.caUrl}
-                placeholder={PLACEHOLDERS.caUrl}
-                error={errors.caUrl}
-                hint="Leave empty to derive it from the host and port."
-                onChange={(value) => set('caUrl', value)}
+                id="proxyHost"
+                label="Host"
+                value={draft.proxyHost}
+                placeholder={PLACEHOLDERS.proxyHost}
+                error={errors.proxyHost}
+                onChange={(value) => {
+                  set('proxyHost', value)
+                }}
               />
               <Input
-                id="pacUrl"
-                label="PAC file"
-                value={draft.pacUrl}
-                placeholder={PLACEHOLDERS.pacUrl}
-                error={errors.pacUrl}
-                onChange={(value) => set('pacUrl', value)}
+                id="proxyPort"
+                label="Port"
+                value={draft.proxyPort}
+                placeholder={PLACEHOLDERS.proxyPort}
+                error={errors.proxyPort}
+                narrow
+                onChange={(value) => {
+                  set('proxyPort', value)
+                }}
               />
-            </>
-          )}
-        </fieldset>
+            </div>
+
+            <Input
+              id="networkName"
+              label="Wi-Fi name"
+              value={draft.networkName}
+              placeholder={PLACEHOLDERS.networkName}
+              hint="The network that already routes through the proxy. Leave empty if there is none."
+              onChange={(value) => {
+                set('networkName', value)
+              }}
+            />
+
+            <button
+              type="button"
+              className="group__more"
+              onClick={() => {
+                setAdvanced((open) => !open)
+              }}
+              aria-expanded={advanced}
+            >
+              {advanced ? 'Hide' : 'Show'} certificate and PAC URLs
+            </button>
+
+            {advanced && (
+              <>
+                <Input
+                  id="caUrl"
+                  label="Certificate"
+                  value={draft.caUrl}
+                  placeholder={PLACEHOLDERS.caUrl}
+                  error={errors.caUrl}
+                  hint="Leave empty to derive it from the host and port."
+                  onChange={(value) => {
+                    set('caUrl', value)
+                  }}
+                />
+                <Input
+                  id="pacUrl"
+                  label="PAC file"
+                  value={draft.pacUrl}
+                  placeholder={PLACEHOLDERS.pacUrl}
+                  error={errors.pacUrl}
+                  onChange={(value) => {
+                    set('pacUrl', value)
+                  }}
+                />
+              </>
+            )}
+          </fieldset>
         )}
 
         <footer className="boot__foot">
@@ -213,6 +228,7 @@ interface InputProps {
 }
 
 function Input({ id, label, value, placeholder, error, hint, narrow, onChange }: InputProps) {
+  const note = error ?? hint
   return (
     <div className="input" data-narrow={narrow} data-invalid={Boolean(error)}>
       <label className="u-label input__label" htmlFor={id}>
@@ -226,12 +242,14 @@ function Input({ id, label, value, placeholder, error, hint, narrow, onChange }:
         spellCheck={false}
         autoComplete="off"
         aria-invalid={Boolean(error)}
-        aria-describedby={error || hint ? `${id}-note` : undefined}
-        onChange={(event) => onChange(event.target.value)}
+        aria-describedby={note ? `${id}-note` : undefined}
+        onChange={(event) => {
+          onChange(event.target.value)
+        }}
       />
-      {(error || hint) && (
+      {note && (
         <p className="input__note" id={`${id}-note`} data-error={Boolean(error)}>
-          {error ?? hint}
+          {note}
         </p>
       )}
     </div>

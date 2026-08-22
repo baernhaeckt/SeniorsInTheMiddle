@@ -1,0 +1,76 @@
+/* The token-to-value table. */
+
+.vault__count {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--warm);
+}
+
+.vrow {
+  display: grid;
+  grid-template-columns: 1fr 12px 1fr auto;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  animation: rise-flat 320ms var(--ease) both;
+}
+
+.vrow[data-hot='true'] {
+  background: rgba(255, 176, 92, 0.06);
+}
+
+.vrow__token {
+  color: var(--cool);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vrow__arrow {
+  color: var(--ink-3);
+  text-align: center;
+}
+
+.vrow__value {
+  color: var(--warm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  filter: blur(3.6px);
+  transition: filter 180ms var(--ease);
+  cursor: pointer;
+}
+
+.vrow:hover .vrow__value,
+.vrow__value:focus-visible {
+  filter: blur(0);
+}
+
+.vrow__kind {
+  font-family: var(--display);
+  font-variation-settings: 'wdth' 70;
+  font-weight: 600;
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 1px 4px;
+}
+
+.vault__seal {
+  flex: none;
+  padding: 7px 12px;
+  border-top: 1px solid var(--line-soft);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-3);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ------------------------------------------------------------------ log -- */

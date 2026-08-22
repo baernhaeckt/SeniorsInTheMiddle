@@ -1,11 +1,24 @@
-import { useEffect, useMemo, useRef } from 'react'
-import type { Entity } from '../protocol/types'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { easeInOut, originFor, slotFor, type PacketKind } from '../engine/geometry'
+import { isTokenizedStage, stageViewOf } from '../engine/stageView'
+import { store, type Exchange, type Stage } from '../engine/store'
 import { excerptAround } from '../engine/text'
-import { retireExchange, type Exchange, type Stage } from '../engine/store'
+import { prefersReducedMotion } from '../ui/hooks'
 
-const REQUEST_STAGES: Stage[] = ['ingress', 'inspect', 'redact', 'egress', 'thinking']
-const RESPONSE_STAGES: Stage[] = ['return', 'rehydrate', 'deliver']
+const REQUEST_STAGES: ReadonlySet<Stage> = new Set([
+  'ingress',
+  'inspect',
+  'redact',
+  'egress',
+  'thinking',
+])
+const RESPONSE_STAGES: ReadonlySet<Stage> = new Set(['return', 'rehydrate', 'deliver'])
+
+/** Matches `easeInOut` in geometry.ts, for the browser to run the tween. */
+const EASING = 'cubic-bezier(0.65, 0, 0.35, 1)'
+const PACKET_WIDTH = 62
+/** How long a delivered response lingers at the client before it leaves the band. */
+const LINGER_MS = 900
 
 interface PacketLayerProps {
   exchanges: Exchange[]
@@ -17,10 +30,10 @@ export function PacketLayer({ exchanges, width, height }: PacketLayerProps) {
   const packets = useMemo(() => {
     const list: { key: string; exchange: Exchange; kind: PacketKind }[] = []
     for (const exchange of exchanges) {
-      if (REQUEST_STAGES.includes(exchange.stage)) {
+      if (REQUEST_STAGES.has(exchange.stage)) {
         list.push({ key: `${exchange.id}-req`, exchange, kind: 'request' })
       }
-      if (RESPONSE_STAGES.includes(exchange.stage)) {
+      if (RESPONSE_STAGES.has(exchange.stage)) {
         list.push({ key: `${exchange.id}-res`, exchange, kind: 'response' })
       }
     }
@@ -45,46 +58,65 @@ interface PacketProps {
   height: number
 }
 
-function Packet({ exchange, kind, width, height }: PacketProps) {
+const Packet = memo(function Packet({ exchange, kind, width, height }: PacketProps) {
   const node = useRef<HTMLDivElement>(null)
-  const position = useRef(originFor(kind, width, height))
+  // Where it first appears. The ref tracks where it is; the state is only read for the first paint.
+  const [origin] = useState(() => originFor(kind, width, height))
+  const position = useRef(origin)
+  const animation = useRef<Animation | null>(null)
   const slot = slotFor(exchange.stage, kind, width, height)
 
+  // Each new slot starts a tween from wherever the packet is right now, even
+  // if the previous tween was still running.
   useEffect(() => {
     const element = node.current
     if (!element) return
 
     const from = { ...position.current }
     const to = { x: slot.x, y: slot.y }
-    const started = performance.now()
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const duration = reduced ? 1 : slot.travelMs
-    let raf = 0
+    const duration = prefersReducedMotion() ? 1 : slot.travelMs
 
-    const tick = (now: number) => {
-      const progress = Math.min(1, (now - started) / duration)
+    const tween = element.animate([{ transform: translate(from) }, { transform: translate(to) }], {
+      duration,
+      easing: EASING,
+      fill: 'forwards',
+    })
+    animation.current = tween
+    tween.onfinish = () => {
+      position.current = to
+    }
+
+    return () => {
+      // Record where it got to, so the next tween can pick up from there.
+      const progress = tween.effect?.getComputedTiming().progress ?? 1
       const eased = easeInOut(progress)
       position.current = {
         x: from.x + (to.x - from.x) * eased,
         y: from.y + (to.y - from.y) * eased,
       }
-      element.style.transform = `translate3d(${position.current.x}px, ${position.current.y}px, 0)`
-      if (progress < 1) raf = requestAnimationFrame(tick)
+      tween.cancel()
+      element.style.transform = translate(position.current)
     }
-
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
   }, [slot.x, slot.y, slot.travelMs])
 
-  // A delivered response leaves the band once it has reached the client.
+  // Two stages end when the packet arrives, not when the proxy says so:
+  // a dispatched request is "thinking" once it has left the gate, and a
+  // delivered response leaves the band once it has reached the client.
   useEffect(() => {
-    if (kind !== 'response' || exchange.stage !== 'deliver') return
-    const timer = window.setTimeout(() => retireExchange(exchange.id), slot.travelMs + 900)
-    return () => window.clearTimeout(timer)
+    const settles =
+      (kind === 'request' && exchange.stage === 'egress') ||
+      (kind === 'response' && exchange.stage === 'deliver')
+    if (!settles) return
+    const wait = slot.travelMs + (exchange.stage === 'deliver' ? LINGER_MS : 0)
+    const timer = window.setTimeout(() => {
+      store.settle(exchange.id)
+    }, wait)
+    return () => {
+      window.clearTimeout(timer)
+    }
   }, [kind, exchange.stage, exchange.id, slot.travelMs])
 
   const view = viewOf(exchange, kind)
-  const initial = position.current
 
   return (
     <div
@@ -94,14 +126,14 @@ function Packet({ exchange, kind, width, height }: PacketProps) {
         slot.tone === 'warm' ? 'pk--warm' : 'pk--cool',
         exchange.stage === 'inspect' && kind === 'request' ? 'pk--scanned' : '',
         slot.docked ? 'pk--docked' : '',
-      ].join(' ')}
-      style={{ transform: `translate3d(${initial.x}px, ${initial.y}px, 0)` }}
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      style={{ transform: translate(origin) }}
       aria-hidden="true"
     >
       <div className="pk__top">
-        <span className="pk__who">
-          {kind === 'request' ? exchange.clientLabel : exchange.host}
-        </span>
+        <span className="pk__who">{kind === 'request' ? exchange.clientLabel : exchange.host}</span>
         <span className={`pk__count${view.badgeTone ? ` pk__count--${view.badgeTone}` : ''}`}>
           {view.badge}
         </span>
@@ -109,38 +141,39 @@ function Packet({ exchange, kind, width, height }: PacketProps) {
       <div className="pk__text">
         {view.excerpt.before}
         {view.excerpt.focus && (
-          <span className={view.clear ? 'tm__token' : 'tm__real'}>{view.excerpt.focus}</span>
+          <span className={view.tokenized ? 'tm__token' : 'tm__real'}>{view.excerpt.focus}</span>
         )}
         {view.excerpt.after}
       </div>
     </div>
   )
+})
+
+function translate({ x, y }: { x: number; y: number }): string {
+  return `translate3d(${x}px, ${y}px, 0)`
 }
 
 /** What this packet is carrying at this exact point of the trip. */
 function viewOf(exchange: Exchange, kind: PacketKind) {
-  const first: Entity | undefined = exchange.entities[0]
   const count = exchange.entities.length
+  const tokenized = isTokenizedStage(exchange.stage)
+  const body = stageViewOf(exchange)
+  const excerpt = excerptAround(body.text, body.focus, PACKET_WIDTH)
 
   if (kind === 'request') {
-    const tokenized = exchange.stage === 'egress' || exchange.stage === 'thinking'
-    const text = tokenized ? (exchange.redactedRequestBody ?? exchange.requestBody) : exchange.requestBody
-    const focus = tokenized ? (first?.token ?? '') : (first?.value ?? '')
     return {
-      excerpt: excerptAround(text, focus, 62),
+      excerpt,
       badge: tokenized ? `${count} held` : count > 0 ? `${count} PII` : 'scanning',
-      clear: tokenized,
+      tokenized,
       badgeTone: tokenized ? 'clear' : null,
     }
   }
 
   const restored = exchange.stage === 'deliver'
-  const text = restored ? (exchange.responseBody ?? '') : (exchange.tokenizedResponseBody ?? '')
-  const focus = restored ? (first?.value ?? '') : (first?.token ?? '')
   return {
-    excerpt: excerptAround(text, focus, 62),
+    excerpt,
     badge: restored ? `${count} restored` : 'tokenized',
-    clear: !restored,
+    tokenized: !restored,
     badgeTone: restored ? 'home' : 'clear',
   }
 }

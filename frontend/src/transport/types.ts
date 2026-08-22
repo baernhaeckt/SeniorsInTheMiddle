@@ -9,14 +9,17 @@ export interface LinkStatus {
   /** Set while retrying, so the header can count down honestly. */
   attempt?: number
   detail?: string
+  /** Frames received that did not validate against the protocol. */
+  dropped?: number
 }
 
 export interface Transport {
-  /** Human-readable name of the source, e.g. `websocket` or `demo feed`. */
-  readonly kind: 'websocket' | 'demo'
+  /** Open the source. Safe to call after `stop`; it starts over. */
   start(): void
+  /** Close the source and cancel anything pending. */
   stop(): void
   onEvent(handler: (event: ServerEvent) => void): () => void
+  /** Calls the handler immediately with the current status, then on every change. */
   onStatus(handler: (status: LinkStatus) => void): () => void
 }
 
@@ -24,15 +27,14 @@ export interface Transport {
 export function createEmitter<T>() {
   const handlers = new Set<(value: T) => void>()
   return {
-    subscribe(handler: (value: T) => void) {
+    subscribe: (handler: (value: T) => void) => {
       handlers.add(handler)
-      return () => handlers.delete(handler)
+      return () => {
+        handlers.delete(handler)
+      }
     },
-    emit(value: T) {
+    emit: (value: T) => {
       for (const handler of handlers) handler(value)
-    },
-    clear() {
-      handlers.clear()
     },
   }
 }

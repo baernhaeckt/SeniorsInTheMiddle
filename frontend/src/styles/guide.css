@@ -1,0 +1,277 @@
+/* Setup guide dialog. */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  overflow: auto;
+  background: rgba(4, 6, 12, 0.74);
+  backdrop-filter: blur(6px);
+  animation: fade 200ms var(--ease) both;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.sheet__panel {
+  width: min(1040px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  background: linear-gradient(180deg, var(--panel-hi), var(--panel));
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow:
+    0 40px 120px rgba(0, 0, 0, 0.7),
+    0 0 90px rgba(255, 176, 92, 0.05);
+  animation: sheet-in 260ms var(--ease) both;
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+.sheet__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.sheet__title {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: 0.01em;
+}
+
+.sheet__lede {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.sheet__close {
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 5px 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-2);
+}
+
+.sheet__close:hover {
+  border-color: var(--ink-3);
+  color: var(--ink);
+}
+
+.sheet__foot {
+  padding: 14px 24px 18px;
+  border-top: 1px solid var(--line-soft);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+.sheet__foot b {
+  font-weight: 400;
+  color: var(--warm);
+}
+
+/* ---------------------------------------------------------------- steps -- */
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 20px 24px 6px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 26px;
+}
+
+.step {
+  border-top: 2px solid var(--warm-line);
+  padding-top: 4px;
+}
+
+.step__n {
+  display: block;
+  margin: 10px 0 8px;
+  font-size: 30px;
+  line-height: 1;
+  color: var(--warm);
+}
+
+.step__title {
+  margin: 0 0 8px;
+  font-family: var(--display);
+  font-variation-settings: 'wdth' 110;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.step__body {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+.step__body b {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.step__aside {
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+
+/* --------------------------------------------------------------- fields -- */
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: rgba(5, 8, 15, 0.6);
+}
+
+.field__label {
+  flex: none;
+  min-width: 56px;
+}
+
+.field__value {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--warm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field[data-wide='true'] .field__value {
+  font-size: 10.5px;
+}
+
+.field__value--inline {
+  display: inline;
+  color: var(--cool);
+  white-space: normal;
+  word-break: break-all;
+}
+
+.field__copy {
+  flex: none;
+  margin-left: 6px;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--ink-3);
+}
+
+.field__copy:hover {
+  border-color: var(--ink-3);
+  color: var(--ink);
+}
+
+/* ----------------------------------------------------------------- tabs -- */
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 14px 0 10px;
+}
+
+.tabs__tab {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+}
+
+.tabs__tab:hover {
+  color: var(--ink-2);
+}
+
+.tabs__tab[data-active='true'] {
+  color: var(--warm);
+  border-color: var(--warm-line);
+  background: var(--warm-soft);
+}
+
+.howto {
+  margin: 0 0 10px;
+  padding-left: 17px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--ink-2);
+}
+
+.howto li {
+  margin-bottom: 3px;
+}
+
+.marks {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.marks__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+.marks__row .tr__mark {
+  flex: none;
+  min-width: 46px;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .steps {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .setupcta__addr {
+    display: none;
+  }
+}
+
+/* ----------------------------------------------------------- setup boot -- */
+
+.sheet__empty {
+  padding: 22px 24px 6px;
+  max-width: 60ch;
+}

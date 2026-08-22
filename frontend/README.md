@@ -29,18 +29,53 @@ npm run dev     # http://localhost:5173
 npm run build   # static bundle into dist/
 ```
 
+## Working on it
+
+```bash
+npm run check          # everything CI runs: lint, format, types, dead code, tests
+npm run lint           # eslint (type-aware, react-hooks, jsx-a11y) + stylelint
+npm run format         # prettier --write
+npm run typecheck      # tsc -b, strict with noUncheckedIndexedAccess
+npm run knip           # unused files, exports and dependencies
+npm test               # vitest, once
+npm run test:watch
+npm run test:coverage
+```
+
+The `quality` job in `.github/workflows/frontend.yml` runs `check` and `build`
+on every pull request that touches `frontend/`; the deploy job waits for it.
+
+Layout:
+
+| Path              | What lives there                                                                                |
+| ----------------- | ----------------------------------------------------------------------------------------------- |
+| `src/protocol/`   | the wire contract: valibot schemas, the types derived from them, recorded frames in `fixtures/` |
+| `src/transport/`  | where events come from: the WebSocket client and the demo feed                                  |
+| `src/engine/`     | the store and pure helpers: reducer, selectors, geometry, text                                  |
+| `src/components/` | React views; each subscribes to the slice of the store it draws via `useStore`                  |
+| `src/styles/`     | one CSS file per area, plus `tokens.css` and `base.css`                                         |
+| `src/ui/`         | small shared hooks and helpers                                                                  |
+
+Pure modules have unit tests next to them (`*.test.ts`); components have
+`*.test.tsx` with Testing Library. `src/protocol/fixtures/` holds recorded
+event sequences that must parse and reduce end to end; add a file there when
+the proxy starts emitting something new.
+
+Fonts ship with the bundle (`@fontsource`), so the dashboard makes no request
+to anything but the telemetry socket.
+
 ## Configuration
 
 Nothing is baked in at build time, so the same bundle points at any proxy. On
 first run the app opens a setup screen and asks for:
 
-| Field | Meaning |
-| --- | --- |
-| Telemetry stream | live proxy, or the built-in demo feed |
-| WebSocket URL | where to read events from, when the source is the live proxy |
-| Host and port | what the setup guide tells people to type into a device |
-| Wi-Fi name | the network that already routes through the proxy, if there is one |
-| Certificate and PAC URL | optional, derived from host and port when left empty |
+| Field                   | Meaning                                                            |
+| ----------------------- | ------------------------------------------------------------------ |
+| Telemetry stream        | live proxy, or the built-in demo feed                              |
+| WebSocket URL           | where to read events from, when the source is the live proxy       |
+| Host and port           | what the setup guide tells people to type into a device            |
+| Wi-Fi name              | the network that already routes through the proxy, if there is one |
+| Certificate and PAC URL | optional, derived from host and port when left empty               |
 
 The values are saved in `localStorage` under `sitm.config.v1` and belong to that
 browser. Reconfigure in the header reopens the form with the current values, and
@@ -59,9 +94,14 @@ it for real traffic.
 ### The live proxy
 
 Pick Live proxy and give it a `ws://` or `wss://` URL. The socket reconnects on
-its own with backoff, and the header badge reports the real state (`live`,
-`reattaching`, `detached`) with the endpoint spelled out. The dashboard drops any
-frame that does not parse as a protocol event instead of guessing what it meant.
+its own with jittered backoff, and the header badge reports the real state
+(`live`, `reattaching`, `detached`) with the endpoint spelled out.
+
+Every frame is validated against the schemas in `src/protocol/types.ts`. A
+frame that does not validate, including one with an unknown `type`, is dropped
+and counted; the badge shows the count and the first rejection of each kind is
+logged to the console. If the proxy's `hello` announces a protocol version
+other than the one this view was built for, the badge says so.
 
 ## The setup guide
 
@@ -75,32 +115,32 @@ on the setup screen.
 
 Every request through the proxy produces two events:
 
-| Event | Meaning |
-| --- | --- |
-| `request.observed` | a request was seen, and the proxy has decided how to handle it |
-| `request.completed` | it finished; status, size, duration |
+| Event               | Meaning                                                        |
+| ------------------- | -------------------------------------------------------------- |
+| `request.observed`  | a request was seen, and the proxy has decided how to handle it |
+| `request.completed` | it finished; status, size, duration                            |
 
 `request.observed` carries a `treatment`. That value is the marking the traffic
 list shows, and it alone decides whether a request reaches the band:
 
-| Treatment | Meaning |
-| --- | --- |
+| Treatment     | Meaning                                                                     |
+| ------------- | --------------------------------------------------------------------------- |
 | `passthrough` | non-sensitive by type: CSS, scripts, fonts, images. The body is never read. |
-| `clean` | the body was read, nothing identifying in it |
-| `treated` | identifiers found and replaced before the request left |
+| `clean`       | the body was read, nothing identifying in it                                |
+| `treated`     | identifiers found and replaced before the request left                      |
 
 A `treated` request also produces the full lifecycle between those two events.
 Each of these moves its packet on the band to the next position:
 
-| Event | Meaning |
-| --- | --- |
-| `exchange.opened` | method, scheme, host, path, content type, raw request body |
-| `detection.completed` | identifiers found, with kind, offsets, token and confidence |
-| `redaction.completed` | the body with every identifier swapped for its token |
-| `upstream.dispatched` | tokenized body sent on to the destination |
-| `upstream.responded` | the destination's response, still tokenized |
-| `rehydration.completed` | tokens swapped back, for the client's eyes only |
-| `exchange.delivered` | round trip closed, with the latency the proxy measured |
+| Event                   | Meaning                                                     |
+| ----------------------- | ----------------------------------------------------------- |
+| `exchange.opened`       | method, scheme, host, path, content type, raw request body  |
+| `detection.completed`   | identifiers found, with kind, offsets, token and confidence |
+| `redaction.completed`   | the body with every identifier swapped for its token        |
+| `upstream.dispatched`   | tokenized body sent on to the destination                   |
+| `upstream.responded`    | the destination's response, still tokenized                 |
+| `rehydration.completed` | tokens swapped back, for the client's eyes only             |
+| `exchange.delivered`    | round trip closed, with the latency the proxy measured      |
 
 `hello` announces the proxy. `log` can arrive at any time, and the newest line
 sits under the traffic list.
@@ -108,6 +148,12 @@ sits under the traffic list.
 The proxy decides everything. If it never sends `detection.completed`, the
 dashboard shows nothing found. It does not scan the body itself, and it does not
 decide what counts as an asset.
+
+Two transitions on the band are the view's own, because the proxy has no idea
+where a packet is drawn: after `upstream.dispatched` the request sits in the
+`egress` stage until its packet has left the gate, then becomes `thinking`;
+after `exchange.delivered` the response lingers at the client and then leaves
+the band. Both go through `store.settle`.
 
 ## Reading the screen
 

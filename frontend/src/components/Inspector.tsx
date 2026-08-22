@@ -1,14 +1,15 @@
+import { memo } from 'react'
+import { shownExchange, store, type Exchange } from '../engine/store'
 import { prettyBody, splitByValues } from '../engine/text'
-import { store, type AppState, type Exchange } from '../engine/store'
+import { useStore } from '../engine/useStore'
+import type { Entity } from '../protocol/types'
 
-export function Inspector({ state }: { state: AppState }) {
-  // Follow the newest treated exchange that has been round-tripped, so all four
-  // cells hold something to read. Pin any other one from the traffic list.
-  const shown =
-    state.exchanges.find((exchange) => exchange.id === state.pinnedId) ??
-    state.exchanges.find((exchange) => exchange.responseBody) ??
-    state.exchanges[0] ??
-    null
+export function Inspector() {
+  const exchanges = useStore((state) => state.exchanges)
+  const pinnedId = useStore((state) => state.pinnedId)
+  const hoveredToken = useStore((state) => state.hoveredToken)
+  const shown = shownExchange(exchanges, pinnedId)
+  const following = pinnedId === null
 
   return (
     <section className="panel" aria-label="Payload inspector">
@@ -24,10 +25,12 @@ export function Inspector({ state }: { state: AppState }) {
           <button
             type="button"
             className="hist__btn"
-            data-active={state.pinnedId === null}
-            onClick={() => store.pin(null)}
+            data-active={following}
+            onClick={() => {
+              store.pin(null)
+            }}
           >
-            {state.pinnedId === null ? 'following live' : 'follow live'}
+            {following ? 'following live' : 'follow live'}
           </button>
         </div>
       </div>
@@ -36,28 +39,43 @@ export function Inspector({ state }: { state: AppState }) {
         <div className="matrix">
           <div className="matrix__corner" />
           <div className="matrix__colhead">
-            <span className="u-label" style={{ color: 'var(--warm)' }}>
-              What the client sent
-            </span>
+            <span className="u-label u-label--warm">What the client sent</span>
           </div>
           <div className="matrix__colhead matrix__colhead--open">
-            <span className="u-label" style={{ color: 'var(--cool)' }}>
-              What the destination saw
-            </span>
+            <span className="u-label u-label--cool">What the destination saw</span>
             <span className="panel__note">{shown?.contentType ?? ''}</span>
           </div>
 
           <div className="matrix__rowhead">
             <span>Outbound</span>
           </div>
-          <Cell exchange={shown} state={state} field="requestBody" tone="real" />
-          <Cell exchange={shown} state={state} field="redactedRequestBody" tone="token" open />
+          <Cell exchange={shown} hoveredToken={hoveredToken} field="requestBody" tone="real" />
+          <Cell
+            exchange={shown}
+            hoveredToken={hoveredToken}
+            field="redactedRequestBody"
+            tone="token"
+            open
+          />
 
           <div className="matrix__rowhead matrix__row2">
             <span>Inbound</span>
           </div>
-          <Cell exchange={shown} state={state} field="responseBody" tone="real" row2 />
-          <Cell exchange={shown} state={state} field="tokenizedResponseBody" tone="token" open row2 />
+          <Cell
+            exchange={shown}
+            hoveredToken={hoveredToken}
+            field="responseBody"
+            tone="real"
+            row2
+          />
+          <Cell
+            exchange={shown}
+            hoveredToken={hoveredToken}
+            field="tokenizedResponseBody"
+            tone="token"
+            open
+            row2
+          />
         </div>
       </div>
     </section>
@@ -68,7 +86,7 @@ type BodyField = 'requestBody' | 'redactedRequestBody' | 'responseBody' | 'token
 
 interface CellProps {
   exchange: Exchange | null
-  state: AppState
+  hoveredToken: string | null
   field: BodyField
   tone: 'real' | 'token'
   open?: boolean
@@ -82,15 +100,13 @@ const WAITING: Record<BodyField, string> = {
   tokenizedResponseBody: 'destination has not answered yet',
 }
 
-function Cell({ exchange, state, field, tone, open, row2 }: CellProps) {
+const Cell = memo(function Cell({ exchange, hoveredToken, field, tone, open, row2 }: CellProps) {
   const raw = exchange?.[field]
-  const className = [
-    'matrix__cell',
-    open ? 'matrix__cell--open' : '',
-    row2 ? 'matrix__row2' : '',
-  ].join(' ')
+  const className = ['matrix__cell', open ? 'matrix__cell--open' : '', row2 ? 'matrix__row2' : '']
+    .filter(Boolean)
+    .join(' ')
 
-  if (!raw) {
+  if (!exchange || !raw) {
     return (
       <div className={className}>
         <span className="matrix__empty">{WAITING[field]}</span>
@@ -98,27 +114,51 @@ function Cell({ exchange, state, field, tone, open, row2 }: CellProps) {
     )
   }
 
-  const text = prettyBody(raw, exchange?.contentType)
-  const runs = splitByValues(text, exchange?.entities ?? [], tone === 'token')
+  const text = prettyBody(raw, exchange.contentType)
+  const runs = splitByValues(text, exchange.entities, tone === 'token')
 
   return (
     <div className={className}>
       {runs.map((run, index) =>
         run.entity ? (
-          <span
+          <Chip
             key={index}
-            className={`chip chip--${tone}`}
-            data-hot={state.hoveredToken === run.entity.token}
-            onMouseEnter={() => store.hover(run.entity!.token)}
-            onMouseLeave={() => store.hover(null)}
-            title={`${run.entity.kind} · ${Math.round(run.entity.confidence * 100)}% confidence`}
-          >
-            {run.text}
-          </span>
+            entity={run.entity}
+            text={run.text}
+            tone={tone}
+            hot={hoveredToken === run.entity.token}
+          />
         ) : (
           <span key={index}>{run.text}</span>
         ),
       )}
     </div>
+  )
+})
+
+interface ChipProps {
+  entity: Entity
+  text: string
+  tone: 'real' | 'token'
+  hot: boolean
+}
+
+function Chip({ entity, text, tone, hot }: ChipProps) {
+  const hover = () => {
+    store.hover(entity.token)
+  }
+  const leave = () => {
+    store.hover(null)
+  }
+  return (
+    <span
+      className={`chip chip--${tone}`}
+      data-hot={hot}
+      onMouseEnter={hover}
+      onMouseLeave={leave}
+      title={`${entity.kind} · ${Math.round(entity.confidence * 100)}% confidence`}
+    >
+      {text}
+    </span>
   )
 }

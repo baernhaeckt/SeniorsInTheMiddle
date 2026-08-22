@@ -98,3 +98,14 @@ export function formatBytes(bytes: number | undefined): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} kB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
+
+/** Short, honest label for why a request was waved past. */
+export function typeTag(contentType?: string): string {
+  if (!contentType) return 'asset'
+  if (contentType.includes('css')) return 'css'
+  if (contentType.includes('javascript')) return 'js'
+  if (contentType.startsWith('font/')) return 'font'
+  if (contentType.startsWith('image/')) return 'image'
+  if (contentType.includes('json')) return 'json'
+  return contentType.split('/')[1] ?? 'asset'
+}

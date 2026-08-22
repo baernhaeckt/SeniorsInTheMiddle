@@ -1,7 +1,12 @@
 import { hasProxyAddress, proxyAddressOf, type RuntimeConfig } from '../config'
-import { median, type AppState } from '../engine/store'
+import { COPY } from '../copy'
+import { median } from '../engine/store'
+import { useStore } from '../engine/useStore'
+import { PROTOCOL_VERSION } from '../protocol/types'
+import type { LinkState } from '../transport/types'
+import { Mark, Wordmark } from './Brand'
 
-const LINK_COPY: Record<string, string> = {
+const LINK_COPY: Record<LinkState, string> = {
   idle: 'not attached',
   connecting: 'attaching',
   live: 'live',
@@ -10,35 +15,35 @@ const LINK_COPY: Record<string, string> = {
 }
 
 interface HeaderProps {
-  state: AppState
   config: RuntimeConfig
   onOpenGuide: () => void
   onReconfigure: () => void
 }
 
-export function Header({ state, config, onOpenGuide, onReconfigure }: HeaderProps) {
-  const { metrics, link } = state
+export function Header({ config, onOpenGuide, onReconfigure }: HeaderProps) {
+  const metrics = useStore((state) => state.metrics)
+  const link = useStore((state) => state.link)
+  const protocolVersion = useStore((state) => state.protocolVersion)
   const p50 = median(metrics.latencies)
   const configured = hasProxyAddress(config)
+  const mismatch = protocolVersion !== null && protocolVersion !== PROTOCOL_VERSION
+
+  const linkDetail = [
+    link.detail ?? link.endpoint,
+    link.dropped ? `${link.dropped} frame${link.dropped === 1 ? '' : 's'} dropped` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
 
   return (
     <header className="head">
       <div className="head__id">
-        <svg className="head__mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-          <path
-            d="M16 2 4 7v9c0 7.2 5 12.4 12 14 7-1.6 12-6.8 12-14V7L16 2Z"
-            stroke="var(--warm)"
-            strokeWidth="1.4"
-          />
-          <path d="M16 2v28c7-1.6 12-6.8 12-14V7L16 2Z" fill="var(--cool)" opacity=".14" />
-          <path d="M16 2v28" stroke="var(--ink)" strokeWidth="1" opacity=".7" />
-          <rect x="11.5" y="14" width="9" height="3.6" rx="1" fill="var(--alert)" />
-        </svg>
+        <Mark className="head__mark" />
         <div>
           <h1 className="head__name u-display">
-            Seniors in the <em>Middle</em>
+            <Wordmark />
           </h1>
-          <div className="u-label head__sub">Transparent http/https proxy · Bärn Häckt 2026</div>
+          <div className="u-label head__sub">{COPY.tagline}</div>
         </div>
       </div>
 
@@ -55,14 +60,25 @@ export function Header({ state, config, onOpenGuide, onReconfigure }: HeaderProp
           <Stat label="Requests" value={metrics.requests} />
           <Stat label="Treated" value={metrics.treated} variant="treated" />
           <Stat label="Identifiers held" value={metrics.identifiersHeld} variant="held" />
-          <Stat label="Leaked" value={metrics.leaks} variant="leaks" />
           <Stat label="Round trip" value={p50 ?? '—'} unit={p50 === null ? '' : 'ms'} />
         </div>
 
-        <div className="link" data-state={link.state} title={link.detail ?? link.endpoint}>
+        <div
+          className="link"
+          data-state={link.state}
+          data-warn={mismatch || Boolean(link.dropped)}
+          title={linkDetail}
+        >
           <span className="link__dot" />
           <span>
-            {LINK_COPY[link.state] ?? link.state} · {link.endpoint}
+            {LINK_COPY[link.state]} · {link.endpoint}
+            {mismatch && (
+              <span className="link__warn">
+                {' '}
+                · protocol v{protocolVersion}, expected v{PROTOCOL_VERSION}
+              </span>
+            )}
+            {link.dropped ? <span className="link__warn"> · {link.dropped} dropped</span> : null}
           </span>
         </div>
 
@@ -78,7 +94,7 @@ interface StatProps {
   label: string
   value: number | string
   unit?: string
-  variant?: 'held' | 'leaks' | 'treated'
+  variant?: 'held' | 'treated'
 }
 
 function Stat({ label, value, unit, variant }: StatProps) {
