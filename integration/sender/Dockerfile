@@ -8,7 +8,7 @@ COPY src ./src
 COPY public ./public
 
 ENV PROXY_HOST=proxy \
-    PROXY_PORT=8080 \
+    PROXY_PORT=3128 \
     TARGET_HOST=receiver.sitm.local \
     TARGET_HTTP_PORT=3000 \
     TARGET_HTTPS_PORT=3443 \

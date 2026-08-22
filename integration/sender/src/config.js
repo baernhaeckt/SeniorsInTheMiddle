@@ -15,7 +15,7 @@ export const settings = {
   // Where the traffic is pointed. The sender never talks to the receiver directly for
   // its traffic -- only through the proxy. That is the whole contract it tests.
   proxyHost: process.env.PROXY_HOST ?? 'proxy',
-  proxyPort: num('PROXY_PORT', 8080),
+  proxyPort: num('PROXY_PORT', 3128),
   targetHost: process.env.TARGET_HOST ?? 'receiver.sitm.local',
   targetHttpPort: num('TARGET_HTTP_PORT', 3000),
   targetHttpsPort: num('TARGET_HTTPS_PORT', 3443),

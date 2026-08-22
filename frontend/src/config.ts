@@ -37,12 +37,15 @@ export const STORAGE_KEY = 'sitm.config.v2'
  * What a fresh install starts with: a proxy running on this machine, which is what
  * `docker compose up` in `integration/` gives you. Certificate and PAC URLs are left
  * empty on purpose — they derive from the address, so they stay right if it changes.
+ *
+ * The hub is on the API port and the proxy address is the proxy port; they are different
+ * listeners in the same process, which is why the two ports here do not match.
  */
 export const BLANK_CONFIG: RuntimeConfig = {
   source: 'ws',
   hubUrl: 'http://localhost:8080/hub/telemetry',
   proxyHost: 'localhost',
-  proxyPort: '8080',
+  proxyPort: '3128',
   networkName: '',
   caUrl: '',
   pacUrl: '',
@@ -52,10 +55,10 @@ export const BLANK_CONFIG: RuntimeConfig = {
 export const PLACEHOLDERS: Record<Exclude<keyof RuntimeConfig, 'source'>, string> = {
   hubUrl: 'http://proxy.sitm.local:8080/hub/telemetry',
   proxyHost: 'proxy.sitm.local',
-  proxyPort: '8080',
+  proxyPort: '3128',
   networkName: 'SITM-Guest',
-  caUrl: 'http://proxy.sitm.local:8080/ca.crt',
-  pacUrl: 'http://proxy.sitm.local:8080/proxy.pac',
+  caUrl: 'http://proxy.sitm.local:3128/ca.crt',
+  pacUrl: 'http://proxy.sitm.local:3128/proxy.pac',
 }
 
 export function proxyAddressOf(config: RuntimeConfig): string {

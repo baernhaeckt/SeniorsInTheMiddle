@@ -1,5 +1,5 @@
-# The forward proxy, the WebAPI and the telemetry stream in one process. The SPA is a
-# separate image; see frontend/Dockerfile.
+# The forward proxy, the WebAPI and the telemetry stream in one process, on three
+# listeners. The SPA is a separate image; see frontend/Dockerfile.
 
 # ---------- Build ----------
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
@@ -21,7 +21,7 @@ RUN dotnet publish "src/SeniorsInTheMiddle.Proxy/SeniorsInTheMiddle.Proxy.csproj
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
-# Kestrel listeners come from Proxy:HttpPort / Proxy:HttpsPort, not from this preset.
+# Kestrel listeners come from the Proxy:*Port settings below, not from this preset.
 ENV ASPNETCORE_HTTP_PORTS=
 
 # No key material is baked into the image. The MITM CA is generated on first start into
@@ -41,10 +41,16 @@ ENV Mitm__CertificatePath=/app/certs/mitm-ca.pfx
 
 COPY --from=publish /app/publish .
 
-# 8080 carries proxy traffic (CONNECT and absolute-form) plus the WebAPI.
-# 8443 is the same over TLS, signed by the CA served at /ca.crt.
+# One port per role -- see Proxy:HttpPort / Proxy:HttpsPort / Proxy:ApiPort.
+#
+# 3128 carries proxy traffic: CONNECT tunnels and absolute-form HTTP. Devices are pointed
+#      here, and read /ca.crt and /proxy.pac from it. Nothing else answers on it.
+# 3127 is the same proxy inside TLS, using a certificate signed by the CA served at
+#      /ca.crt, for clients configured with an HTTPS proxy.
+# 8080 is the WebAPI, Swagger and the telemetry stream. It never proxies.
+EXPOSE 3128
+EXPOSE 3127
 EXPOSE 8080
-EXPOSE 8443
 
 USER $APP_UID
 ENTRYPOINT ["dotnet", "SeniorsInTheMiddle.Proxy.dll"]
