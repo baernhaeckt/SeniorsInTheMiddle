@@ -87,7 +87,7 @@ public static class InfrastructureRegistrations
     /// Browsers compare origins without a trailing slash, so a configured
     /// "https://example.com/" would silently never match anything.
     /// </summary>
-    private static string[] AllowedOrigins(IConfiguration configuration)
+    public static string[] AllowedOrigins(IConfiguration configuration)
         => [.. (configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
             .Where(origin => !string.IsNullOrWhiteSpace(origin))
             .Select(origin => origin.Trim().TrimEnd('/'))

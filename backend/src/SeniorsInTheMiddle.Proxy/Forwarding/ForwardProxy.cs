@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Net;
 using Microsoft.AspNetCore.Http.Features;
+using SeniorsInTheMiddle.Proxy.Telemetry;
 using Yarp.ReverseProxy.Forwarder;
 
 namespace SeniorsInTheMiddle.Proxy.Forwarding;
@@ -7,6 +9,8 @@ namespace SeniorsInTheMiddle.Proxy.Forwarding;
 sealed class ForwardProxy : IDisposable, IForwardProxy
 {
     private readonly IHttpForwarder forwarder;
+    private readonly ITelemetrySink telemetry;
+    private readonly ClientLabeler clientLabeler;
 
     private readonly HttpMessageInvoker httpClient;
 
@@ -15,9 +19,11 @@ sealed class ForwardProxy : IDisposable, IForwardProxy
         ActivityTimeout = TimeSpan.FromMinutes(2)
     };
 
-    public ForwardProxy(IHttpForwarder forwarder)
+    public ForwardProxy(IHttpForwarder forwarder, ITelemetrySink telemetry, ClientLabeler clientLabeler)
     {
         this.forwarder = forwarder;
+        this.telemetry = telemetry;
+        this.clientLabeler = clientLabeler;
         httpClient = new HttpMessageInvoker(new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
@@ -39,6 +45,9 @@ sealed class ForwardProxy : IDisposable, IForwardProxy
             return;
         }
 
+        string requestId = ObserveRequest(context, destination);
+        long startedAt = Stopwatch.GetTimestamp();
+
         ForwarderError error = await forwarder.SendAsync(
             context,
             destination.GetLeftPart(UriPartial.Authority),
@@ -50,6 +59,42 @@ sealed class ForwardProxy : IDisposable, IForwardProxy
         {
             context.Response.StatusCode = StatusCodes.Status502BadGateway;
         }
+
+        telemetry.Publish(new RequestCompleted(
+            requestId,
+            TelemetryJson.Now(),
+            context.Response.StatusCode,
+            context.Response.ContentLength ?? 0,
+            Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds));
+    }
+
+    /// <summary>
+    /// Announces the request and returns the id its completion has to carry.
+    ///
+    /// The treatment is a placeholder: deciding what a body is and what to do about it
+    /// belongs to the proxy, not to the code that reports on it. Until that exists,
+    /// everything is waved through and says so.
+    /// </summary>
+    private string ObserveRequest(HttpContext context, Uri destination)
+    {
+        string requestId = CorrelationIds.NextRequest();
+        string? contentType = context.Request.ContentType;
+
+        telemetry.Publish(new RequestObserved(
+            requestId,
+            TelemetryJson.Now(),
+            ClientLabeler.Ip(context.Connection.RemoteIpAddress),
+            clientLabeler.Label(context.Connection.RemoteIpAddress, context.Request.Headers.UserAgent),
+            context.Request.Method,
+            destination.Scheme == Uri.UriSchemeHttps ? TelemetryScheme.Https : TelemetryScheme.Http,
+            destination.Host,
+            destination.PathAndQuery,
+            contentType,
+            context.Request.ContentLength ?? 0,
+            Treatment.Passthrough,
+            "not inspected"));
+
+        return requestId;
     }
 
     public void Dispose()

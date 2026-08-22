@@ -2,6 +2,7 @@
 using SeniorsInTheMiddle.Proxy.Auth;
 using SeniorsInTheMiddle.Proxy.Auth.Api;
 using SeniorsInTheMiddle.Proxy.Forwarding;
+using SeniorsInTheMiddle.Proxy.Telemetry;
 
 WebApplicationBuilder builder = WebApplication.CreateSlimBuilder(args);
 
@@ -16,6 +17,7 @@ builder.Services.AddAppCors(builder.Configuration);
 // Register feature services
 builder.Services.AddAuthServices();
 builder.Services.AddForwardProxyServices();
+builder.Services.AddTelemetryServices();
 
 WebApplication app = builder.Build();
 
@@ -25,8 +27,12 @@ app.UseForwardProxy();
 // Register infrastructure middlewares
 app.RegisterMiddlewares();
 
+// A WebSocket handshake never reaches CORS, so the telemetry stream checks Origin itself.
+app.UseTelemetryOriginGuard();
+
 // Register application endpoints
 app.RegisterAuthEndpoints();
 app.RegisterProxyEndpoints();
+app.MapTelemetryHub();
 
 app.Run();

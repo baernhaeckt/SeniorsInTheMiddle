@@ -5,7 +5,7 @@ One process. It serves:
 - the **forward proxy** — absolute-form HTTP requests and HTTPS interception through
   HTTP/1.1 `CONNECT`, for arbitrary destination hosts and ports;
 - the **WebAPI** under `/api/v1`, plus `/health`, `/openapi/v1.json` and `/swagger`;
-- the telemetry stream the dashboard connects to (still to be added).
+- the **telemetry stream** the dashboard connects to: a SignalR hub at `/hub/telemetry`.
 
 The dashboard SPA is a **separate, lightweight image** — see `frontend/Dockerfile`. It is
 deployed as its own Container App and talks to this one cross-origin, so the CORS section
@@ -44,6 +44,68 @@ CORS allows https://seniorsinthemiddle-frontend....azurecontainerapps.io.
 
 If a call from the SPA fails with an opaque network error in the browser, check that line
 first.
+
+The same list gates the telemetry hub, which is not a CORS matter at all — see
+[Who may attach](#who-may-attach). A dashboard whose origin is missing gets a `403` on the
+handshake and sits on `reattaching`.
+
+## Telemetry
+
+A SignalR hub at `/hub/telemetry`, on both ports. It is one-way: no callable methods, and
+every frame is pushed as a **JSON string** on `event`.
+
+The string matters. `JsonHubProtocol` serializes an argument by its runtime type, so a
+`TelemetryEvent` sent as an object would go out without the polymorphic `type`
+discriminator and the dashboard would reject every frame. `TelemetryJson.Serialize` writes
+it through the base type; do not bypass it.
+
+`Telemetry/TelemetryEvent.cs` mirrors the valibot schemas in
+`frontend/src/protocol/types.ts` field for field. A frame that does not match is dropped by
+the browser and counted in the header's badge rather than raised as an error, so a shape
+mistake looks like an empty dashboard. `Backend.Tests/Unit/TelemetrySerialization.cs` pins
+the wire shape.
+
+### Emitting
+
+Inject `ITelemetrySink` and call `Publish`. It never blocks, never throws and never waits
+for a dashboard:
+
+```csharp
+telemetry.Publish(new RequestObserved(...));
+telemetry.Warn("example.com could not be reached.");
+```
+
+Behind it is a bounded queue drained by one background reader that awaits each send, so
+frames arrive in the order they happened and a slow dashboard stalls the queue rather than
+a request. When the queue is full new events are dropped, counted, and reported into the
+ticker — the queue drops the *newest*, because the protocol promises a `request.observed`
+is followed by a `request.completed` and dropping the oldest would leave completions for
+rows that were never sent.
+
+What is wired today is only the start and the end of a forwarded plain-HTTP request
+(`ForwardProxy.HandleAsync`). Everything else the protocol describes — treatment,
+detection, redaction, the exchange lifecycle, anything at all about HTTPS traffic inside a
+`CONNECT` tunnel — waits on the proxy pipeline. `RequestObserved.Treatment` is a
+placeholder `passthrough` with the reason `not inspected` until then; deciding what a body
+is belongs to the proxy, not to the code that reports on it.
+
+### Who may attach
+
+A browser applies neither CORS nor a preflight to a WebSocket handshake, and the dashboard
+connects with negotiation skipped, so `UseCors` never sees it. `TelemetryOriginGuard`
+therefore checks the handshake's `Origin` against `Cors:AllowedOrigins` itself and answers
+`403` for anything else — without it, any page a viewer happens to visit could open the hub
+and read decrypted traffic off it. A request with no `Origin` is not a browser and passes,
+which is how the tests and `curl` reach it.
+
+### Settings
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `Telemetry:QueueCapacity` | `2048` | Frames buffered before new ones are dropped. |
+| `Proxy:Name` | `Seniors in the Middle` | Shown in the dashboard header. |
+| `Proxy:Region` | machine name | Shown in the dashboard header. |
+| `Proxy:Policy` | `observe-only` | Shown in the dashboard header. |
 
 ## Certificates
 

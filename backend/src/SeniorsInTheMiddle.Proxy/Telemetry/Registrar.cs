@@ -1,0 +1,34 @@
+namespace SeniorsInTheMiddle.Proxy.Telemetry;
+
+public static class Registrar
+{
+    public static IServiceCollection AddTelemetryServices(this IServiceCollection services)
+    {
+        services.AddSignalR();
+
+        services
+            .AddSingleton<TelemetryDescriptor>()
+            .AddSingleton<ClientLabeler>();
+
+        // One pump, reached two ways. Registering the type twice would build two of them
+        // and leave the sink's queue with nobody draining it.
+        services.AddSingleton<TelemetryPump>();
+        services.AddSingleton<ITelemetrySink>(provider => provider.GetRequiredService<TelemetryPump>());
+        services.AddHostedService(provider => provider.GetRequiredService<TelemetryPump>());
+
+        return services;
+    }
+
+    /// <summary>
+    /// Has to run before the hub endpoint, so a refused origin never reaches the upgrade.
+    /// </summary>
+    public static WebApplication UseTelemetryOriginGuard(this WebApplication app)
+    {
+        app.UseMiddleware<TelemetryOriginGuard>();
+
+        return app;
+    }
+
+    public static void MapTelemetryHub(this IEndpointRouteBuilder routes)
+        => routes.MapHub<TelemetryHub>(TelemetryRoutes.HubPath);
+}
