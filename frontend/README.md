@@ -158,7 +158,7 @@ Each of these moves its packet on the band to the next position:
 | Event                   | Meaning                                                     |
 | ----------------------- | ----------------------------------------------------------- |
 | `exchange.opened`       | method, scheme, host, path, content type, raw request body  |
-| `detection.completed`   | identifiers found, with kind, offsets, token and confidence |
+| `detection.completed`   | identifiers found, with kind, offsets, token and confidence; `kind` is the detector's own name (`PERSON`, `EMAIL_ADDRESS`, ...) |
 | `redaction.completed`   | the body with every identifier swapped for its token        |
 | `upstream.dispatched`   | tokenized body sent on to the destination                   |
 | `upstream.responded`    | the destination's response, still tokenized                 |

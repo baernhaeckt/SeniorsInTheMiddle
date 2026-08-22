@@ -38,7 +38,11 @@ export const TreatmentSchema = v.picklist([
 ])
 export type Treatment = v.InferOutput<typeof TreatmentSchema>
 
-/** Categories the proxy is trained to find. Swiss-specific kinds included. */
+/**
+ * The kinds the demo feed produces. On the wire `kind` is whatever name the proxy's detector
+ * gives a finding (`PERSON`, `EMAIL_ADDRESS`, `IBAN_CODE`, ...) and is shown as it arrives,
+ * so the protocol accepts any non-empty string; this list is for the demo only.
+ */
 export const EntityKindSchema = v.picklist([
   'PERSON',
   'AHV',
@@ -60,7 +64,8 @@ const Id = v.pipe(v.string(), v.minLength(1))
 /** One piece of personal data found in a payload. */
 export const EntitySchema = v.object({
   id: Id,
-  kind: EntityKindSchema,
+  /** The detector's own name for the category, e.g. `PERSON` or `EMAIL_ADDRESS`. */
+  kind: v.pipe(v.string(), v.minLength(1)),
   /** The real text, as the client sent it. Never leaves the proxy. */
   value: v.string(),
   /** The stand-in the destination sees, e.g. `[PERSON_1]`. */

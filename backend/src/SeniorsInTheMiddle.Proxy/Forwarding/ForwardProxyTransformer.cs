@@ -38,7 +38,8 @@ sealed class ForwardProxyTransformer(
     Uri destination,
     IExchangeBodyMutation mutation,
     BodyLimits limits,
-    ILogger<ForwardProxyTransformer> logger) : HttpTransformer
+    ILogger<ForwardProxyTransformer> logger,
+    ExchangeTrace trace) : HttpTransformer
 {
     /// <summary>
     /// What marks a header as carrying a signature computed over the payload. Nearly every
@@ -118,6 +119,8 @@ sealed class ForwardProxyTransformer(
         // Cleared so it is recomputed from the destination. The client's Host names this proxy,
         // and name-based virtual hosts route on it.
         proxyRequest.Headers.Host = null;
+
+        trace.Dispatched(destination.GetLeftPart(UriPartial.Authority), httpContext.Request.ContentLength ?? 0);
     }
 
     public override async ValueTask<bool> TransformResponseAsync(
@@ -128,6 +131,10 @@ sealed class ForwardProxyTransformer(
         // After the base transform, which is what puts the origin's headers on the client
         // response in the first place.
         bool shouldProxy = await base.TransformResponseAsync(httpContext, proxyResponse, cancellationToken);
+
+        // The status alone, now; the body follows from the rewrite if there is one to read.
+        if (proxyResponse is not null)
+            trace.Responded((int)proxyResponse.StatusCode, string.Empty);
 
         if (shouldProxy && proxyResponse?.Content is not null)
             await RewriteResponseBodyAsync(httpContext, proxyResponse, cancellationToken);
@@ -152,13 +159,21 @@ sealed class ForwardProxyTransformer(
         // warning that measuring against a limit of zero would produce on every single
         // request. A setting that asks for a no-op gets a silent one.
         if (limits.MaxMutableBodyBytes == 0)
+        {
+            trace.Passthrough("rewriting disabled");
+
             return;
+        }
 
         // The server answers this definitively. A GET or a HEAD gets no content at all, and
         // giving it one would put a Content-Length or a Transfer-Encoding on a request that must
         // carry neither; servers that do not expect a body there answer 400.
         if (httpContext.Features.Get<IHttpRequestBodyDetectionFeature>()?.CanHaveBody != true)
+        {
+            trace.Passthrough("no body");
+
             return;
+        }
 
         if (BodySigningHeader(request) is string signedBy)
         {
@@ -166,6 +181,8 @@ sealed class ForwardProxyTransformer(
                 "Request body left uninspected for {Host}: {Header} signs the payload and a rewrite would invalidate it.",
                 destination.Host,
                 signedBy);
+
+            trace.Passthrough($"signed payload ({signedBy})");
 
             return;
         }
@@ -188,16 +205,18 @@ sealed class ForwardProxyTransformer(
             // owns the body stream, so this must not close it.
             request.Body = new PrefixedStream(buffered, request.Body, leaveRestOpen: true);
 
+            trace.Passthrough($"larger than {limits.MaxMutableBodyBytes} bytes");
+
             return;
         }
+
+        BodyDescriptor descriptor = new(request.ContentType, EncodingOf(request.ContentType));
+        trace.BodyBuffered(buffered, descriptor);
 
         byte[]? mutated;
         try
         {
-            mutated = await mutation.MutateRequestAsync(
-                buffered,
-                new BodyDescriptor(request.ContentType, EncodingOf(request.ContentType)),
-                cancellationToken);
+            mutated = await mutation.MutateRequestAsync(buffered, descriptor, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -212,10 +231,14 @@ sealed class ForwardProxyTransformer(
                 buffered.Length,
                 request.ContentType ?? "no declared content type");
 
+            trace.RequestRefused(ex);
+
             throw new BodyMutationException(
                 $"The request body for {destination.Host} could not be rewritten, so it was not forwarded.",
                 ex);
         }
+
+        trace.RequestRewritten(mutated, descriptor);
 
         if (mutated is null)
         {
@@ -318,13 +341,13 @@ sealed class ForwardProxyTransformer(
             return;
         }
 
+        BodyDescriptor descriptor = new(contentType?.ToString(), EncodingOf(contentType?.ToString()));
+        trace.Responded((int)proxyResponse.StatusCode, descriptor.Encoding.GetString(plain));
+
         byte[]? mutated;
         try
         {
-            mutated = await mutation.MutateResponseAsync(
-                plain,
-                new BodyDescriptor(contentType?.ToString(), EncodingOf(contentType?.ToString())),
-                cancellationToken);
+            mutated = await mutation.MutateResponseAsync(plain, descriptor, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

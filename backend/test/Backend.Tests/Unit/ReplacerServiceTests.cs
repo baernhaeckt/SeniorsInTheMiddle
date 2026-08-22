@@ -144,14 +144,116 @@ public class ReplacerServiceTests
         StubPiiService client = new([]);
         ReplacerService replacer = Replacer(client, []);
 
-        byte[]? mutated = await ((IExchangeBodyMutation)replacer).MutateRequestAsync(
+        byte[]? mutated = await Exchange(replacer, new Observer()).MutateRequestAsync(
             ReadOnlyMemory<byte>.Empty,
             new BodyDescriptor("application/json", Encoding.UTF8),
             TestContext.CancellationTokenSource.Token);
 
-        Assert.AreEqual(0, mutated?.Length);
+        Assert.IsNull(mutated, "Unchanged is reported as unchanged.");
         Assert.AreEqual(0, client.AnalyzeCalls);
     }
+
+    /// <summary>
+    /// What the dashboard is told about a rewrite: the spans that were actually written, as
+    /// indices into the text it is shown, with the analyzer's confidence -- and not the spans
+    /// that were nested inside another and never replaced on their own.
+    /// </summary>
+    [TestMethod]
+    public async Task Findings_That_Were_Replaced_Are_Reported_With_Their_Offsets()
+    {
+        const string body = "Grüezi Hans Meier, mail an hans@example.ch";
+        Observer observer = new();
+        StubPiiService client = new([
+            Finding(body, "Hans Meier", "PERSON"),
+            Finding(body, "hans@example.ch", "EMAIL_ADDRESS"),
+            Finding(body, "hans", "PERSON"),
+        ]);
+
+        byte[]? mutated = await Exchange(Replacer(client, []), observer).MutateRequestAsync(
+            Encoding.UTF8.GetBytes(body),
+            new BodyDescriptor("text/plain", Encoding.UTF8),
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.IsNotNull(mutated);
+        Assert.AreEqual("Grüezi <PERSON>, mail an <EMAIL_ADDRESS>", Encoding.UTF8.GetString(mutated));
+
+        Assert.IsNotNull(observer.Entities);
+        Assert.AreEqual(2, observer.Entities.Count, "The name nested inside the e-mail was not replaced on its own.");
+
+        DetectedEntity person = observer.Entities[0];
+        Assert.AreEqual("PERSON", person.Kind);
+        Assert.AreEqual("Hans Meier", person.Value);
+        Assert.AreEqual("<PERSON>", person.Token);
+        Assert.AreEqual(body.IndexOf("Hans Meier", StringComparison.Ordinal), person.Start);
+        Assert.AreEqual(person.Start + "Hans Meier".Length, person.End);
+        Assert.AreEqual(0.9, person.Confidence);
+        Assert.AreEqual("Hans Meier", body[person.Start..person.End]);
+
+        DetectedEntity email = observer.Entities[1];
+        Assert.AreEqual("EMAIL_ADDRESS", email.Kind);
+        Assert.AreEqual("hans@example.ch", body[email.Start..email.End]);
+        Assert.AreNotEqual(person.Id, email.Id);
+        Assert.IsTrue(observer.ScannedMs >= 0);
+    }
+
+    [TestMethod]
+    public async Task A_Clean_Body_Is_Reported_As_Scanned_With_Nothing_Found()
+    {
+        Observer observer = new();
+
+        byte[]? mutated = await Exchange(Replacer(new StubPiiService([]), []), observer).MutateRequestAsync(
+            "{\"note\":\"nothing here\"}"u8.ToArray(),
+            new BodyDescriptor("application/json", Encoding.UTF8),
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.IsNull(mutated);
+        Assert.IsNotNull(observer.Entities);
+        Assert.AreEqual(0, observer.Entities.Count);
+    }
+
+    [TestMethod]
+    public async Task A_Body_Of_Another_Media_Type_Is_Not_Read_And_Says_So()
+    {
+        Observer observer = new();
+        StubPiiService client = new([]);
+
+        byte[]? mutated = await Exchange(Replacer(client, []), observer).MutateRequestAsync(
+            new byte[] { 0x89, 0x50, 0x4E, 0x47 },
+            new BodyDescriptor("image/png", Encoding.UTF8),
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.IsNull(mutated);
+        Assert.AreEqual(0, client.AnalyzeCalls);
+        Assert.AreEqual("image/png not inspected", observer.PassthroughReason);
+        Assert.IsNull(observer.Entities);
+    }
+
+    /// <summary>The response half puts back what the request half hid, and reports how many
+    /// stand-ins it found to put back.</summary>
+    [TestMethod]
+    public async Task The_Response_Is_Restored_And_The_Count_Reported()
+    {
+        const string body = "Hans Meier und Hans Meier";
+        Observer observer = new();
+        ReplacerService replacer = Replacer(new StubPiiService([Finding(body, "Hans Meier", "PERSON"), Finding(body, "Hans Meier", "PERSON", occurrence: 1)]), []);
+        IExchangeBodyMutation exchange = Exchange(replacer, observer);
+        BodyDescriptor text = new("text/plain", Encoding.UTF8);
+
+        await exchange.MutateRequestAsync(Encoding.UTF8.GetBytes(body), text, TestContext.CancellationTokenSource.Token);
+
+        byte[]? restored = await exchange.MutateResponseAsync(
+            "Hallo <PERSON>, nochmals <PERSON>!"u8.ToArray(),
+            text,
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.IsNotNull(restored);
+        Assert.AreEqual("Hallo Hans Meier, nochmals Hans Meier!", Encoding.UTF8.GetString(restored));
+        Assert.AreEqual("Hallo Hans Meier, nochmals Hans Meier!", observer.RestoredBody);
+        Assert.AreEqual(2, observer.RestoredCount);
+    }
+
+    private static IExchangeBodyMutation Exchange(ReplacerService replacer, IExchangeObserver observer)
+        => ((IBodyMutationFactory)replacer).CreateForExchange(new Uri("https://example.ch/"), observer);
 
     public TestContext TestContext { get; set; } = null!;
 
@@ -245,5 +347,32 @@ public class ReplacerServiceTests
     private sealed class CollectingSink(List<TelemetryEvent> events) : ITelemetrySink
     {
         public void Publish(TelemetryEvent telemetryEvent) => events.Add(telemetryEvent);
+    }
+
+    private sealed class Observer : IExchangeObserver
+    {
+        public string? PassthroughReason { get; private set; }
+
+        public IReadOnlyList<DetectedEntity>? Entities { get; private set; }
+
+        public double ScannedMs { get; private set; }
+
+        public string? RestoredBody { get; private set; }
+
+        public int RestoredCount { get; private set; }
+
+        public void Passthrough(string reason) => PassthroughReason = reason;
+
+        public void Detected(IReadOnlyList<DetectedEntity> entities, double scannedMs)
+        {
+            Entities = entities;
+            ScannedMs = scannedMs;
+        }
+
+        public void Restored(string responseBody, int restored)
+        {
+            RestoredBody = responseBody;
+            RestoredCount = restored;
+        }
     }
 }

@@ -43,13 +43,38 @@ public class TokenAnonymizerService
     private Task<string> CreateNewAnonimizationTokenAsync(string value, string classification, CancellationToken cancellationToken)
         => _client.ReplacementTextAsync(classification, cancellationToken);
 
-    public async Task<string> DeanonymizeTokenAsync(string content, CancellationToken cancellationToken)
+    /// <summary>The content with every known stand-in put back, and how many were.</summary>
+    public Task<(string Content, int Restored)> DeanonymizeTokenAsync(string content, CancellationToken cancellationToken)
     {
+        int restored = 0;
+
         foreach (var deanonimizationEntry in _deanonimizationLookup)
         {
-            content = content.Replace(deanonimizationEntry.Key.Value, deanonimizationEntry.Value.Value);
+            string token = deanonimizationEntry.Key.Value;
+            int occurrences = CountOccurrences(content, token);
+            if (occurrences == 0)
+                continue;
+
+            restored += occurrences;
+            content = content.Replace(token, deanonimizationEntry.Value.Value);
         }
 
-        return content;
+        return Task.FromResult((content, restored));
+    }
+
+    private static int CountOccurrences(string content, string value)
+    {
+        if (value.Length == 0)
+            return 0;
+
+        int count = 0;
+        for (int index = content.IndexOf(value, StringComparison.Ordinal);
+             index >= 0;
+             index = content.IndexOf(value, index + value.Length, StringComparison.Ordinal))
+        {
+            count++;
+        }
+
+        return count;
     }
 }

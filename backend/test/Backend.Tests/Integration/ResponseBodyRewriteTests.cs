@@ -6,6 +6,7 @@ using System.Text;
 using Microsoft.AspNetCore.Http;
 
 using SeniorsInTheMiddle.Proxy.Forwarding;
+using SeniorsInTheMiddle.Proxy.Telemetry;
 
 // Aliased rather than imported: Microsoft.Net.Http.Headers also defines MediaTypeHeaderValue,
 // and the content headers elsewhere are built with the System.Net.Http.Headers one.
@@ -484,14 +485,94 @@ public class ResponseBodyRewriteTests
     }
 
     /// <summary>
+    /// The same exchange, as the dashboard hears about it: announced as treated once the body
+    /// was scanned, then every step of the lifecycle in order, with the bodies at each step,
+    /// and completed last.
+    /// </summary>
+    [TestMethod]
+    public async Task A_Treated_Exchange_Is_Reported_Step_By_Step()
+    {
+        await using ForwardingHarness harness = await ForwardingHarness.StartAsync(
+            new TokenisingMutationFactory(),
+            respond: async (context, body) =>
+            {
+                string received = Encoding.UTF8.GetString(body);
+
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync($$"""{"greeting":"Hallo {{received}}"}""", context.RequestAborted);
+            });
+        using HttpClient client = harness.CreateProxiedClient();
+
+        using StringContent request = new("Hans Muster", Encoding.UTF8, "text/plain");
+        using HttpResponseMessage response = await client.PostAsync(new Uri(harness.DestinationUri, "/greet"), request);
+        await response.Content.ReadAsStringAsync();
+        await harness.NextCompletionAsync(TimeSpan.FromSeconds(10));
+
+        string[] sequence = harness.Telemetry.Select(e => e.GetType().Name).ToArray();
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                nameof(RequestObserved),
+                nameof(ExchangeOpened),
+                nameof(DetectionCompleted),
+                nameof(RedactionCompleted),
+                nameof(UpstreamDispatched),
+                nameof(UpstreamResponded),
+                nameof(RehydrationCompleted),
+                nameof(ExchangeDelivered),
+                nameof(RequestCompleted),
+            },
+            sequence);
+
+        RequestObserved observed = harness.Telemetry.OfType<RequestObserved>().Single();
+        Assert.AreEqual(Treatment.Treated, observed.Treatment);
+        Assert.AreEqual("1 identifier", observed.Reason);
+        Assert.AreEqual("/greet", observed.Path);
+
+        Assert.AreEqual("Hans Muster", harness.Telemetry.OfType<ExchangeOpened>().Single().RequestBody);
+        Assert.AreEqual("PERSON_1", harness.Telemetry.OfType<RedactionCompleted>().Single().RedactedRequestBody);
+        Assert.AreEqual(harness.DestinationUri.GetLeftPart(UriPartial.Authority), harness.Telemetry.OfType<UpstreamDispatched>().Single().Target);
+
+        UpstreamResponded responded = harness.Telemetry.OfType<UpstreamResponded>().Single();
+        Assert.AreEqual(200, responded.Status);
+        Assert.AreEqual("""{"greeting":"Hallo PERSON_1"}""", responded.TokenizedResponseBody);
+
+        RehydrationCompleted rehydrated = harness.Telemetry.OfType<RehydrationCompleted>().Single();
+        Assert.AreEqual("""{"greeting":"Hallo Hans Muster"}""", rehydrated.ResponseBody);
+        Assert.AreEqual(1, rehydrated.Restored);
+    }
+
+    /// <summary>A request the transform never read a body of is announced as passthrough,
+    /// with the reason, and nothing about an exchange.</summary>
+    [TestMethod]
+    public async Task A_Request_Without_A_Body_Is_Reported_As_Passthrough()
+    {
+        await using ForwardingHarness harness = await ForwardingHarness.StartAsync();
+        using HttpClient client = harness.CreateProxiedClient();
+
+        using HttpResponseMessage response = await client.GetAsync(new Uri(harness.DestinationUri, "/plain"));
+        await response.Content.ReadAsStringAsync();
+        await harness.NextCompletionAsync(TimeSpan.FromSeconds(10));
+
+        CollectionAssert.AreEqual(
+            new[] { nameof(RequestObserved), nameof(RequestCompleted) },
+            harness.Telemetry.Select(e => e.GetType().Name).ToArray());
+
+        RequestObserved observed = harness.Telemetry.OfType<RequestObserved>().Single();
+        Assert.AreEqual(Treatment.Passthrough, observed.Treatment);
+        Assert.AreEqual("no body", observed.Reason);
+        Assert.IsNull(observed.ExchangeId);
+    }
+
+    /// <summary>
     /// Replaces one name with a token on the way out and puts it back on the way in, which is
     /// only possible because both calls land on the same object.
     /// </summary>
     private sealed class TokenisingMutationFactory : IBodyMutationFactory
     {
-        public IExchangeBodyMutation CreateForExchange(Uri destination) => new Exchange();
+        public IExchangeBodyMutation CreateForExchange(Uri destination, IExchangeObserver observer) => new Exchange(observer);
 
-        private sealed class Exchange : IExchangeBodyMutation
+        private sealed class Exchange(IExchangeObserver observer) : IExchangeBodyMutation
         {
             private const string RealName = "Hans Muster";
             private const string Token = "PERSON_1";
@@ -509,6 +590,11 @@ public class ResponseBodyRewriteTests
 
                 replaced = true;
 
+                int start = text.IndexOf(RealName, StringComparison.Ordinal);
+                observer.Detected(
+                    [new DetectedEntity("e1", "PERSON", RealName, Token, start, start + RealName.Length, 0.9)],
+                    scannedMs: 1);
+
                 return ValueTask.FromResult<byte[]?>(
                     descriptor.Encoding.GetBytes(text.Replace(RealName, Token, StringComparison.Ordinal)));
             }
@@ -522,8 +608,10 @@ public class ResponseBodyRewriteTests
                 if (!replaced || !text.Contains(Token, StringComparison.Ordinal))
                     return ValueTask.FromResult<byte[]?>(null);
 
-                return ValueTask.FromResult<byte[]?>(
-                    descriptor.Encoding.GetBytes(text.Replace(Token, RealName, StringComparison.Ordinal)));
+                string restored = text.Replace(Token, RealName, StringComparison.Ordinal);
+                observer.Restored(restored, 1);
+
+                return ValueTask.FromResult<byte[]?>(descriptor.Encoding.GetBytes(restored));
             }
         }
     }

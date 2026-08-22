@@ -635,7 +635,7 @@ public class RequestBodyRewriteTests
     {
         public const string Message = "the body is not the shape this mutation parses";
 
-        public IExchangeBodyMutation CreateForExchange(Uri destination) => this;
+        public IExchangeBodyMutation CreateForExchange(Uri destination, IExchangeObserver observer) => this;
 
         public ValueTask<byte[]?> MutateRequestAsync(
             ReadOnlyMemory<byte> body,

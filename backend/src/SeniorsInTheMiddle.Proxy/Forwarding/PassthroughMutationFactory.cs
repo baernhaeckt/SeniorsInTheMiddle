@@ -14,7 +14,7 @@
 /// </summary>
 sealed class PassthroughMutationFactory : IBodyMutationFactory, IExchangeBodyMutation
 {
-    public IExchangeBodyMutation CreateForExchange(Uri destination) => this;
+    public IExchangeBodyMutation CreateForExchange(Uri destination, IExchangeObserver observer) => this;
 
     public ValueTask<byte[]?> MutateRequestAsync(
         ReadOnlyMemory<byte> body,

@@ -23,8 +23,8 @@ public class TokenDetectionService
     {
         PiiDetection entity = grouping.First();
         Token token = new(entity.DetectedText, entity.EntityType);
-        int[] positions = grouping.Select(d => d.StartPosition).ToArray();
+        TokenOccurrence[] occurrences = grouping.Select(d => new TokenOccurrence(d.StartPosition, d.Score)).ToArray();
 
-        return new TokenDetectionResult(token, positions);
+        return new TokenDetectionResult(token, occurrences);
     }
 }

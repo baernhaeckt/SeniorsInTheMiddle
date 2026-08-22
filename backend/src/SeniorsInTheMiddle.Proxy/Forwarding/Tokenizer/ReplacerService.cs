@@ -1,9 +1,10 @@
-﻿using System.Text;
+using System.Diagnostics;
+using System.Text;
 using SeniorsInTheMiddle.Proxy.Telemetry;
 
 namespace SeniorsInTheMiddle.Proxy.Forwarding.Tokenizer;
 
-public class ReplacerService : IBodyMutationFactory, IExchangeBodyMutation
+public class ReplacerService : IBodyMutationFactory
 {
     private readonly TokenDetectionService _tokenDetectionService;
 
@@ -12,7 +13,7 @@ public class ReplacerService : IBodyMutationFactory, IExchangeBodyMutation
     private readonly ITelemetrySink _telemetrySink;
 
     public ReplacerService(
-        TokenDetectionService tokenDetectionService, 
+        TokenDetectionService tokenDetectionService,
         TokenAnonymizerService tokenAnonymizerService,
         ITelemetrySink telemetrySink)
     {
@@ -34,12 +35,30 @@ public class ReplacerService : IBodyMutationFactory, IExchangeBodyMutation
     /// </summary>
     public async Task<MemoryStream> AnonymizeAsync(string content, CancellationToken cancellationToken)
     {
-        MemoryStream resultStream = new();
+        Anonymization result = await AnonymizeWithFindingsAsync(content, cancellationToken);
 
+        MemoryStream resultStream = new(result.Body);
+
+        return resultStream;
+    }
+
+    /// <summary>
+    /// The same, with the spans that were actually written -- which is what the telemetry
+    /// reports, since a finding that was nested in another was never replaced on its own.
+    /// </summary>
+    internal async Task<Anonymization> AnonymizeWithFindingsAsync(string content, CancellationToken cancellationToken)
+    {
         if (content.Length == 0)
-            return resultStream;
+            return new Anonymization([], [], 0);
+
+        long startedAt = Stopwatch.GetTimestamp();
 
         List<(TokenDetectionResult Token, string AnonymizedValue)> foundTokens = await GetAnonymizedTokensAsync(content, cancellationToken).ToListAsync();
+
+        double scannedMs = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
+
+        MemoryStream resultStream = new();
+        List<TokenReplacement> applied = [];
 
         int lastIndex = 0;
         foreach (TokenReplacement tokenReplacements in GetTokenReplacements(content, foundTokens)
@@ -54,20 +73,23 @@ public class ReplacerService : IBodyMutationFactory, IExchangeBodyMutation
             resultStream.Write(Encoding.UTF8.GetBytes(content[lastIndex..(tokenReplacements.Position)]));
             resultStream.Write(Encoding.UTF8.GetBytes(tokenReplacements.AnonymizedValue));
             lastIndex = tokenReplacements.Position + tokenReplacements.Length;
+            applied.Add(tokenReplacements);
         }
 
         resultStream.Write(Encoding.UTF8.GetBytes(content[lastIndex..]));
-        resultStream.Position = 0;
-        return resultStream;
+
+        return new Anonymization(resultStream.ToArray(), applied, scannedMs);
     }
 
-    public Task<string> DeanonymizeAsync(string content, CancellationToken cancellationToken)
+    public async Task<string> DeanonymizeAsync(string content, CancellationToken cancellationToken)
     {
-        return _tokenAnonymizerService.DeanonymizeTokenAsync(content, cancellationToken);
+        (string restored, _) = await _tokenAnonymizerService.DeanonymizeTokenAsync(content, cancellationToken);
+
+        return restored;
     }
 
-    IExchangeBodyMutation IBodyMutationFactory.CreateForExchange(Uri destination)
-        => this;
+    IExchangeBodyMutation IBodyMutationFactory.CreateForExchange(Uri destination, IExchangeObserver observer)
+        => new Exchange(this, observer);
 
     private async IAsyncEnumerable<(TokenDetectionResult Token, string AnonymizedValue)> GetAnonymizedTokensAsync(string content, CancellationToken cancellationToken)
     {
@@ -98,19 +120,24 @@ public class ReplacerService : IBodyMutationFactory, IExchangeBodyMutation
             if (detectedText.Length == 0)
                 continue;
 
-            foreach (int reportedPosition in tokenDetectionResult.Positions)
+            foreach (TokenOccurrence occurrence in tokenDetectionResult.Occurrences)
             {
-                int position = PositionOf(content, detectedText, offsets.ToStringIndex(reportedPosition));
+                int position = PositionOf(content, detectedText, offsets.ToStringIndex(occurrence.Position));
 
                 if (position < 0)
                 {
                     _telemetrySink.Warn(
-                        $"A {tokenDetectionResult.Token.Classification} finding was dropped: its text is not at the reported position {reportedPosition}, nor anywhere else in the body.");
+                        $"A {tokenDetectionResult.Token.Classification} finding was dropped: its text is not at the reported position {occurrence.Position}, nor anywhere else in the body.");
 
                     continue;
                 }
 
-                yield return new TokenReplacement(anonymizedValue, position, detectedText.Length);
+                yield return new TokenReplacement(
+                    tokenDetectionResult.Token,
+                    anonymizedValue,
+                    position,
+                    detectedText.Length,
+                    occurrence.Score);
             }
         }
     }
@@ -141,45 +168,90 @@ public class ReplacerService : IBodyMutationFactory, IExchangeBodyMutation
         return found >= 0 ? found : content.IndexOf(detectedText, StringComparison.Ordinal);
     }
 
-    async ValueTask<byte[]?> IExchangeBodyMutation.MutateRequestAsync(
-        ReadOnlyMemory<byte> body, 
-        BodyDescriptor descriptor, 
-        CancellationToken cancellationToken)
+    private static bool IsTextual(string? contentType)
+        => contentType != null && (contentType.Contains("json") || contentType.Contains("text"));
+
+    /// <summary>The rewritten body, the spans that were written, and how long the scan took.</summary>
+    internal sealed record Anonymization(byte[] Body, IReadOnlyList<TokenReplacement> Applied, double ScannedMs);
+
+    /// <summary>
+    /// One request and its response. It holds nothing the process-wide lookups do not, but it
+    /// is what the observer is attached to, and the contract wants one object per exchange.
+    /// </summary>
+    private sealed class Exchange(ReplacerService replacer, IExchangeObserver observer) : IExchangeBodyMutation
     {
-        if (descriptor.ContentType != null && (descriptor.ContentType.Contains("json") || descriptor.ContentType.Contains("text")))
+        public async ValueTask<byte[]?> MutateRequestAsync(
+            ReadOnlyMemory<byte> body,
+            BodyDescriptor descriptor,
+            CancellationToken cancellationToken)
         {
+            if (!IsTextual(descriptor.ContentType))
+            {
+                observer.Passthrough($"{descriptor.ContentType ?? "no content type"} not inspected");
+
+                return null;
+            }
+
             string content = Encoding.UTF8.GetString(body.Span);
 
             // The detection service rejects empty text, and a body with nothing in it has
             // nothing to hide either way.
             if (content.Length == 0)
-                return body.ToArray();
+            {
+                observer.Detected([], 0);
 
-            MemoryStream anonymizedContent = await AnonymizeAsync(content, cancellationToken);
+                return null;
+            }
 
-            return anonymizedContent.ToArray();
+            Anonymization result = await replacer.AnonymizeWithFindingsAsync(content, cancellationToken);
+
+            observer.Detected(Entities(result.Applied), result.ScannedMs);
+
+            // Unchanged is reported as such: every header the client sent still describes
+            // these bytes, and the transformer keeps them only when told nothing moved.
+            return result.Applied.Count == 0 ? null : result.Body;
         }
 
-        return body.ToArray();
-    }
-
-    async ValueTask<byte[]?> IExchangeBodyMutation.MutateResponseAsync(
-        ReadOnlyMemory<byte> body, 
-        BodyDescriptor descriptor, 
-        CancellationToken cancellationToken)
-    {
-        if (descriptor.ContentType != null && (descriptor.ContentType.Contains("json") || descriptor.ContentType.Contains("text")))
+        public async ValueTask<byte[]?> MutateResponseAsync(
+            ReadOnlyMemory<byte> body,
+            BodyDescriptor descriptor,
+            CancellationToken cancellationToken)
         {
+            if (!IsTextual(descriptor.ContentType))
+                return null;
+
             string content = Encoding.UTF8.GetString(body.Span);
 
             if (content.Length == 0)
-                return body.ToArray();
+                return null;
 
-            string responseContent = await DeanonymizeAsync(content, cancellationToken);
+            (string restoredContent, int restored) = await replacer._tokenAnonymizerService
+                .DeanonymizeTokenAsync(content, cancellationToken);
 
-            return Encoding.UTF8.GetBytes(responseContent);
+            observer.Restored(restoredContent, restored);
+
+            return restored == 0 ? null : Encoding.UTF8.GetBytes(restoredContent);
         }
 
-        return body.ToArray();
+        private static DetectedEntity[] Entities(IReadOnlyList<TokenReplacement> applied)
+        {
+            DetectedEntity[] entities = new DetectedEntity[applied.Count];
+
+            for (int index = 0; index < applied.Count; index++)
+            {
+                TokenReplacement span = applied[index];
+
+                entities[index] = new DetectedEntity(
+                    $"e{index + 1}",
+                    span.Token.Classification,
+                    span.Token.Value,
+                    span.AnonymizedValue,
+                    span.Position,
+                    span.Position + span.Length,
+                    Math.Clamp(span.Score, 0, 1));
+            }
+
+            return entities;
+        }
     }
 }

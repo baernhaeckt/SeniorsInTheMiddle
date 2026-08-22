@@ -26,7 +26,39 @@ interface IBodyMutationFactory
     /// The factory itself is resolved once and called concurrently, so it has to be stateless
     /// or thread-safe. What it returns does not: each exchange gets its own.
     /// </summary>
-    IExchangeBodyMutation CreateForExchange(Uri destination);
+    IExchangeBodyMutation CreateForExchange(Uri destination, IExchangeObserver observer);
+}
+
+/// <summary>
+/// What a mutation tells the telemetry about the exchange it is rewriting. Three facts and no
+/// more: the mutation sees bytes, not HTTP, and the trace that implements this
+/// (<see cref="ExchangeTrace"/>) owns everything about when and in which order they are
+/// reported onwards. Every call is cheap and never throws.
+/// </summary>
+interface IExchangeObserver
+{
+    /// <summary>The body was read and not inspected, for <paramref name="reason"/> -- a media
+    /// type the mutation does not read, say.</summary>
+    void Passthrough(string reason);
+
+    /// <summary>What was found in the request body and replaced. Offsets are indices into the
+    /// decoded body text. An empty list is a body that was scanned and found clean.</summary>
+    void Detected(IReadOnlyList<Telemetry.DetectedEntity> entities, double scannedMs);
+
+    /// <summary>The response body with the proxy's stand-ins put back, and how many were.</summary>
+    void Restored(string responseBody, int restored);
+}
+
+/// <summary>For a mutation that has nothing to report, and for tests.</summary>
+sealed class NullExchangeObserver : IExchangeObserver
+{
+    public static readonly NullExchangeObserver Instance = new();
+
+    public void Passthrough(string reason) { }
+
+    public void Detected(IReadOnlyList<Telemetry.DetectedEntity> entities, double scannedMs) { }
+
+    public void Restored(string responseBody, int restored) { }
 }
 
 /// <summary>

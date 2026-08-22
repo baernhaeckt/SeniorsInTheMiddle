@@ -106,12 +106,34 @@ ticker — the queue drops the *newest*, because the protocol promises a `reques
 is followed by a `request.completed` and dropping the oldest would leave completions for
 rows that were never sent.
 
-What is wired today is only the start and the end of a forwarded plain-HTTP request
-(`ForwardProxy.HandleAsync`). Everything else the protocol describes — treatment,
-detection, redaction, the exchange lifecycle, anything at all about HTTPS traffic inside a
-`CONNECT` tunnel — waits on the proxy pipeline. `RequestObserved.Treatment` is a
-placeholder `passthrough` with the reason `not inspected` until then; deciding what a body
-is belongs to the proxy, not to the code that reports on it.
+### What is emitted when
+
+One `Forwarding/ExchangeTrace.cs` per request is the only thing in the forwarding path that
+publishes request and exchange events. `ForwardProxy.HandleAsync` creates it, the
+transformer reports the HTTP-side facts to it (body buffered, dispatched, responded), and
+the body mutation reports what it found and what it restored through the narrower
+`IExchangeObserver` half of it. Intercepted HTTPS goes the same way, since a tunnelled
+request re-enters `ForwardProxy` like any other.
+
+The one thing to know: `request.observed` carries the treatment, and the treatment is only
+known once the body has been scanned, so the trace holds the announcement back until the
+decision is made and releases it just ahead of the first exchange event. It still carries
+the time the request was seen. Whatever path a request takes, `request.observed` goes out
+exactly once and first, a treated exchange always reaches `exchange.delivered` (steps it
+never got to are filled in empty, so a packet on the band never stalls), and
+`request.completed` is last. `Backend.Tests/Unit/ExchangeTraceTests.cs` pins that.
+
+Treatments and their reasons, as the traffic list shows them:
+
+| Treatment     | Reason                                                                          |
+| ------------- | ------------------------------------------------------------------------------- |
+| `passthrough` | `no body`, `rewriting disabled`, `signed payload (<header>)`, `larger than <n> bytes`, `<media type> not inspected`, `not forwarded: rewrite failed` (plus a `block` log line), `not inspected` (the forwarder gave up before the body was looked at) |
+| `clean`       | `nothing found in <size> of <media type>`                                        |
+| `treated`     | `<n> identifiers`, and the exchange events follow                                |
+
+Entity `kind` is the detector's own name for the category (`PERSON`, `EMAIL_ADDRESS`,
+`IBAN_CODE`, …), sent verbatim; the dashboard accepts any name. Bodies in events are cut at
+`ExchangeTrace.MaxBodyChars`.
 
 ### Who may attach
 

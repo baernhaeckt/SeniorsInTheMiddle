@@ -155,6 +155,10 @@ public enum TelemetryLogLevel
     [JsonStringEnumMemberName("block")] Block,
 }
 
+/// <summary>
+/// The kinds the dashboard's demo feed uses. Not on the wire: <see cref="DetectedEntity.Kind"/>
+/// is the detector's own category name, sent verbatim, and the dashboard accepts any.
+/// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<EntityKind>))]
 public enum EntityKind
 {

@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using System.Collections.Concurrent;
+using System.Net;
 using System.Threading.Channels;
 
 using Microsoft.AspNetCore.Builder;
@@ -9,6 +10,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 using SeniorsInTheMiddle.Proxy.Forwarding;
+using SeniorsInTheMiddle.Proxy.Telemetry;
 
 using Yarp.ReverseProxy.Forwarder;
 
@@ -45,7 +47,7 @@ internal sealed class DelegateMutationFactory(
     Func<ReadOnlyMemory<byte>, BodyDescriptor, byte[]?>? onRequest = null,
     Func<ReadOnlyMemory<byte>, BodyDescriptor, byte[]?>? onResponse = null) : IBodyMutationFactory
 {
-    public IExchangeBodyMutation CreateForExchange(Uri destination) => new Exchange(onRequest, onResponse);
+    public IExchangeBodyMutation CreateForExchange(Uri destination, IExchangeObserver observer) => new Exchange(onRequest, onResponse);
 
     private sealed class Exchange(
         Func<ReadOnlyMemory<byte>, BodyDescriptor, byte[]?>? onRequest,
@@ -145,6 +147,13 @@ internal sealed class ForwardingHarness : IAsyncDisposable
         public readonly Channel<ForwarderError> Completions = Channel.CreateUnbounded<ForwarderError>();
 
         public readonly RecordingLogger Logger = new();
+
+        public readonly ConcurrentQueue<TelemetryEvent> Telemetry = new();
+    }
+
+    private sealed class QueueTelemetrySink(ConcurrentQueue<TelemetryEvent> events) : ITelemetrySink
+    {
+        public void Publish(TelemetryEvent telemetryEvent) => events.Enqueue(telemetryEvent);
     }
 
     /// <summary>
@@ -214,6 +223,9 @@ internal sealed class ForwardingHarness : IAsyncDisposable
     /// <summary>Everything the transform logged at Warning or above.</summary>
     public IReadOnlyList<string> Warnings => state.Logger.WarningsAndAbove;
 
+    /// <summary>Every telemetry event the forwarder published so far, in publish order.</summary>
+    public IReadOnlyList<TelemetryEvent> Telemetry => [.. state.Telemetry];
+
     public Uri DestinationUri { get; }
 
     public Uri ProxyUri { get; }
@@ -232,12 +244,18 @@ internal sealed class ForwardingHarness : IAsyncDisposable
         Func<HttpContext, byte[], Task>? respond = null)
     {
         HarnessState state = new();
+        ITelemetrySink sink = new QueueTelemetrySink(state.Telemetry);
 
-        transformerFactory ??= target => new ForwardProxyTransformer(
-            target,
-            (mutation ?? new PassthroughMutationFactory()).CreateForExchange(target),
-            limits ?? new BodyLimits(BodyLimits.DefaultMaxMutableBodyBytes),
-            state.Logger);
+        // The trace is per request, and the real transformer reports to it the way production
+        // does; a test-supplied transformer gets the trace's completion only.
+        Func<Uri, ExchangeTrace, HttpTransformer> transformers = transformerFactory is not null
+            ? (target, _) => transformerFactory(target)
+            : (target, trace) => new ForwardProxyTransformer(
+                target,
+                (mutation ?? new PassthroughMutationFactory()).CreateForExchange(target, trace),
+                limits ?? new BodyLimits(BodyLimits.DefaultMaxMutableBodyBytes),
+                state.Logger,
+                trace);
 
         WebApplication destinationApp = BuildApp();
         destinationApp.Run(async context =>
@@ -289,12 +307,27 @@ internal sealed class ForwardingHarness : IAsyncDisposable
             Uri target = ForwardProxy.GetProxyDestination(context)
                          ?? new Uri(destinationUri, context.Request.Path + context.Request.QueryString);
 
+            ExchangeTrace trace = new(
+                sink,
+                CorrelationIds.NextRequest(),
+                new RequestFacts(
+                    "127.0.0.1",
+                    "Test · .1",
+                    context.Request.Method,
+                    TelemetryScheme.Http,
+                    target.Host,
+                    target.PathAndQuery,
+                    context.Request.ContentType,
+                    context.Request.ContentLength ?? 0));
+
             ForwarderError error = await httpForwarder.SendAsync(
                 context,
                 target.GetLeftPart(UriPartial.Authority),
                 upstream,
                 requestConfig,
-                transformerFactory(target));
+                transformers(target, trace));
+
+            trace.Completed(context.Response.StatusCode, 0, 0);
 
             await state.Completions.Writer.WriteAsync(error);
         });

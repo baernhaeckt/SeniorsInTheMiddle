@@ -1,7 +1,6 @@
 import {
   PROTOCOL_VERSION,
   type Entity,
-  type EntityKind,
   type ServerEvent,
   type Treatment,
 } from '../protocol/types'
@@ -85,7 +84,7 @@ export interface Exchange {
 
 export interface VaultRecord {
   token: string
-  kind: EntityKind
+  kind: string
   value: string
   firstSeenAt: number
   uses: number

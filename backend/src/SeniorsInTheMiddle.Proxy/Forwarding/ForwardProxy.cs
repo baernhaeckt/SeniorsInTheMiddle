@@ -49,7 +49,7 @@ sealed class ForwardProxy : IForwardProxy
             return;
         }
 
-        string requestId = ObserveRequest(context, destination);
+        ExchangeTrace trace = new(telemetry, CorrelationIds.NextRequest(), Facts(context, destination));
         long startedAt = Stopwatch.GetTimestamp();
 
         // Counted on the way out rather than read from Content-Length, which a chunked
@@ -68,9 +68,10 @@ sealed class ForwardProxy : IForwardProxy
                 requestConfig,
                 new ForwardProxyTransformer(
                     destination,
-                    bodyMutations.CreateForExchange(destination),
+                    bodyMutations.CreateForExchange(destination, trace),
                     bodyLimits,
-                    transformerLogger));
+                    transformerLogger,
+                    trace));
         }
         finally
         {
@@ -82,42 +83,26 @@ sealed class ForwardProxy : IForwardProxy
             context.Response.StatusCode = StatusCodes.Status502BadGateway;
         }
 
-        telemetry.Publish(new RequestCompleted(
-            requestId,
-            TelemetryJson.Now(),
+        trace.Completed(
             context.Response.StatusCode,
             counted.BytesWritten,
-            Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds));
+            Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
     }
 
     /// <summary>
-    /// Announces the request and returns the id its completion has to carry.
-    ///
-    /// The treatment is a placeholder: deciding what a body is and what to do about it
-    /// belongs to the proxy, not to the code that reports on it. Until that exists,
-    /// everything is waved through and says so.
+    /// What is known about a request before its body is read. The announcement itself is the
+    /// trace's to make, once it knows how the body was treated.
     /// </summary>
-    private string ObserveRequest(HttpContext context, Uri destination)
-    {
-        string requestId = CorrelationIds.NextRequest();
-        string? contentType = context.Request.ContentType;
-
-        telemetry.Publish(new RequestObserved(
-            requestId,
-            TelemetryJson.Now(),
+    private RequestFacts Facts(HttpContext context, Uri destination)
+        => new(
             ClientLabeler.Ip(context.Connection.RemoteIpAddress),
             clientLabeler.Label(context.Connection.RemoteIpAddress, context.Request.Headers.UserAgent),
             context.Request.Method,
             destination.Scheme == Uri.UriSchemeHttps ? TelemetryScheme.Https : TelemetryScheme.Http,
             destination.Host,
             destination.PathAndQuery,
-            contentType,
-            context.Request.ContentLength ?? 0,
-            Treatment.Passthrough,
-            "not inspected"));
-
-        return requestId;
-    }
+            context.Request.ContentType,
+            context.Request.ContentLength ?? 0);
 
     /// <summary>
     /// Where a request is meant to go, or null when it is not proxy traffic at all.
