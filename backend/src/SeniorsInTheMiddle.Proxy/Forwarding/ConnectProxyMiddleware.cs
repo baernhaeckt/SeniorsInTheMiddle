@@ -82,8 +82,10 @@ sealed class ConnectProxyMiddleware
                 using SslStream clientTls = new(
                     new DuplexStream(clientStream, clientOutputStream),
                     leaveInnerStreamOpen: true);
-                using System.Security.Cryptography.X509Certificates.X509Certificate2 serverCertificate =
-                    certificateProvider.CreateServerCertificate(host);
+                // Not disposed here: the provider owns it and hands the same instance to every
+                // connection for this host (see MitmCertificateProvider.GetServerCertificate).
+                System.Security.Cryptography.X509Certificates.X509Certificate2 serverCertificate =
+                    certificateProvider.GetServerCertificate(host);
                 await clientTls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
                 {
                     ServerCertificate = serverCertificate,

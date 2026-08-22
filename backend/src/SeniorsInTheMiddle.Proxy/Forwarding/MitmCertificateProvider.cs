@@ -1,3 +1,4 @@
+﻿using System.Collections.Concurrent;
 using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -6,7 +7,29 @@ namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
 sealed class MitmCertificateProvider
 {
+    private static readonly TimeSpan InterceptionLifetime = TimeSpan.FromDays(7);
+
+    /// <summary>Renew a cached certificate this long before it actually expires.</summary>
+    private static readonly TimeSpan RenewBefore = TimeSpan.FromHours(1);
+
     private readonly X509Certificate2 _certificateAuthority;
+
+    /// <summary>
+    /// One certificate per intercepted host, reused for every connection to it.
+    ///
+    /// WHY it must be cached rather than minted per connection: a client that is told to accept an
+    /// otherwise untrusted certificate records that decision for the exact certificate it saw, and then
+    /// retries the connection. Chromium does this in its SSLHostStateDelegate, keyed by
+    /// (host, certificate, error). Handing out a freshly generated certificate every time means the
+    /// retry meets a certificate the client has never allowed, so the handshake fails again, the client
+    /// asks again, allows again, retries again -- an endless loop in which the page never loads.
+    /// The same applies to any client that pins or caches by fingerprint.
+    ///
+    /// <see cref="Lazy{T}"/> with <see cref="LazyThreadSafetyMode.ExecutionAndPublication"/> so that N
+    /// concurrent connections to one host generate one key, not N.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, Lazy<X509Certificate2>> _hostCertificates =
+        new(StringComparer.OrdinalIgnoreCase);
 
     public string PublicCertificatePath { get; }
 
@@ -93,9 +116,31 @@ sealed class MitmCertificateProvider
             Directory.CreateDirectory(directory);
     }
 
-    /// <summary>A short-lived certificate for one intercepted host.</summary>
-    public X509Certificate2 CreateServerCertificate(string host)
-        => CreateServerCertificate([host], TimeSpan.FromDays(7));
+    /// <summary>
+    /// The certificate for one intercepted host: generated on first use and reused afterwards, so every
+    /// connection to that host presents the same certificate (see <see cref="_hostCertificates"/>).
+    ///
+    /// The provider owns the returned instance for the lifetime of the process; callers must not dispose it.
+    /// </summary>
+    public X509Certificate2 GetServerCertificate(string host)
+    {
+        while (true)
+        {
+            Lazy<X509Certificate2> entry = _hostCertificates.GetOrAdd(
+                host,
+                name => new Lazy<X509Certificate2>(
+                    () => CreateServerCertificate([name], InterceptionLifetime),
+                    LazyThreadSafetyMode.ExecutionAndPublication));
+
+            X509Certificate2 certificate = entry.Value;
+            if (DateTime.Now < certificate.NotAfter - RenewBefore)
+                return certificate;
+
+            // Expiring: drop it and mint a new one. Connections still using the old instance keep it alive;
+            // only the dictionary reference goes, so it is not disposed underneath them.
+            _hostCertificates.TryRemove(new KeyValuePair<string, Lazy<X509Certificate2>>(host, entry));
+        }
+    }
 
     /// <summary>
     /// A certificate covering every name a client might use to reach us. Used both for
