@@ -62,15 +62,18 @@ sealed class ConnectProxyMiddleware
 
     private readonly IStreamProxyFactory streamProxyFactory;
     private readonly MitmCertificateProvider certificateProvider;
+    private readonly InterceptionBypass bypass;
     private readonly ILogger<ConnectProxyMiddleware> logger;
 
     public ConnectProxyMiddleware(
         IStreamProxyFactory streamProxyFactory,
         MitmCertificateProvider certificateProvider,
+        InterceptionBypass bypass,
         ILogger<ConnectProxyMiddleware> logger)
     {
         this.streamProxyFactory = streamProxyFactory;
         this.certificateProvider = certificateProvider;
+        this.bypass = bypass;
         this.logger = logger;
     }
 
@@ -123,6 +126,19 @@ sealed class ConnectProxyMiddleware
         // origin becomes a 502 the client reads inside the tunnel, rather than a refused
         // CONNECT it has to guess the meaning of.
         await output.WriteAsync(Encoding.ASCII.GetBytes("HTTP/1.1 200 Connection Established\r\n\r\n"));
+
+        // Before the handshake, which is the only place this decision can be made. Once a
+        // certificate of ours has been offered the client's own ClientHello is already spent, and
+        // the origin will never see it -- see InterceptionBypass.
+        //
+        // Host and port are all a CONNECT carries, so this is necessarily all-or-nothing for a
+        // destination: there is no path here to be selective about, and none will exist until
+        // after the very handshake being skipped.
+        if (bypass.Covers(host))
+        {
+            await TunnelVerbatimAsync(connection, host, port);
+            return;
+        }
 
         try
         {
@@ -179,6 +195,41 @@ sealed class ConnectProxyMiddleware
     /// Copies bytes between the client and the origin without reading them, for a tunnel that
     /// turned out not to carry HTTP.
     /// </summary>
+    /// <summary>
+    /// Copies the tunnel's bytes through untouched, TLS records and all.
+    ///
+    /// The difference from <see cref="TunnelOpaqueAsync"/> is which handshake reaches the origin.
+    /// That one has already terminated the client's TLS and opens a second session of its own, so
+    /// the origin sees this process; this one runs before any of that, so what goes out is the
+    /// client's own ClientHello, cipher list, ALPN and HTTP/2 preface. That is the entire point of
+    /// the bypass, and it is why nothing here may inspect, buffer or re-frame what passes.
+    /// </summary>
+    private async Task TunnelVerbatimAsync(ConnectionContext connection, string host, int port)
+    {
+        using TcpClient tcpClient = new();
+
+        try
+        {
+            await tcpClient.ConnectAsync(host, port, connection.ConnectionClosed);
+        }
+        catch (Exception ex) when (ex is SocketException or IOException or OperationCanceledException)
+        {
+            // The 200 has gone out already, so the client is waiting inside a tunnel and there is
+            // no status line left to answer with. Closing is the only signal available.
+            logger.LogDebug(ex, "Could not reach {Host}:{Port} for an unintercepted tunnel.", host, port);
+
+            return;
+        }
+
+        logger.LogDebug("Tunnelling {Host}:{Port} unintercepted.", host, port);
+
+        await using NetworkStream upstream = tcpClient.GetStream();
+
+        await streamProxyFactory
+            .Create(connection.Transport, upstream)
+            .ProxyAsync(connection.ConnectionClosed);
+    }
+
     private async Task TunnelOpaqueAsync(
         IDuplexPipe decrypted,
         string host,

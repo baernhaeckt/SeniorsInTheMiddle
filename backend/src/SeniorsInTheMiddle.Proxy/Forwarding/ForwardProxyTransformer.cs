@@ -175,6 +175,13 @@ sealed class ForwardProxyTransformer(
             return;
         }
 
+        if (IsBotManagement())
+        {
+            trace.Passthrough("bot-management challenge");
+
+            return;
+        }
+
         if (BodySigningHeader(request) is string signedBy)
         {
             logger.LogWarning(
@@ -288,6 +295,9 @@ sealed class ForwardProxyTransformer(
         CancellationToken cancellationToken)
     {
         if (!MayReadBody(httpContext, proxyResponse))
+            return;
+
+        if (IsBotManagement())
             return;
 
         MediaTypeHeaderValue? contentType = proxyResponse.Content.Headers.ContentType;
@@ -488,11 +498,50 @@ sealed class ForwardProxyTransformer(
         if (mediaType.Equals("text/event-stream", StringComparison.OrdinalIgnoreCase))
             return false;
 
+        // Code, not content. Two reasons, and either alone would be enough.
+        //
+        // Nobody types a name into a stylesheet, so there is nothing here worth the scan. And a
+        // script is the one body where a substitution is not merely wrong but load-bearing: a
+        // stand-in spliced into minified JavaScript can change what the page computes, and a bot
+        // challenge is exactly a script whose output is checked. Rewriting it turns a page that
+        // would have loaded into one that fails a check it can never pass -- see IsBotManagement.
+        if (IsScriptOrStyle(mediaType))
+            return false;
+
         return mediaType.StartsWith("text/", StringComparison.OrdinalIgnoreCase)
                || mediaType.EndsWith("json", StringComparison.OrdinalIgnoreCase)
                || mediaType.EndsWith("xml", StringComparison.OrdinalIgnoreCase)
                || mediaType.Equals("application/x-www-form-urlencoded", StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// Whether a media type carries code rather than something a person wrote.
+    ///
+    /// Input:  "text/javascript"        -> true
+    /// Input:  "application/javascript" -> true
+    /// Input:  "text/css"               -> true
+    /// Input:  "application/json"       -> false
+    /// </summary>
+    private static bool IsScriptOrStyle(string mediaType)
+        => mediaType.EndsWith("javascript", StringComparison.OrdinalIgnoreCase)
+           || mediaType.EndsWith("ecmascript", StringComparison.OrdinalIgnoreCase)
+           || mediaType.Equals("text/css", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Whether a path belongs to a bot-management challenge rather than to the site itself.
+    ///
+    /// Cloudflare serves the whole of one from <c>/cdn-cgi/</c> on the site's own origin: the
+    /// script, the orchestrator, and the POST carrying the answer. The answer is a token computed
+    /// over what the script saw, so a single byte changed anywhere in that exchange fails it, and
+    /// the client is handed a fresh challenge and tries again -- the redirect loop, with a 400 on
+    /// the submission underneath it.
+    ///
+    /// This is deliberately a path rule and not a host rule. The site around it stays intercepted,
+    /// which is the point: on chatgpt.com the challenge under /cdn-cgi/ passes through untouched
+    /// while /backend-api/conversation is still read and rewritten like any other body.
+    /// </summary>
+    private bool IsBotManagement()
+        => destination.AbsolutePath.StartsWith("/cdn-cgi/", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Swaps the body the forwarder will send, and disposes the one it replaces so the pooled

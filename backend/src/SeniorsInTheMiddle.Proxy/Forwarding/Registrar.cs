@@ -26,6 +26,7 @@ public static class Registrar
             .AddSingleton<TokenAnonymizerService>()
             .AddSingleton<IBodyMutationFactory, ReplacerService>()
             .AddSingleton<SelfHostNames>()
+            .AddSingleton<InterceptionBypass>()
             .AddSingleton<UpstreamHttpClient>()
             .AddSingleton<IForwardProxy, ForwardProxy>()
             .AddSingleton<MitmCertificateProvider>()
