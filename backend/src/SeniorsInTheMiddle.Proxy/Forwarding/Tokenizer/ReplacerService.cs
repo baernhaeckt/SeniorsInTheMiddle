@@ -1,11 +1,21 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using SeniorsInTheMiddle.Proxy.Telemetry;
 
 namespace SeniorsInTheMiddle.Proxy.Forwarding.Tokenizer;
 
 public class ReplacerService : IBodyMutationFactory
 {
+    /// <summary>
+    /// Each JSON string value reaches the analyzer as one line, labelled with where it came
+    /// from: <c>[customer.name] Hans Meier</c>. The label gives the model the structure as
+    /// context without the syntax. It is never written anywhere: findings are spliced back
+    /// into the original document by offset, so the keys are never taken apart to begin with.
+    /// </summary>
+    private const string ValueSeparator = "\n";
+
     private readonly TokenDetectionService _tokenDetectionService;
 
     private readonly TokenAnonymizerService _tokenAnonymizerService;
@@ -53,7 +63,7 @@ public class ReplacerService : IBodyMutationFactory
 
         long startedAt = Stopwatch.GetTimestamp();
 
-        List<(TokenDetectionResult Token, string AnonymizedValue)> foundTokens = await GetAnonymizedTokensAsync(content, cancellationToken).ToListAsync();
+        List<TokenReplacement> replacements = await FindReplacementsAsync(content, cancellationToken);
 
         double scannedMs = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
 
@@ -61,24 +71,92 @@ public class ReplacerService : IBodyMutationFactory
         List<TokenReplacement> applied = [];
 
         int lastIndex = 0;
-        foreach (TokenReplacement tokenReplacements in GetTokenReplacements(content, foundTokens)
-                     .OrderBy(tr => tr.Position)
-                     .ThenByDescending(tr => tr.Length))
+        foreach (TokenReplacement replacement in NonOverlapping(replacements))
         {
-            // Nested in, or identical to, a span already replaced. Ordering by descending length
-            // at equal position is what makes this keep the outermost of the two.
-            if (tokenReplacements.Position < lastIndex)
-                continue;
-
-            resultStream.Write(Encoding.UTF8.GetBytes(content[lastIndex..(tokenReplacements.Position)]));
-            resultStream.Write(Encoding.UTF8.GetBytes(tokenReplacements.AnonymizedValue));
-            lastIndex = tokenReplacements.Position + tokenReplacements.Length;
-            applied.Add(tokenReplacements);
+            resultStream.Write(Encoding.UTF8.GetBytes(content[lastIndex..replacement.Position]));
+            resultStream.Write(Encoding.UTF8.GetBytes(replacement.AnonymizedValue));
+            lastIndex = replacement.Position + replacement.Length;
+            applied.Add(replacement);
         }
 
         resultStream.Write(Encoding.UTF8.GetBytes(content[lastIndex..]));
 
         return new Anonymization(resultStream.ToArray(), applied, scannedMs);
+    }
+
+    /// <summary>
+    /// The same for a JSON document, where only the string values are analysed.
+    ///
+    /// A named-entity model handed the raw document reads keys, quotes and braces as prose, and
+    /// given a few hundred characters of them confidently reports a "person" that spans half
+    /// the structure; replacing that tears the document apart. So the values are cut out,
+    /// analysed as text, and each finding is spliced back into the value it came from -- with
+    /// the stand-in JSON-escaped, and the document otherwise left byte for byte as the client
+    /// sent it, so every offset reported onwards is still an index into that body.
+    ///
+    /// A body that does not parse is not JSON, and is treated as the text it is.
+    /// </summary>
+    internal async Task<Anonymization> AnonymizeJsonWithFindingsAsync(string content, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<JsonStringValue>? values = JsonStringValues.Locate(content);
+
+        if (values is null)
+            return await AnonymizeWithFindingsAsync(content, cancellationToken);
+
+        long startedAt = Stopwatch.GetTimestamp();
+
+        // One analysis over every value rather than one per value: the model's cost is mostly
+        // per call, and a chat request carries dozens of strings.
+        StringBuilder joined = new();
+        List<(JsonStringValue Value, int JoinedStart)> segments = [];
+
+        foreach (JsonStringValue value in values)
+        {
+            if (value.Value.Length == 0)
+                continue;
+
+            if (joined.Length > 0)
+                joined.Append(ValueSeparator);
+
+            joined.Append('[').Append(value.Path).Append("] ");
+            segments.Add((value, joined.Length));
+            joined.Append(value.Value);
+        }
+
+        List<TokenReplacement> applied = [];
+        MemoryStream resultStream = new();
+        int lastIndex = 0;
+
+        if (segments.Count > 0)
+        {
+            string joinedText = joined.ToString();
+            List<TokenReplacement> replacements = await FindReplacementsAsync(joinedText, cancellationToken);
+
+            foreach (TokenReplacement replacement in NonOverlapping(replacements))
+            {
+                TokenReplacement? inDocument = ToDocumentSpan(content, segments, replacement);
+
+                if (inDocument is null)
+                {
+                    // Reported across two values -- which are unrelated text that happened to
+                    // be analysed together -- into a label, or off the end of a value. Nothing
+                    // in the document is that span.
+                    _telemetrySink.Warn(
+                        $"A {replacement.Token.Classification} finding was dropped: it does not lie within a single JSON string value.");
+
+                    continue;
+                }
+
+                resultStream.Write(Encoding.UTF8.GetBytes(content[lastIndex..inDocument.Position]));
+                resultStream.Write(Encoding.UTF8.GetBytes(inDocument.AnonymizedValue));
+                lastIndex = inDocument.Position + inDocument.Length;
+                applied.Add(inDocument);
+            }
+        }
+
+        resultStream.Write(Encoding.UTF8.GetBytes(content[lastIndex..]));
+
+        return new Anonymization(resultStream.ToArray(), applied, Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
     }
 
     public async Task<string> DeanonymizeAsync(string content, CancellationToken cancellationToken)
@@ -90,6 +168,99 @@ public class ReplacerService : IBodyMutationFactory
 
     IExchangeBodyMutation IBodyMutationFactory.CreateForExchange(Uri destination, IExchangeObserver observer)
         => new Exchange(this, observer);
+
+    /// <summary>Every placeable finding over <paramref name="text"/>, with its stand-in.</summary>
+    private async Task<List<TokenReplacement>> FindReplacementsAsync(string text, CancellationToken cancellationToken)
+    {
+        List<(TokenDetectionResult Token, string AnonymizedValue)> foundTokens = await GetAnonymizedTokensAsync(text, cancellationToken).ToListAsync();
+
+        return GetTokenReplacements(text, foundTokens).ToList();
+    }
+
+    /// <summary>
+    /// The spans in document order, without any that starts inside one already taken. Ordering
+    /// by descending length at equal position is what makes this keep the outermost of two.
+    /// </summary>
+    private static IEnumerable<TokenReplacement> NonOverlapping(IEnumerable<TokenReplacement> replacements)
+    {
+        int lastIndex = 0;
+
+        foreach (TokenReplacement replacement in replacements.OrderBy(tr => tr.Position).ThenByDescending(tr => tr.Length))
+        {
+            if (replacement.Position < lastIndex)
+                continue;
+
+            lastIndex = replacement.Position + replacement.Length;
+
+            yield return replacement;
+        }
+    }
+
+    /// <summary>
+    /// A finding over the joined values, as the span of the document it describes -- raw
+    /// offsets, with the stand-in escaped for where it is going -- or null when it does not lie
+    /// within one value.
+    /// </summary>
+    private static TokenReplacement? ToDocumentSpan(
+        string document,
+        List<(JsonStringValue Value, int JoinedStart)> segments,
+        TokenReplacement replacement)
+    {
+        int segmentIndex = LastSegmentStartingAtOrBefore(segments, replacement.Position);
+
+        if (segmentIndex < 0)
+            return null;
+
+        (JsonStringValue value, int joinedStart) = segments[segmentIndex];
+        int localStart = replacement.Position - joinedStart;
+        int localEnd = localStart + replacement.Length;
+
+        if (localStart < 0 || localEnd > value.Value.Length)
+            return null;
+
+        int rawStart;
+        int rawEnd;
+
+        if (value.IsVerbatim)
+        {
+            rawStart = value.RawStart + localStart;
+            rawEnd = value.RawStart + localEnd;
+        }
+        else
+        {
+            int[] raw = value.RawIndices(document);
+            rawStart = value.RawStart + raw[localStart];
+            rawEnd = value.RawStart + raw[localEnd];
+        }
+
+        string escaped = JsonEncodedText.Encode(replacement.AnonymizedValue, JavaScriptEncoder.UnsafeRelaxedJsonEscaping).ToString();
+
+        return replacement with { AnonymizedValue = escaped, Position = rawStart, Length = rawEnd - rawStart };
+    }
+
+    private static int LastSegmentStartingAtOrBefore(List<(JsonStringValue Value, int JoinedStart)> segments, int position)
+    {
+        int low = 0;
+        int high = segments.Count - 1;
+        int found = -1;
+
+        while (low <= high)
+        {
+            int mid = (low + high) / 2;
+
+            if (segments[mid].JoinedStart <= position)
+            {
+                found = mid;
+                low = mid + 1;
+            }
+            else
+            {
+                high = mid - 1;
+            }
+        }
+
+        return found;
+    }
 
     private async IAsyncEnumerable<(TokenDetectionResult Token, string AnonymizedValue)> GetAnonymizedTokensAsync(string content, CancellationToken cancellationToken)
     {
@@ -203,7 +374,9 @@ public class ReplacerService : IBodyMutationFactory
                 return null;
             }
 
-            Anonymization result = await replacer.AnonymizeWithFindingsAsync(content, cancellationToken);
+            // Tried as JSON first, whatever the content type says -- chat backends post JSON
+            // under all sorts of declarations -- and treated as text when it does not parse.
+            Anonymization result = await replacer.AnonymizeJsonWithFindingsAsync(content, cancellationToken);
 
             observer.Detected(Entities(result.Applied), result.ScannedMs);
 

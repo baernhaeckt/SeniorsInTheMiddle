@@ -252,6 +252,143 @@ public class ReplacerServiceTests
         Assert.AreEqual(2, observer.RestoredCount);
     }
 
+    /// <summary>
+    /// The shape that broke a chat request: spaCy, handed the raw document, reported two
+    /// "persons" spanning keys, quotes and braces, and replacing them tore the JSON apart. The
+    /// analyzer must never see the syntax -- only the values, one line each, labelled with
+    /// their path for context. Array elements carry the array's key; nested keys are dotted.
+    /// </summary>
+    [TestMethod]
+    public async Task Only_The_String_Values_Of_A_Json_Body_Are_Analyzed()
+    {
+        const string body = """{"action":"next","tz":{"name":"Europe/Zurich"},"presets":["cap:image","cap:file"],"count":3,"flag":true,"nothing":null,"empty":"","after":"x"}""";
+        StubPiiService client = new([]);
+
+        await Exchange(Replacer(client, []), new Observer()).MutateRequestAsync(
+            Encoding.UTF8.GetBytes(body),
+            new BodyDescriptor("application/json", Encoding.UTF8),
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.AreEqual("[action] next\n[tz.name] Europe/Zurich\n[presets] cap:image\n[presets] cap:file\n[after] x", client.AnalyzedText);
+    }
+
+    /// <summary>
+    /// A finding in a value is spliced into that value, the rest of the document is left as
+    /// sent -- whitespace included -- and the offsets reported are indices into the original
+    /// body, which is what the dashboard slices. The content type does not matter: the body
+    /// parses, so it is JSON.
+    /// </summary>
+    [TestMethod]
+    public async Task A_Finding_In_A_Json_Value_Is_Replaced_In_Place()
+    {
+        const string body = """
+            {
+              "customer": { "name": "Hans Meier", "company": "Acme AG" },
+              "comment": "Bitte an Hans Meier liefern."
+            }
+            """;
+        const string analyzed = "[customer.name] Hans Meier\n[customer.company] Acme AG\n[comment] Bitte an Hans Meier liefern.";
+        Observer observer = new();
+        StubPiiService client = new([Finding(analyzed, "Hans Meier", "PERSON"), Finding(analyzed, "Hans Meier", "PERSON", occurrence: 1)]);
+
+        byte[]? mutated = await Exchange(Replacer(client, []), observer).MutateRequestAsync(
+            Encoding.UTF8.GetBytes(body),
+            new BodyDescriptor("text/plain", Encoding.UTF8),
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.AreEqual(analyzed, client.AnalyzedText);
+        Assert.IsNotNull(mutated);
+        Assert.AreEqual(body.Replace("Hans Meier", "<PERSON>"), Encoding.UTF8.GetString(mutated));
+
+        Assert.IsNotNull(observer.Entities);
+        Assert.AreEqual(2, observer.Entities.Count);
+        foreach (DetectedEntity entity in observer.Entities)
+            Assert.AreEqual("Hans Meier", body[entity.Start..entity.End]);
+    }
+
+    /// <summary>
+    /// A value with escapes is analysed decoded -- the model must see a line break, not a
+    /// backslash and an n -- and the finding lands on the raw text, escapes and all.
+    /// </summary>
+    [TestMethod]
+    public async Task A_Finding_After_An_Escape_Sequence_Lands_On_The_Raw_Text()
+    {
+        const string body = """{"msg":"Gr\u00fcezi,\nich bin Hans Meier \ud83d\ude42 aus Bern","x":1}""";
+        const string analyzed = "[msg] Grüezi,\nich bin Hans Meier \U0001F642 aus Bern";
+        Observer observer = new();
+        StubPiiService client = new([Finding(analyzed, "Hans Meier", "PERSON"), Finding(analyzed, "Bern", "LOCATION")]);
+
+        byte[]? mutated = await Exchange(Replacer(client, []), observer).MutateRequestAsync(
+            Encoding.UTF8.GetBytes(body),
+            new BodyDescriptor("application/json", Encoding.UTF8),
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.AreEqual(analyzed, client.AnalyzedText);
+        Assert.IsNotNull(mutated);
+        Assert.AreEqual("""{"msg":"Gr\u00fcezi,\nich bin <PERSON> \ud83d\ude42 aus <LOCATION>","x":1}""", Encoding.UTF8.GetString(mutated));
+
+        Assert.IsNotNull(observer.Entities);
+        Assert.AreEqual("Hans Meier", body[observer.Entities[0].Start..observer.Entities[0].End]);
+        Assert.AreEqual("Bern", body[observer.Entities[1].Start..observer.Entities[1].End]);
+    }
+
+    /// <summary>A stand-in is written into a JSON string, so it is escaped like one.</summary>
+    [TestMethod]
+    public async Task A_Stand_In_Is_Json_Escaped()
+    {
+        const string body = """{"addr":"Bahnhofstrasse 1"}""";
+        const string standIn = "Musterweg 5\n8000 \"Zürich\"";
+        StubPiiService client = new([Finding("[addr] Bahnhofstrasse 1", "Bahnhofstrasse 1", "LOCATION")], replacement: standIn);
+
+        byte[]? mutated = await Exchange(Replacer(client, []), new Observer()).MutateRequestAsync(
+            Encoding.UTF8.GetBytes(body),
+            new BodyDescriptor("application/json", Encoding.UTF8),
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.IsNotNull(mutated);
+        string rewritten = Encoding.UTF8.GetString(mutated);
+        Assert.AreEqual("""{"addr":"Musterweg 5\n8000 \"Zürich\""}""", rewritten);
+        Assert.AreEqual(standIn, System.Text.Json.JsonDocument.Parse(rewritten).RootElement.GetProperty("addr").GetString());
+    }
+
+    /// <summary>A finding the analyzer reports across two values, or over a label, is not a
+    /// span of anything in the document, and is dropped rather than spliced in.</summary>
+    [TestMethod]
+    public async Task A_Finding_Across_Two_Json_Values_Or_Over_A_Label_Is_Dropped()
+    {
+        const string body = """{"a":"Hans","b":"Meier"}""";
+        const string analyzed = "[a] Hans\n[b] Meier";
+        List<TelemetryEvent> events = [];
+
+        byte[]? mutated = await Exchange(Replacer(new StubPiiService([Finding(analyzed, "Hans\n[b] Meier", "PERSON"), Finding(analyzed, "[b] Meier", "PERSON")]), events), new Observer()).MutateRequestAsync(
+            Encoding.UTF8.GetBytes(body),
+            new BodyDescriptor("application/json", Encoding.UTF8),
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.IsNull(mutated);
+        // The label-only finding is nested in the cross-value one, so the overlap rule drops
+        // it first; only the outer span reaches the document check.
+        Assert.AreEqual(1, events.OfType<ProxyLog>().Count(l => l.Level == TelemetryLogLevel.Warn));
+    }
+
+    /// <summary>What does not parse is not JSON, whatever the header says, and is analysed as
+    /// the text it is.</summary>
+    [TestMethod]
+    public async Task A_Body_That_Is_Not_Json_Is_Analyzed_As_Text()
+    {
+        const string body = "name=Hans Meier&city=Bern";
+        StubPiiService client = new([Finding(body, "Hans Meier", "PERSON")]);
+
+        byte[]? mutated = await Exchange(Replacer(client, []), new Observer()).MutateRequestAsync(
+            Encoding.UTF8.GetBytes(body),
+            new BodyDescriptor("application/json", Encoding.UTF8),
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.AreEqual(body, client.AnalyzedText);
+        Assert.IsNotNull(mutated);
+        Assert.AreEqual("name=<PERSON>&city=Bern", Encoding.UTF8.GetString(mutated));
+    }
+
     private static IExchangeBodyMutation Exchange(ReplacerService replacer, IExchangeObserver observer)
         => ((IBodyMutationFactory)replacer).CreateForExchange(new Uri("https://example.ch/"), observer);
 
@@ -322,9 +459,11 @@ public class ReplacerServiceTests
     /// <summary>The analyzer, reduced to the findings a test hands it. The guard against empty
     /// text is the real client's, and is here so that a caller that stops respecting it fails
     /// a test rather than a request.</summary>
-    private sealed class StubPiiService(IReadOnlyList<PiiDetection> detections) : IPiiServiceClient
+    private sealed class StubPiiService(IReadOnlyList<PiiDetection> detections, string? replacement = null) : IPiiServiceClient
     {
         public int AnalyzeCalls { get; private set; }
+
+        public string? AnalyzedText { get; private set; }
 
         public bool IsEnabled => true;
 
@@ -332,6 +471,7 @@ public class ReplacerServiceTests
         {
             ArgumentException.ThrowIfNullOrEmpty(text);
             AnalyzeCalls++;
+            AnalyzedText = text;
 
             return Task.FromResult(new PiiAnalyzeResult
             {
@@ -341,7 +481,7 @@ public class ReplacerServiceTests
         }
 
         public Task<string> ReplacementTextAsync(string piiType, CancellationToken cancellationToken = default)
-            => Task.FromResult($"<{piiType}>");
+            => Task.FromResult(replacement ?? $"<{piiType}>");
     }
 
     private sealed class CollectingSink(List<TelemetryEvent> events) : ITelemetrySink
