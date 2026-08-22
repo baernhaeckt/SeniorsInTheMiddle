@@ -61,6 +61,9 @@ RUN for model in $SPACY_MODELS; do \
         uv run --no-sync --frozen python -c "import spacy; spacy.load('$model'); print('ok: $model')" || exit 1; \
     done
 
+# Download the embedding model to calculate the privacy risk
+RUN uv run hf download sentence-transformers/all-MiniLM-L6-v2
+
 # ---------- Runtime ----------
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 
