@@ -76,7 +76,10 @@ PII_TYPE_MAPPINGS: dict[str, PiiMapping] = {
         hipaa_category=HipaaCategory.NON_PHI,
         risk_level=RiskLevel.LEVEL_TWO,
         pii_enum=PiiTypes.ADDRESS,
-        faker=lambda: faker.address(),
+        # Not faker.address(): that puts the town on a second line, and the
+        # address it stands in for was one run of text inside a JSON string.
+        # Same parts, joined the way the original wrote them.
+        faker=lambda: f"{faker.street_address()}, {faker.postcode()} {faker.city()}",
     ),
     "US_DRIVERS_LICENSE_NUMBER": PiiMapping(
         information_type="Driver's License Number",

@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import statistics
 from dataclasses import replace
 
@@ -12,6 +13,18 @@ from .pii_types import PiiTypes
 from .utils.pii_risk_mappings import get_pii_risk_mapping
 
 logger = logging.getLogger(__name__)
+
+# A replacement stands in for a value that sat inside a JSON string, so a line
+# break in it is not the shape the original had: it escapes to a literal \n in
+# the rewritten body and reads as one in the inspector. The individual fakers
+# are written to stay on one line; this is the invariant they are written to.
+_LINE_BREAKS = re.compile(r"\s*[\r\n]+\s*")
+
+
+def single_line(value: str) -> str:
+    """Fold a replacement onto one line, as the value it replaces was."""
+    return _LINE_BREAKS.sub(" ", value).strip()
+
 
 class PiiDetector:
     SUPPORTED_LANGUAGES = ["de", "en"]
@@ -148,4 +161,4 @@ class PiiDetector:
         logger.info(f"Creating replacement text for PII type '{pii_type}'.")
 
         pii_mapping = get_pii_risk_mapping(pii_type)
-        return str(pii_mapping.faker())
+        return single_line(str(pii_mapping.faker()))
