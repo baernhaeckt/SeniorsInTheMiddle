@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SITM Proxy · Pitch</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /*
+       * Same palette as the dashboard, so the slides and the live demo read as one product:
+       *   warm = data that identifies a person · cool = data that does not · alert = caught mid-flight
+       */
+      :root {
+        --void: #0d1216;
+        --panel: #0c2a2b;
+        --panel-hi: #103536;
+        --line: #225851;
+        --line-soft: #183f3c;
+        --ink: #ffffff;
+        --ink-2: #a5afb4;
+        --ink-3: #7d8689;
+        --warm: #3fb39c;
+        --warm-2: #288879;
+        --cool: #38b5ee;
+        --alert: #d4708d;
+        --display: 'Archivo', 'Segoe UI', system-ui, sans-serif;
+        --body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+        --mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: var(--void);
+        color: var(--ink);
+        font-family: var(--body);
+        overflow: hidden;
+      }
+
+      /* A fixed 16:9 stage scaled to the viewport keeps every projector honest. */
+      #stage {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 1280px;
+        height: 720px;
+        transform-origin: center center;
+      }
+
+      .slide {
+        position: absolute;
+        inset: 0;
+        display: none;
+        flex-direction: column;
+        padding: 60px 80px 52px;
+        background:
+          radial-gradient(70% 90% at 6% 34%, rgba(40, 136, 121, 0.16), transparent 60%),
+          radial-gradient(70% 90% at 96% 66%, rgba(56, 181, 238, 0.1), transparent 60%),
+          radial-gradient(120% 100% at 50% 0%, rgba(12, 42, 43, 0.72), var(--void) 70%);
+      }
+
+      .slide.is-active {
+        display: flex;
+      }
+
+      .label {
+        font-family: var(--display);
+        font-weight: 600;
+        font-size: 13px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--ink-3);
+      }
+
+      h1 {
+        font-family: var(--display);
+        font-weight: 700;
+        font-size: 108px;
+        line-height: 1.02;
+        letter-spacing: -0.02em;
+        margin: 24px 0 0;
+      }
+
+      h2 {
+        font-family: var(--display);
+        font-weight: 700;
+        font-size: 48px;
+        line-height: 1.08;
+        letter-spacing: -0.01em;
+        margin: 14px 0 0;
+      }
+
+      .lede {
+        margin: 26px 0 0;
+        max-width: 26em;
+        font-size: 25px;
+        line-height: 1.5;
+        color: var(--ink-2);
+      }
+
+      .warm {
+        color: var(--warm);
+      }
+      .cool {
+        color: var(--cool);
+      }
+
+      .spacer {
+        flex: 1;
+      }
+
+      /* ---- slide 1: the stream, and the one word in it that names a person ---- */
+      .stream {
+        width: 100%;
+        height: auto;
+        margin-top: 8px;
+      }
+
+      /* ---- slide 2: four capabilities ---- */
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 26px 34px;
+        margin-top: 46px;
+      }
+
+      .cap {
+        padding-left: 20px;
+        border-left: 2px solid var(--line);
+      }
+
+      .cap:nth-child(1) {
+        border-left-color: var(--warm);
+      }
+      .cap:nth-child(2) {
+        border-left-color: var(--alert);
+      }
+      .cap:nth-child(3) {
+        border-left-color: var(--warm-2);
+      }
+      .cap:nth-child(4) {
+        border-left-color: var(--cool);
+      }
+
+      .cap h3 {
+        font-family: var(--display);
+        font-weight: 700;
+        font-size: 27px;
+        margin: 0;
+        letter-spacing: -0.005em;
+      }
+
+      .cap p {
+        margin: 10px 0 0;
+        font-size: 21px;
+        line-height: 1.45;
+        color: var(--ink-2);
+      }
+
+      /* ---- slide 3: one package, three places ---- */
+      .places {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 22px;
+        margin-top: 34px;
+      }
+
+      .place {
+        border: 1px solid var(--line-soft);
+        border-radius: 4px;
+        background: rgba(12, 42, 43, 0.45);
+        padding: 22px 22px 24px;
+      }
+
+      .place h3 {
+        font-family: var(--display);
+        font-weight: 700;
+        font-size: 25px;
+        margin: 14px 0 0;
+      }
+
+      .place p {
+        margin: 8px 0 0;
+        font-size: 18px;
+        line-height: 1.45;
+        color: var(--ink-2);
+      }
+
+      .kicker {
+        margin-top: 30px;
+        font-family: var(--display);
+        font-weight: 700;
+        font-size: 28px;
+        letter-spacing: -0.005em;
+      }
+
+      .kicker .sub {
+        display: block;
+        margin-top: 8px;
+        font-family: var(--body);
+        font-weight: 400;
+        font-size: 20px;
+        color: var(--ink-2);
+      }
+
+      /* ---- chrome ---- */
+      .foot {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        margin-top: 34px;
+        font-family: var(--display);
+        font-size: 12px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--ink-3);
+      }
+
+      .pips {
+        display: flex;
+        gap: 7px;
+      }
+
+      .pips i {
+        width: 22px;
+        height: 2px;
+        background: var(--line);
+      }
+
+      .pips i.on {
+        background: var(--warm);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <!-- 1 -->
+      <section class="slide is-active">
+        <div class="label">BärnHäckt 2026 · Swiss Data Airlock</div>
+        <h1>SITM Proxy<span class="warm">.</span></h1>
+        <p class="lede">
+          Der <strong class="warm">Datentresor</strong> auf Ihrer Seite der Grenze. Er ersetzt jede
+          Personenangabe, bevor sie hinausgeht.
+        </p>
+
+        <div class="spacer"></div>
+
+      <svg class="stream" viewBox="0 0 1120 176" role="img"
+        aria-label="Ein Datenstrom kreuzt die Grenze; nur die identifizierende Angabe wird ausgetauscht.">
+        <defs>
+          <linearGradient id="edges" x1="0" x2="1">
+            <stop offset="0" stop-color="#fff" stop-opacity="0" />
+            <stop offset="0.16" stop-color="#fff" stop-opacity="1" />
+            <stop offset="0.84" stop-color="#fff" stop-opacity="1" />
+            <stop offset="1" stop-color="#fff" stop-opacity="0" />
+          </linearGradient>
+          <mask id="fade">
+            <rect width="1120" height="176" fill="url(#edges)" />
+          </mask>
+          <linearGradient id="post" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#3fb39c" stop-opacity="0" />
+            <stop offset="0.5" stop-color="#3fb39c" />
+            <stop offset="1" stop-color="#38b5ee" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+
+        <g mask="url(#fade)">
+        <rect x="30" y="10" width="48" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="90" y="10" width="70" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="172" y="10" width="36" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="220" y="10" width="92" height="13" rx="6" fill="#3fb39c" />
+        <rect x="324" y="10" width="58" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="394" y="10" width="42" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="448" y="10" width="30" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="30" y="42" width="84" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="126" y="42" width="40" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="178" y="42" width="52" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="242" y="42" width="64" height="13" rx="6" fill="#3fb39c" />
+        <rect x="318" y="42" width="34" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="364" y="42" width="72" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="448" y="42" width="24" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="30" y="74" width="30" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="72" y="74" width="98" height="13" rx="6" fill="#3fb39c" />
+        <rect x="182" y="74" width="46" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="240" y="74" width="66" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="318" y="74" width="40" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="370" y="74" width="54" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="436" y="74" width="34" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="30" y="106" width="56" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="98" y="106" width="42" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="152" y="106" width="76" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="240" y="106" width="34" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="286" y="106" width="88" height="13" rx="6" fill="#3fb39c" />
+        <rect x="386" y="106" width="46" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="444" y="106" width="28" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="30" y="138" width="66" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="108" y="138" width="48" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="168" y="138" width="30" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="210" y="138" width="58" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="280" y="138" width="40" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="332" y="138" width="100" height="13" rx="6" fill="#3fb39c" />
+        <rect x="444" y="138" width="36" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="640" y="10" width="48" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="700" y="10" width="70" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="782" y="10" width="36" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="830" y="10" width="92" height="13" rx="6" fill="#38b5ee" />
+        <rect x="934" y="10" width="58" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="1004" y="10" width="42" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="1058" y="10" width="30" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="640" y="42" width="84" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="736" y="42" width="40" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="788" y="42" width="52" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="852" y="42" width="64" height="13" rx="6" fill="#38b5ee" />
+        <rect x="928" y="42" width="34" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="974" y="42" width="72" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="1058" y="42" width="24" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="640" y="74" width="30" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="682" y="74" width="98" height="13" rx="6" fill="#38b5ee" />
+        <rect x="792" y="74" width="46" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="850" y="74" width="66" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="928" y="74" width="40" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="980" y="74" width="54" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="1046" y="74" width="34" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="640" y="106" width="56" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="708" y="106" width="42" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="762" y="106" width="76" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="850" y="106" width="34" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="896" y="106" width="88" height="13" rx="6" fill="#38b5ee" />
+        <rect x="996" y="106" width="46" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="1054" y="106" width="28" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="640" y="138" width="66" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="718" y="138" width="48" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="778" y="138" width="30" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="820" y="138" width="58" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="890" y="138" width="40" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        <rect x="942" y="138" width="100" height="13" rx="6" fill="#38b5ee" />
+        <rect x="1054" y="138" width="36" height="13" rx="6" fill="rgba(165, 175, 180, 0.2)" />
+        </g>
+
+        <rect x="560" y="0" width="1.5" height="176" fill="url(#post)" />
+        <circle cx="560.8" cy="88" r="5" fill="#0d1216" stroke="#3fb39c" stroke-width="1.5" />
+      </svg>
+
+        <div class="foot">
+          <span>Echte Werte verlassen das Land nie</span>
+          <div class="pips"><i class="on"></i><i></i><i></i></div>
+        </div>
+      </section>
+
+      <!-- 2 -->
+      <section class="slide">
+        <div class="label">Was es tut</div>
+        <h2>Hinaus geht nur,<br />was niemanden identifiziert.</h2>
+
+        <div class="grid">
+          <div class="cap">
+            <h3>Pseudonymisierung per NLP</h3>
+            <p>Findet Namen, Adressen und IBANs im Fliesstext und ersetzt sie formattreu.</p>
+          </div>
+          <div class="cap">
+            <h3>Risikobewertung</h3>
+            <p>Jeder Fund wird eingestuft, wie stark er eine Person verrät.</p>
+          </div>
+          <div class="cap">
+            <h3>Lokaler Tresor</h3>
+            <p>Die echten Werte bleiben im Haus – für den Benutzer ändert sich nichts.</p>
+          </div>
+          <div class="cap">
+            <h3>Live Insights</h3>
+            <p>Jede Anfrage, jeder Fund, jede Ersetzung live sichtbar.</p>
+          </div>
+        </div>
+
+        <div class="spacer"></div>
+        <div class="foot">
+          <span>Echte Werte verlassen das Land nie</span>
+          <div class="pips"><i></i><i class="on"></i><i></i></div>
+        </div>
+      </section>
+
+      <!-- 3 -->
+      <section class="slide">
+        <div class="label">Wo es läuft</div>
+        <h2>Es steht dort,<br />wo Sie es hinstellen.</h2>
+
+        <div class="places">
+          <div class="place">
+            <div class="label">Variante 1</div>
+            <h3>Im eigenen Haus</h3>
+            <p>Auf eigener Hardware, hinter der eigenen Firewall.</p>
+          </div>
+          <div class="place">
+            <div class="label">Variante 2</div>
+            <h3>Beim Schweizer Hoster</h3>
+            <p>Der Tresor bleibt auf einem Server in der Schweiz.</p>
+          </div>
+          <div class="place">
+            <div class="label">Variante 3</div>
+            <h3>Auf dem Notebook</h3>
+            <p>Dasselbe Paket, alles darin, nichts daneben.</p>
+          </div>
+        </div>
+
+        <div class="kicker">
+          Keine externen Komponenten. Keine fremde Abhängigkeit.
+          <span class="sub">Die Grenze, die Sie Ihren Kunden zugesagt haben, ist jetzt Software, die Ihnen gehört.</span>
+        </div>
+
+        <div class="spacer"></div>
+        <div class="foot">
+          <span>Echte Werte verlassen das Land nie</span>
+          <div class="pips"><i></i><i></i><i class="on"></i></div>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      const slides = [...document.querySelectorAll('.slide')];
+      let at = 0;
+
+      function show(next) {
+        at = Math.max(0, Math.min(slides.length - 1, next));
+        slides.forEach((s, i) => s.classList.toggle('is-active', i === at));
+      }
+
+      // The stage is authored at 1280x720 and scaled, so nothing reflows on an unknown projector.
+      function fit() {
+        const scale = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+        document.getElementById('stage').style.transform = `translate(-50%, -50%) scale(${scale})`;
+      }
+
+      window.addEventListener('resize', fit);
+      fit();
+
+      document.addEventListener('keydown', (e) => {
+        if (['ArrowRight', 'ArrowDown', ' ', 'PageDown', 'Enter'].includes(e.key)) show(at + 1);
+        else if (['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace'].includes(e.key)) show(at - 1);
+        else if (e.key === 'f') document.documentElement.requestFullscreen();
+      });
+
+      document.addEventListener('click', (e) => show(e.clientX < window.innerWidth / 3 ? at - 1 : at + 1));
+    </script>
+  </body>
+</html>
