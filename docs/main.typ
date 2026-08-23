@@ -42,20 +42,26 @@
 )
 
 #show heading.where(level: 1): it => [
-  #set text(size: 9pt, weight: "regular")
+  #set text(size: 14pt, weight: "regular")
   #v(10pt)
-  #it
-  #v(-0.09in)
-  #line(end: (98%, 0%), stroke: (thickness: 0.5pt, paint: rgb(178, 178, 178)))
-  #v(5pt)
+  #block(
+    width: 98%,
+    inset: (bottom: 6pt),
+    below: 12pt,
+    stroke: (bottom: (thickness: 0.5pt, paint: rgb(178, 178, 178))),
+    it,
+  )
 ]
 #show heading.where(level: 2): it => [
-  #set text(size: 9pt, weight: "regular")
+  #set text(size: 12pt, weight: "regular")
   #v(10pt)
-  #it
-  #v(-0.09in)
-  #line(end: (98%, 0%), stroke: (thickness: 0.5pt, paint: rgb(178, 178, 178)))
-  #v(5pt)
+  #block(
+    width: 98%,
+    inset: (bottom: 6pt),
+    below: 12pt,
+    stroke: (bottom: (thickness: 0.5pt, paint: rgb(178, 178, 178))),
+    it,
+  )
 ]
 
 #let titlepage(title, team) = {

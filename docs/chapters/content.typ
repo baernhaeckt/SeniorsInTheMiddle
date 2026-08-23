@@ -44,6 +44,8 @@ Was eine Person identifiziert, steht selten in einem sauber benannten Feld, sond
 *Tokens, die aussehen wie Daten*\
 Ein Platzhalter der Form [REDACTED_1] zerstört den Nutzen des Zieldienstes: Ein Sprachmodell antwortet schlechter, eine Formularvalidierung schlägt fehl, ein Suchindex bricht. Wir ersetzen deshalb formattreu. Aus "Hans Meier" wird ein anderer vollständiger Name, aus einer Adresse eine andere Adresse mit Strasse, Postleitzahl und Ort, aus einer IBAN eine andere IBAN mit gültiger Prüfziffer. Die Ersatzwerte zieht Faker aus einem deutschsprachigen Locale: formattreu, aber noch nicht regionstreu, aus einer Berner Adresse wird also eine deutsche (siehe Abgrenzung). Der externe Dienst arbeitet auf Daten, die für ihn vollständig sind, und erhält trotzdem keine einzige echte Angabe.
 
+#pagebreak()
+
 *Konsistenz über Anfragen hinweg*\
 Damit Zusammenhänge erhalten bleiben, ist die Zuordnung stabil: Derselbe echte Wert erhält über Dokumente, Anfragen und Sitzungen hinweg denselben Token. Wer im Zieldienst nach dem Token sucht, findet alle Vorkommen; wer über ein Dokument mit zwei Personen argumentiert, behält zwei unterscheidbare Personen. Genau diese Stabilität macht Suche im tokenisierten Bestand überhaupt möglich: Die Suchanfrage durchläuft denselben Proxy und wird auf demselben Weg tokenisiert, bevor sie den Dienst erreicht. Die Zuordnung ist dabei auf das Paar aus Client und Zielhost geschlüsselt und gilt bewusst nicht über Dienste hinweg: Eine Tabelle, die überall gilt, setzt auf dem Rückweg auch dort echte Werte ein, wo der Token nie herkam, und ein fremder "René Bauer" auf einer unbeteiligten Seite würde zum echten Namen dieses Nutzers. Der Preis ist, dass dieselbe Person bei zwei Diensten unter zwei verschiedenen Tokens steht.
 
@@ -71,6 +73,7 @@ Eine Schicht, die man nicht sieht, wird nicht geglaubt. Der Proxy sendet jeden S
 - Testdaten sind Schweizer Fixtures mit korrekten Prüfziffern bei AHV-Nummern und IBANs, damit eine Erkennung, die validiert, nicht an Lorem Ipsum vorbeiläuft. Die IBANs findet die Erkennung, die AHV-Nummern zeigen die Lücke.
 - Secure: Kein Schlüsselmaterial im Image, die CA in einem gemounteten Volume, Secrets ausschliesslich über Umgebungsvariablen. Zugang zur API über JWT, der Telemetrie-Stream prüft zusätzlich den Origin des WebSocket-Handshakes selbst, weil ein Browser darauf weder CORS noch Preflight anwendet.
 - CI/CD über GitHub Actions: Build, Lint, Typecheck, Tests und Container-Images pro Komponente, Deployment nach Azure Container Apps.
+- Diese Dokumentation liegt als Quelltext im Repository: in Typst gesetzt, mit Diagrammen aus draw.io und PlantUML, und von GitHub Actions bei jeder Änderung zum PDF kompiliert.
 
 #pagebreak()
 
@@ -81,7 +84,7 @@ Eine Schicht, die man nicht sieht, wird nicht geglaubt. Der Proxy sendet jeden S
 Die @bausteinsicht zeigt die Struktur des Software Systems. Der Proxy ist die zentrale Komponente, die den Verkehr abfängt und an die Erkennung weiterleitet. Die Erkennung ist in einem eigenen Service gekapselt, der über einen Unix-Socket angesprochen wird. Das Dashboard visualisiert die Telemetrie und ermöglicht die Überwachung des Datenflusses. Der Privacy Checker schätzt, wie gut sich die ersetzten Namen aus dem übrig gebliebenen Text wieder erschliessen lassen. Er hängt nicht im Anfragepfad: Seine Antwort dauert Sekunden und geht als eigenes Ereignis ans Dashboard, während die Anfrage längst unterwegs ist.
 
 #figure(
-  image("/assets/bausteinsicht.svg"),
+  image("/assets/bausteinsicht.svg", height: 7cm),
   caption: [
     Die strukturelle Ansicht des Software Systems.
   ],
@@ -91,12 +94,10 @@ Die @bausteinsicht zeigt die Struktur des Software Systems. Der Proxy ist die ze
 
 == Laufzeitsicht
 
-Die @laufzeitsicht zeigt den Ablauf einer Anfrage durch das System, mit allen Wegen, die sie nehmen kann. Ein Host auf der Bypass-Liste wird gar nicht erst abgefangen: Sein Verkehr geht als roher Tunnel durch und ist für den Proxy nicht sichtbar. Sonst terminiert der Proxy den CONNECT-Tunnel und liest die Anfrage im Klartext. Bodies, die keine Personendaten tragen können, gehen unverändert weiter (passthrough), ebenso Pfade ausserhalb der inspizierten Bereiche eines Hosts, Bodies über der Grössengrenze und solche, deren Signatur eine Änderung ohnehin ungültig machen würde. Was gelesen wird, geht an den Erkennungsservice. Ohne Treffer gilt die Anfrage als clean und geht unverändert hinaus; mit Treffern wird jeder Wert durch seinen Token ersetzt, wobei ein Wert, der bereits im Tresor steht, seinen bestehenden Token behält. Erst danach steht die Einstufung fest, weshalb request.observed an dieser Stelle gemeldet wird und nicht früher. Die Risikoprüfung läuft daneben und meldet sich später mit privacy.assessed. Auf dem Rückweg werden die Tokens wieder durch die echten Werte ersetzt: bei einem endlichen Body am Stück, bei einem Event-Stream Chunk für Chunk, damit eine Antwort, die tröpfelt, nicht erst am Ende beim Client ankommt.
-
-#pagebreak()
+Die @laufzeitsicht zeigt den Ablauf einer Anfrage durch das System. Der Proxy terminiert den CONNECT-Tunnel und liest die Anfrage im Klartext. Bodies, die keine Personendaten tragen können, gehen unverändert weiter. Was gelesen wird, geht an den Erkennungsservice. Ohne Treffer gilt die Anfrage als clean und geht unverändert hinaus; mit Treffern wird jeder Wert durch seinen Token ersetzt, wobei ein Wert, der bereits im Tresor steht, seinen bestehenden Token behält. Die Risikoprüfung läuft daneben und meldet sich später mit privacy.assessed. Auf dem Rückweg werden die Tokens wieder durch die echten Werte ersetzt.
 
 #figure(
-  image("/assets/laufzeitsicht.svg", height: 23cm),
+  image("/assets/laufzeitsicht.svg", height: 19cm),
   caption: [
     Das Software System zur Laufzeit.
   ],
@@ -116,6 +117,8 @@ Die @verteilsicht zeigt die Verteilung der Komponenten des Software Systems übe
   ],
 ) <verteilsicht>
 
+#pagebreak()
+
 == Technologien und Frameworks
 
 #table(
@@ -132,6 +135,7 @@ Die @verteilsicht zeigt die Verteilung der Komponenten des Software Systems übe
   [Tests], [MSTest auf Microsoft.Testing.Platform, Vitest und Testing Library, Integrationsumgebung mit Docker Compose],
   [Qualität], [ESLint, Stylelint, Prettier, Knip, EditorConfig, Nullable Reference Types],
   [Betrieb], [Docker, GitHub Actions, GitHub Container Registry, Azure Container Apps],
+  [Dokumentation], [Typst, draw.io und PlantUML für die Diagramme],
 )
 
 
