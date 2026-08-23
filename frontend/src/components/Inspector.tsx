@@ -13,6 +13,7 @@ import { prettyBody, splitByOffsets, splitByValues } from '../engine/text'
 import { useStore } from '../engine/useStore'
 import type { Entity } from '../protocol/types'
 import { cssVars } from '../ui/cssVars'
+import { useInspectorFocus } from '../ui/focus'
 import { Insights } from './Insights'
 import { chipTitle, isPhi } from '../engine/entityFacts'
 
@@ -47,6 +48,7 @@ export function Inspector() {
   // the boundary -- is the same question for the request and for the reply.
   const [at, setAt] = useState(OPENS_AT)
   const rule = useRef<HTMLDivElement>(null)
+  const [focused, toggleFocus] = useInspectorFocus()
 
   return (
     <section className="panel" aria-label="Payload inspector">
@@ -68,6 +70,16 @@ export function Inspector() {
             }}
           >
             {following ? 'following live' : 'follow live'}
+          </button>
+          <button
+            type="button"
+            className="hist__btn"
+            data-active={focused}
+            aria-pressed={focused}
+            title={focused ? 'Back to the even split' : 'Give the inspector most of the screen'}
+            onClick={toggleFocus}
+          >
+            {focused ? 'shrink' : 'expand'}
           </button>
         </div>
       </div>

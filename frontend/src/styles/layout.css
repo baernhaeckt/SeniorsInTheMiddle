@@ -44,6 +44,16 @@
   font-family: var(--mono);
 }
 
+/* Inspector focus: the floor takes the height, the inspector takes the width.
+   Flipped from the inspector's own head; see `ui/focus.ts`. */
+[data-focus='inspector'] .shell {
+  grid-template-rows: auto minmax(260px, 34fr) auto minmax(340px, 66fr);
+}
+
+[data-focus='inspector'] .floor {
+  grid-template-columns: minmax(220px, 0.6fr) minmax(0, 3fr) minmax(190px, 0.5fr);
+}
+
 /* ----------------------------------------------------------------- head -- */
 
 .floor {

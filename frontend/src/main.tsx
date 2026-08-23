@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
+import { applyFocus, loadFocus } from './ui/focus'
 import { applyProjector, loadProjector } from './ui/projector'
 
 // Fonts ship with the bundle. A privacy proxy's dashboard does not phone a
@@ -31,6 +32,7 @@ import './styles/projector.css'
 
 // Before the first paint, so a reload into projector mode never flashes the desk layout.
 applyProjector(loadProjector())
+applyFocus(loadFocus())
 
 const container = document.getElementById('root')
 if (!container) throw new Error('missing #root')
