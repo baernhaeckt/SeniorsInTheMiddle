@@ -85,8 +85,8 @@ public class TelemetrySerialization
     [TestMethod]
     public void Hello_AnnouncesTheVersionTheDashboardExpects()
     {
-        Assert.AreEqual(3, TelemetryJson.ProtocolVersion);
-
+        // The version is pinned by the literal 3 in the expected JSON below: the hello is built
+        // from TelemetryJson.ProtocolVersion, so bumping the constant fails this test.
         string json = TelemetryJson.Serialize(
             new ServerHello(TelemetryJson.ProtocolVersion, new ProxyInfo("Proxy", "local", "intercept", "rewrite"), Policy()));
 

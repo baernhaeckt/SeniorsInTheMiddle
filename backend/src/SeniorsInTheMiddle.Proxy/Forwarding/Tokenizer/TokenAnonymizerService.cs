@@ -73,45 +73,37 @@ public sealed class TokenAnonymizerService
         if (_anonymizationLookup.TryGetValue(token, out Token? anonymizedToken))
             return anonymizedToken.Value;
 
-        Token? newToken = null;
-        Token? lastCandidate = null;
-
         // The faker is asked for a value by type only, so it cannot know which values are
         // already taken here. A stand-in that is, is asked for again; the pool is large enough
-        // that a few draws settle it.
-        for (int attempt = 0; attempt <= CollisionRetries; attempt++)
-        {
-            Token candidate = new(await _client.ReplacementTextAsync(token.Classification, cancellationToken), token.Classification);
-            lastCandidate = candidate;
+        // that a few draws settle it. The first draw stands outside the loop so that a stand-in
+        // exists even when every retry collides.
+        Token candidate = await DrawStandInAsync(token, cancellationToken);
 
-            if (Register(candidate, token))
-            {
-                // Free, or already registered for this very value by a concurrent caller.
-                newToken = candidate;
-                break;
-            }
+        // Free, or already registered for this very value by a concurrent caller.
+        bool registered = Register(candidate, token);
+
+        for (int retry = 0; retry < CollisionRetries && !registered; retry++)
+        {
+            candidate = await DrawStandInAsync(token, cancellationToken);
+            registered = Register(candidate, token);
         }
 
-        bool collided = newToken is null;
-
-        if (collided)
+        if (!registered)
         {
             // Every draw stood for another value already. Hiding the value still comes first,
             // so the stand-in is used anyway; what is lost is an unambiguous restore, and that
             // is said out loud rather than discovered in a response.
-            newToken = lastCandidate!;
-
             _telemetrySink.Warn(
-                $"The stand-in for a {token.Classification} value collided with another value's {CollisionRetries + 1} times; both are hidden as \"{newToken.Value}\", and a restore yields the first.");
+                $"The stand-in for a {token.Classification} value collided with another value's {CollisionRetries + 1} times; both are hidden as \"{candidate.Value}\", and a restore yields the first.");
         }
 
-        Token finalToken = _anonymizationLookup.GetOrAdd(token, newToken);
+        Token finalToken = _anonymizationLookup.GetOrAdd(token, candidate);
 
-        if (finalToken != newToken && !collided)
+        if (finalToken != candidate && registered)
         {
             // Lost a race with a concurrent call for the same token: its stand-in wins, ours
             // must not linger in the restore map.
-            if (_deanonymizationLookup.TryRemove(newToken, out _))
+            if (_deanonymizationLookup.TryRemove(candidate, out _))
                 _restorations = null;
         }
 
@@ -220,6 +212,10 @@ public sealed class TokenAnonymizerService
 
         return longest;
     }
+
+    /// <summary>A fresh stand-in of the same classification, drawn from the faker.</summary>
+    private async Task<Token> DrawStandInAsync(Token token, CancellationToken cancellationToken) =>
+        new(await _client.ReplacementTextAsync(token.Classification, cancellationToken), token.Classification);
 
     /// <summary>
     /// Puts <paramref name="candidate"/> in the restore map for <paramref name="token"/>, unless

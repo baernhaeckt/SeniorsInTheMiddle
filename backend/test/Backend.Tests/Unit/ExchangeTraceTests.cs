@@ -147,19 +147,20 @@ public class ExchangeTraceTests
         UpstreamResponded responded = events.OfType<UpstreamResponded>().Single();
         Assert.AreEqual(201, responded.Status);
         Assert.AreEqual("{\"greeting\":\"Hallo [PERSON_1]\"}", responded.TokenizedResponseBody, "The later, fuller report wins.");
-        Assert.IsTrue(responded.UpstreamMs >= 0);
+        Assert.IsGreaterThanOrEqualTo(0d, responded.UpstreamMs);
 
         RehydrationCompleted rehydrated = events.OfType<RehydrationCompleted>().Single();
         Assert.AreEqual("{\"greeting\":\"Hallo Hans Meier\"}", rehydrated.ResponseBody);
         Assert.AreEqual(1, rehydrated.Restored);
 
         ExchangeDelivered delivered = events.OfType<ExchangeDelivered>().Single();
-        Assert.IsTrue(delivered.TotalMs >= 0);
+        Assert.IsGreaterThanOrEqualTo(0d, delivered.TotalMs);
         ExchangeTiming timing = delivered.Timing;
         Assert.IsTrue(timing.BufferMs >= 0 && timing.DetectMs >= 0 && timing.UpstreamMs >= 0 && timing.RehydrateMs >= 0);
-        Assert.IsTrue(timing.OverheadMs >= 0);
-        Assert.IsTrue(
-            timing.BufferMs + timing.DetectMs + timing.UpstreamMs + timing.RehydrateMs + timing.OverheadMs <= delivered.TotalMs + 0.001,
+        Assert.IsGreaterThanOrEqualTo(0d, timing.OverheadMs);
+        Assert.IsLessThanOrEqualTo(
+            delivered.TotalMs + 0.001,
+            timing.BufferMs + timing.DetectMs + timing.UpstreamMs + timing.RehydrateMs + timing.OverheadMs,
             "The steps never add up to more than the whole.");
 
         long[] times = events.Select(At).ToArray();
@@ -250,7 +251,7 @@ public class ExchangeTraceTests
 
         string opened = events.OfType<ExchangeOpened>().Single().RequestBody;
         Assert.AreEqual(ExchangeTrace.MaxBodyChars + 1, opened.Length);
-        Assert.IsTrue(opened.EndsWith('…'));
+        Assert.EndsWith("…", opened);
     }
 
     /// <summary>Nothing a late or repeated report can do changes what was already said.</summary>
@@ -265,7 +266,7 @@ public class ExchangeTraceTests
         trace.Completed(500, 0, 1);
         trace.Restored("x", 1);
 
-        Assert.AreEqual(2, events.Count);
+        Assert.HasCount(2, events);
     }
 
     private static (ExchangeTrace Trace, List<TelemetryEvent> Events) Trace()
