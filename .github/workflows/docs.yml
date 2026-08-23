@@ -19,24 +19,38 @@ jobs:
         working-directory: docs
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
-    
+        uses: actions/checkout@v7
+
       - name: Install Arial (mscorefonts)
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
+          # The postinst aborts with "user did not accept the mscorefonts-eula
+          # license" unless the question is preseeded, and apt still exits 0.
+          echo 'ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula boolean true' \
+            | sudo debconf-set-selections
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             ttf-mscorefonts-installer \
             fontconfig
-          fc-cache -f -v
+          fc-cache -f
+
+      - name: Verify Arial is available
+        run: |
+          fc-list | grep -qi 'Arial' || {
+            echo "::error::Arial was not installed - the PDF would silently fall back to another font."
+            exit 1
+          }
+          fc-list | grep -i 'Arial'
 
       - name: Install Typst
-        uses: typst-community/setup-typst@v4
+        uses: typst-community/setup-typst@v5
 
       - name: Compile
         run: typst compile main.typ docs.pdf
 
       - name: Upload PDF file
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: PDF
           path: "**/*.pdf"
