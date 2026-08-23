@@ -5,6 +5,11 @@ using Yarp.ReverseProxy.Forwarder;
 
 namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
+/// <summary>
+/// The forwarding core: hands each request to YARP's <see cref="IHttpForwarder"/> with a
+/// per-request <see cref="ForwardProxyTransformer"/> that anonymizes what goes upstream and
+/// restores it on the way back, while emitting the telemetry the dashboard renders.
+/// </summary>
 sealed class ForwardProxy : IForwardProxy
 {
     private readonly IHttpForwarder _forwarder;

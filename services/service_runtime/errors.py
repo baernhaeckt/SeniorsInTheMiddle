@@ -56,10 +56,14 @@ class ServiceError(ServiceRuntimeError):
 
 
 class InvalidRequestError(ServiceError):
+    """The frame parsed, but the request it carried does not make sense."""
+
     code = "invalid_request"
 
 
 class MethodNotFoundError(ServiceError):
+    """The request named a method this service does not expose."""
+
     code = "method_not_found"
 
     def __init__(self, method: str) -> None:
@@ -67,4 +71,6 @@ class MethodNotFoundError(ServiceError):
 
 
 class RequestTimeoutError(ServiceError):
+    """The handler was still running when the call's deadline passed."""
+
     code = "timeout"

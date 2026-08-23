@@ -315,6 +315,10 @@ public sealed class TokenAnonymizerService
     /// <summary>One thing to look for in a response, and what to write where it is found.</summary>
     private sealed record Restoration(string StandIn, string Real);
 
+    /// <summary>
+    /// The same restorations spelled two ways, because a response may carry either: raw text,
+    /// and the JSON-escaped form (both relaxed and ASCII-only) for string literals.
+    /// </summary>
     private sealed record Restorations(IReadOnlyList<Restoration> Text, IReadOnlyList<Restoration> Json);
 }
 

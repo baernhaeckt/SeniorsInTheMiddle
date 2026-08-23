@@ -3,9 +3,8 @@
 /// <summary>
 /// An account created at startup, bound from <c>Auth:SeedUser</c>.
 ///
-/// Users live in memory, so every restart and every new revision starts with an empty store.
-/// Without a seeded account a container restart mid-demo leaves nobody able to sign in, and
-/// self-registration is not much of a recovery when the dashboard is on a wall.
+/// Users live in memory, so every restart starts with an empty store. Without a seeded
+/// account, a restart mid-demo leaves nobody able to sign in to a dashboard on a wall.
 /// </summary>
 public sealed class SeedUserOptions
 {
@@ -21,9 +20,8 @@ public sealed class SeedUserOptions
     /// Whether <c>GET /api/v1/auth/demo-account</c> hands these credentials out, so the login
     /// screen can prefill them.
     ///
-    /// Defaults to false and is switched on only in Development. Turning it on publishes a
-    /// working login to anyone who can reach the API, which is acceptable for a demo box and
-    /// never for a deployment carrying real household traffic.
+    /// Off by default, switched on only in Development: it publishes a working login to
+    /// anyone who can reach the API. Fine for a demo box, never where real traffic flows.
     /// </summary>
     public bool Advertise { get; set; }
 

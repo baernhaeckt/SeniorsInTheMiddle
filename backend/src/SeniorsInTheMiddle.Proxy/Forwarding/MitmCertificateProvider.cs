@@ -5,6 +5,12 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
+/// <summary>
+/// The proxy's own certificate authority, and the short-lived per-host server certificates it
+/// mints so an intercepted TLS handshake can be completed on behalf of the origin.
+///
+/// Clients must be told to trust the CA up front; it is published at <c>/ca.crt</c>.
+/// </summary>
 sealed class MitmCertificateProvider
 {
     private static readonly TimeSpan InterceptionLifetime = TimeSpan.FromDays(7);
@@ -17,31 +23,22 @@ sealed class MitmCertificateProvider
     private readonly X509Certificate2 _certificateAuthority;
 
     /// <summary>
-    /// The private key every server certificate this provider mints is built on.
+    /// The private key every server certificate this provider mints is built on -- one key for
+    /// all hosts, as every interception proxy does (mitmproxy, Burp, Fiddler).
     ///
-    /// One key for all of them rather than one per host. Two reasons, and the first one is not
-    /// an optimisation.
+    /// The reason is not performance. A browser cannot be asked about a bad certificate on a
+    /// *subresource*: Chromium surfaces a certificate error for a main-frame navigation only,
+    /// and denies scripts, API calls and images on other origins outright. So a client cannot
+    /// decide per host; it must be told which key is ours before it starts, which only works
+    /// if there is one. Per-host keys would break every cross-origin subresource with
+    /// ERR_CERT_AUTHORITY_INVALID while the document itself loaded.
     ///
-    /// A browser cannot be asked about a bad certificate on a *subresource*. Chromium offers the
-    /// embedder a certificate error for a main-frame navigation only; for a script, an API call
-    /// or an image on another origin it denies the request outright, on the grounds that a user
-    /// has no context to judge it. A client behind this proxy therefore cannot decide per host --
-    /// it has to be told, before it starts, which key is ours, and that is only possible if there
-    /// is one such key. With a key per host, a page whose subresources live on other origins (a
-    /// CDN, an API host, an analytics domain) loses every one of them to
-    /// ERR_CERT_AUTHORITY_INVALID while the document itself loads: a site that looks broken
-    /// rather than a certificate that looks wrong. Every interception proxy shares the key for
-    /// this reason (mitmproxy, Burp, Fiddler).
+    /// It is also faster: an RSA keygen costs 50-150 ms and <see cref="GetServerCertificate"/>
+    /// runs on the handshaking connection, so per-host keys would stall the first connection
+    /// to every new site. Signing alone is sub-millisecond.
     ///
-    /// It is also faster. Generating an RSA key costs 50-150 ms of CPU, and
-    /// <see cref="GetServerCertificate"/> runs on the connection whose handshake triggered it:
-    /// minting a key per host stalls the first connection to every new site, and a page pulling
-    /// from dozens of hosts serializes those stalls on the accept path. Signing on its own is
-    /// sub-millisecond, so with the key already made a cold host costs nothing worth measuring.
-    ///
-    /// Sharing it gives an attacker nothing: every one of these certificates is signed by the
-    /// CA whose own private key lives in this same process and on disk beside it, so anything
-    /// able to read this key could read that one and mint certificates for any host at all.
+    /// Sharing it costs nothing: these certificates are signed by a CA whose own private key
+    /// sits in this process, so anything able to read one could read the other.
     /// </summary>
     private readonly Lazy<RSA> _serverKey = new(
         () =>

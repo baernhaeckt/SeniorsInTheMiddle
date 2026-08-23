@@ -1,10 +1,11 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 
 namespace DemoBrowser.Views;
 
+/// <summary>Which glyph and accent colour a <see cref="MessageDialog"/> shows.</summary>
 public enum MessageDialogIcon
 {
     Information,

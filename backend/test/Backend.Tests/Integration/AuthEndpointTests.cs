@@ -6,6 +6,10 @@ using System.Net.Http.Json;
 
 namespace Backend.Tests.Integration;
 
+/// <summary>
+/// End-to-end coverage of <c>/api/v1/auth</c>: registration, login, and that <c>/me</c> is
+/// reachable only with the token login handed out.
+/// </summary>
 [TestClass]
 public class AuthEndpointTests
 {

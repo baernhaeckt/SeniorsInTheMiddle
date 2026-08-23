@@ -2,6 +2,7 @@
 
 namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
+/// <summary>Builds <see cref="StreamProxy"/> instances, supplying each one its own logger.</summary>
 sealed class StreamProxyFactory : IStreamProxyFactory
 {
     private readonly ILoggerFactory _loggerFactory;

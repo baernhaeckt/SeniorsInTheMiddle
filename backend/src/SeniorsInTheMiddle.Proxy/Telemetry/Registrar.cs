@@ -1,5 +1,7 @@
 ﻿namespace SeniorsInTheMiddle.Proxy.Telemetry;
 
+/// <summary>Wires up the telemetry path: the SignalR hub, the sink everything writes to, and
+/// the single pump that drains it to connected dashboards.</summary>
 public static class Registrar
 {
     public static IServiceCollection AddTelemetryServices(this IServiceCollection services)

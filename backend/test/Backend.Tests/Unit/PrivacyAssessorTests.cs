@@ -129,6 +129,8 @@ public class PrivacyAssessorTests
         throw new AssertFailedException("No privacy.assessed arrived.");
     }
 
+    /// <summary>Collects published events. Locked, because the assessment runs off the request
+    /// thread and the assertions read the list from the test's.</summary>
     private sealed class Sink(List<TelemetryEvent> events) : ITelemetrySink
     {
         public void Publish(TelemetryEvent telemetryEvent)
@@ -138,6 +140,8 @@ public class PrivacyAssessorTests
         }
     }
 
+    /// <summary>A lifetime that never signals shutdown, so background work is only ever
+    /// cancelled by the test itself.</summary>
     private sealed class Lifetime : IHostApplicationLifetime
     {
         public CancellationToken ApplicationStarted => CancellationToken.None;
@@ -149,6 +153,10 @@ public class PrivacyAssessorTests
         public void StopApplication() { }
     }
 
+    /// <summary>
+    /// A privacy-check service under the test's control: it can be disabled, return a canned
+    /// result, throw, or block on a gate so overlapping assessments can be observed.
+    /// </summary>
     private sealed class StubClient(bool enabled) : IPrivacyCheckServiceClient
     {
         public bool IsEnabled => enabled;

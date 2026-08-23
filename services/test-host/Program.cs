@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text.Json;
 using ServiceRuntime.TestHost;
 
@@ -142,6 +142,11 @@ runner.Add("stats show the handled requests", async () =>
 
 return await runner.RunAsync();
 
+/// <summary>
+/// Runs the named checks in order, printing a line each and returning a process exit code.
+/// Deliberately hand-rolled: this host is a single file that talks to a live socket, and a
+/// test framework would bring more setup than the checks themselves.
+/// </summary>
 internal sealed class TestRunner
 {
     private readonly List<(string Name, Func<Task> Body)> _tests = [];
@@ -174,6 +179,7 @@ internal sealed class TestRunner
     }
 }
 
+/// <summary>The handful of assertions <see cref="TestRunner"/> needs, each throwing on failure.</summary>
 internal static class Assert
 {
     public static void True(bool condition, string message)

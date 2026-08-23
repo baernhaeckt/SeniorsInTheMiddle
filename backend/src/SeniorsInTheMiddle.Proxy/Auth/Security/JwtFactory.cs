@@ -8,6 +8,9 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace SeniorsInTheMiddle.Proxy.Auth.Security;
 
+/// <summary>
+/// Issues HMAC-SHA256 signed JWTs from the <c>Jwt:*</c> configuration section.
+/// </summary>
 public class JwtFactory : IJwtFactory
 {
     private readonly IConfiguration _configuration;
@@ -33,6 +36,8 @@ public class JwtFactory : IJwtFactory
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject = new ClaimsIdentity(claims),
+            // Long-lived on purpose: the proxy has no refresh flow, and a demo session that
+            // expires mid-run is worse than a token that outlives the machine it was issued on.
             Expires = DateTime.UtcNow.AddHours(48),
             SigningCredentials = new SigningCredentials(_key, SecurityAlgorithms.HmacSha256Signature),
             Issuer = _configuration["Jwt:Issuer"],

@@ -7,13 +7,16 @@ using Microsoft.Extensions.Options;
 
 namespace SeniorsInTheMiddle.Proxy.Auth.Api;
 
+/// <summary>
+/// Minimal-API routes under <c>/api/v1/auth</c>: login, self-registration, the seeded demo
+/// credentials and the current user's profile.
+/// </summary>
 public static class AuthEndpoints
 {
     public static void RegisterAuthEndpoints(this IEndpointRouteBuilder routes)
     {
         RouteGroupBuilder auth = routes.MapGroup("/api/v1/auth");
 
-        // Login endpoint
         auth.MapPost("/login", async (
             [FromBody] LoginRequest request,
             IUserStore userStore,
@@ -39,7 +42,6 @@ public static class AuthEndpoints
         // Anonymous, or there would be no way to obtain the token this asks for.
         .AllowAnonymous();
 
-        // Register endpoint
         auth.MapPost("/register", async (
             [FromBody] RegisterRequest request,
             IUserStore userStore) =>
@@ -95,7 +97,6 @@ public static class AuthEndpoints
         .WithTags("Authentication")
         .AllowAnonymous();
 
-        // Get current user endpoint (protected)
         auth.MapGet("/me", async (
             HttpContext context,
             IUserStore userStore) =>

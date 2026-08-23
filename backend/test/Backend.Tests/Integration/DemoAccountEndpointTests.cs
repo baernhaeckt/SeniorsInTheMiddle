@@ -64,6 +64,8 @@ public class DemoAccountEndpointTests
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
     }
 
+    /// <summary>A host with <c>Auth:SeedUser</c> filled in, advertising the seeded credentials
+    /// or not, so both sides of that switch can be exercised.</summary>
     private sealed class SeedConfiguredFactory : CustomWebApplicationFactory<Program>
     {
         public const string SeedUsername = "seeded-demo";

@@ -5,6 +5,10 @@ using System.Text;
 
 namespace Backend.Tests.Unit;
 
+/// <summary>
+/// Pins the hashing contract: shape of hash and salt, that equal passwords with different
+/// salts differ, and that the input is required to be base64.
+/// </summary>
 [TestClass]
 public class PasswordHashingTests
 {

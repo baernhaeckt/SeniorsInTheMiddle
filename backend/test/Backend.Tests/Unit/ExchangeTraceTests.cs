@@ -319,6 +319,7 @@ public class ExchangeTraceTests
         _ => null,
     };
 
+    /// <summary>Collects published events so a test can assert on what the code emitted.</summary>
     private sealed class CollectingSink(List<TelemetryEvent> events) : ITelemetrySink
     {
         public void Publish(TelemetryEvent telemetryEvent) => events.Add(telemetryEvent);

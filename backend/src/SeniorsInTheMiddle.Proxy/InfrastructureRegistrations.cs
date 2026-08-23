@@ -10,13 +10,17 @@ using System.Text;
 
 namespace SeniorsInTheMiddle.Proxy;
 
+/// <summary>
+/// Cross-cutting API host wiring: OpenAPI with a JWT security scheme, bearer authentication,
+/// CORS and the middleware order that ties them together.
+/// </summary>
 public static class InfrastructureRegistrations
 {
     public static IServiceCollection AddSwaggerWithJwt(this IServiceCollection services)
     {
         services.AddOpenApi(options =>
         {
-            // Login possibilty for Swagger UI
+            // Gives Swagger UI an Authorize button, so a protected endpoint can be tried from there.
             options.AddDocumentTransformer<SecuritySchemeTransformer>();
 
             // This is necessary to let the UI use relative path and hence "https"
@@ -155,11 +159,15 @@ public static class InfrastructureRegistrations
         }
 
         app.UseCors();
-        // Add authentication and authorization
         app.UseAuthentication();
         app.UseAuthorization();
     }
 }
+
+/// <summary>
+/// Declares the bearer scheme in the generated OpenAPI document and attaches it to every
+/// operation that is not anonymous, so Swagger UI offers an Authorize button that works.
+/// </summary>
 internal sealed class SecuritySchemeTransformer : IOpenApiDocumentTransformer
 {
     public Task TransformAsync(OpenApiDocument document, OpenApiDocumentTransformerContext context, CancellationToken cancellationToken)
@@ -176,7 +184,6 @@ internal sealed class SecuritySchemeTransformer : IOpenApiDocumentTransformer
             Description = "Jwt authentication"
         };
 
-        // Iterate through each path & operation
         foreach (IOpenApiPathItem path in document.Paths.Values)
         {
             if (path.Operations is null)

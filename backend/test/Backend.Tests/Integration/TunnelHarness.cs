@@ -50,6 +50,8 @@ internal sealed class TunnelHarness : IAsyncDisposable
         return Path.Combine(directory, "mitm-ca.pfx");
     });
 
+    /// <summary>Everything the harness records about a run, shared between the destination
+    /// server, the proxy and the assertions.</summary>
     private sealed class HarnessState
     {
         public RecordedRequest? Received;
@@ -72,6 +74,7 @@ internal sealed class TunnelHarness : IAsyncDisposable
         {
         }
 
+        /// <summary>Enqueues every formatted message, at any level.</summary>
         private sealed class QueueLogger(ConcurrentQueue<string> lines) : ILogger
         {
             public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
@@ -88,6 +91,7 @@ internal sealed class TunnelHarness : IAsyncDisposable
         }
     }
 
+    /// <summary>Collects published events so a test can assert on the sequence the proxy emitted.</summary>
     private sealed class QueueTelemetrySink(ConcurrentQueue<TelemetryEvent> events) : ITelemetrySink
     {
         public void Publish(TelemetryEvent telemetryEvent) => events.Enqueue(telemetryEvent);

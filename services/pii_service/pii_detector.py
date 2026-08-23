@@ -27,6 +27,12 @@ def single_line(value: str) -> str:
 
 
 class PiiDetector:
+    """Finds personal data in text with Presidio and a spaCy language model.
+
+    Loading the model is expensive, so one detector is built at startup and reused for
+    every request.
+    """
+
     SUPPORTED_LANGUAGES = ["de", "en"]
 
     def __init__(self, language_code: str = settings.DEFAULT_LANGUAGE) -> None:

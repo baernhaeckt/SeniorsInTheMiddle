@@ -16,23 +16,20 @@ namespace SeniorsInTheMiddle.Proxy.Forwarding;
 /// Shapes both halves of one exchange: the request that leaves the proxy and the response that
 /// comes back.
 ///
-/// The request body is rewritten on <see cref="HttpContext.Request"/> and not on the outgoing
-/// <see cref="HttpRequestMessage"/>. That is not a preference. YARP assigns its own streaming
-/// content before this runs and refuses any replacement -- "Replacing the YARP outgoing request
-/// HttpContent is not supported. You should configure the HttpContext.Request instead." -- and
-/// the refusal is reported as a failed request creation answered with 502, so it reads like an
-/// unreachable destination rather than a bug in here.
+/// The request body is rewritten on <see cref="HttpContext.Request"/>, not on the outgoing
+/// <see cref="HttpRequestMessage"/>. That is not a preference: YARP assigns its own streaming
+/// content before this runs and refuses any replacement, and reports the refusal as a failed
+/// request creation answered with 502 -- so it reads like an unreachable destination rather
+/// than a bug in here.
 ///
-/// The response is the mirror image and, for once, the easier one. There is no such guard on
-/// <see cref="HttpResponseMessage.Content"/>, so the body is replaced directly; and the base
-/// transform copies the origin's headers onto the client response before this sees them, so the
-/// ones that describe the old bytes are corrected afterwards rather than beforehand.
+/// The response is the mirror image, and easier. <see cref="HttpResponseMessage.Content"/> has
+/// no such guard, so the body is replaced directly; the base transform has already copied the
+/// origin's headers to the client, so the ones describing the old bytes are corrected after.
 ///
-/// The request rewrite costs one thing. The body is read here, before the destination connection
-/// exists, so Kestrel answers a client's <c>Expect: 100-continue</c> as soon as buffering starts
-/// instead of leaving the destination to decline the upload first. Skipping the rewrite for those
-/// requests would fix that and hand every client a one-header way to opt out of inspection, which
-/// is the worse trade for a proxy whose job is to look.
+/// The request rewrite costs one thing: the body is read before the destination connection
+/// exists, so Kestrel answers <c>Expect: 100-continue</c> as soon as buffering starts instead
+/// of letting the destination decline the upload first. Skipping the rewrite for those requests
+/// would hand every client a one-header opt-out of inspection, which is the worse trade.
 /// </summary>
 sealed class ForwardProxyTransformer(
     Uri destination,

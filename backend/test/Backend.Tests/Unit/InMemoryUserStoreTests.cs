@@ -6,6 +6,10 @@ using SeniorsInTheMiddle.Proxy.Auth.Storage;
 
 namespace Backend.Tests.Unit;
 
+/// <summary>
+/// Covers the account store: uniqueness of username and email, that verification only accepts
+/// the right password, and that nothing stored is the password itself.
+/// </summary>
 [TestClass]
 public class InMemoryUserStoreTests
 {

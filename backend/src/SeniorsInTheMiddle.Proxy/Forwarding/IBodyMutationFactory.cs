@@ -5,14 +5,13 @@ namespace SeniorsInTheMiddle.Proxy.Forwarding;
 /// <summary>
 /// Makes the rewrite for one client exchange.
 ///
-/// It is a factory rather than a single shared mutation because the two halves of an exchange
-/// are not independent. Replacing an identifier on the way out only works if the same value can
-/// be put back on the way in, and what holds the map between the two is the mutation this
-/// returns rather than the process.
+/// A factory rather than one shared mutation because the two halves of an exchange are not
+/// independent: replacing an identifier on the way out only works if the same value can be put
+/// back on the way in, and the map between them belongs to the mutation this returns.
 ///
-/// The map itself may well outlive the exchange -- a chat client is answered in one request and
-/// draws the answer from another -- which is why the client is named here. Anything a mutation
-/// keeps beyond the exchange is that client's, and reaches no other.
+/// That map may outlive the exchange -- a chat client is answered in one request and draws the
+/// answer from another -- which is why the client is named here. Anything a mutation keeps
+/// beyond the exchange is that client's, and reaches no other.
 ///
 /// Adding a mutation:
 /// 1. Implement this and <see cref="IExchangeBodyMutation"/> next to

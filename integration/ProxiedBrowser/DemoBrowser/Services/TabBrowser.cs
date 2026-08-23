@@ -1,4 +1,4 @@
-using Xilium.CefGlue;
+﻿using Xilium.CefGlue;
 using Xilium.CefGlue.Avalonia;
 
 namespace DemoBrowser.Services;
@@ -89,6 +89,7 @@ public sealed class TabBrowser : AvaloniaCefBrowser
         }
     }
 
+    /// <summary>Carries a delegate onto the CEF UI thread, which only accepts <see cref="CefTask"/>.</summary>
     private sealed class ActionTask(Action action) : CefTask
     {
         protected override void Execute() => action();

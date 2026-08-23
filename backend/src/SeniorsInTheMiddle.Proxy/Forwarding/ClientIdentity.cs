@@ -6,17 +6,16 @@ namespace SeniorsInTheMiddle.Proxy.Forwarding;
 /// Which device a request came from, as far as a forward proxy can tell: the address it
 /// connects from and the kind of thing its User-Agent claims to be.
 ///
-/// It is a type rather than a bare string because of what is keyed on it. A mutation's map from
-/// stand-in to real value outlives the single exchange that created it, and the key is the only
-/// thing standing between one person's session and another's -- so the value that plays that
-/// part is named, produced in one place, and not something a caller can pass a hostname to by
-/// accident.
+/// A type rather than a bare string because of what is keyed on it: a mutation's map from
+/// stand-in to real value outlives the exchange that created it, and this key is the only thing
+/// standing between one person's session and another's. Naming it keeps a caller from passing
+/// a hostname by accident.
 ///
-/// It is a guess, and deliberately a conservative one. Two devices behind the same NAT that run
-/// the same kind of browser look identical here, and share a session they should not; nothing
-/// visible to a proxy tells them apart. What it does not do is the opposite mistake: the same
-/// device keeps the same identity for as long as its address lease does, which is what makes a
-/// value hidden in one request restorable in the next.
+/// It is a guess, deliberately a conservative one. Two devices behind the same NAT running the
+/// same browser look identical here and share a session they should not; nothing visible to a
+/// proxy tells them apart. It does not make the opposite mistake: one device keeps one identity
+/// for as long as its address lease lasts, which is what makes a value hidden in one request
+/// restorable in the next.
 /// </summary>
 public readonly record struct ClientIdentity(string Value)
 {

@@ -9,6 +9,12 @@ from sentence_transformers import SentenceTransformer
 logger = logging.getLogger(__name__)
 
 class PrivacyChecker:
+    """Estimates whether a replaced name can still be recovered from the redacted text.
+
+    Candidate names are scored against the surrounding context with sentence embeddings, and
+    a Bayesian model turns those scores into a probability per name.
+    """
+
     def __init__(self):
         """
         Initializes the PrivacyChecker class.

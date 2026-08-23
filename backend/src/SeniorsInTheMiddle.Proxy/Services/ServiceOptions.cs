@@ -33,6 +33,7 @@ public sealed class ServiceOptions
         => Endpoints.TryGetValue(name, out ServiceEndpointOptions? endpoint) ? endpoint : new ServiceEndpointOptions();
 }
 
+/// <summary>Where one Python service lives and how patient the proxy is with it.</summary>
 public sealed class ServiceEndpointOptions
 {
     /// <summary>Absolute path of the service's unix socket. Empty disables the service.</summary>

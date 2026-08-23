@@ -9,6 +9,8 @@ from pii_service.pii_detector import PiiDetector
 
 @dataclass
 class FakeRecognizerResult:
+    """The few fields of a Presidio RecognizerResult that the detector actually reads."""
+
     entity_type: str
     score: float
     start: int
@@ -16,6 +18,8 @@ class FakeRecognizerResult:
 
 
 class StubAnalyzer:
+    """Returns canned results and records how it was called, standing in for Presidio."""
+
     def __init__(self, results):
         self.results = results
         self.calls = []

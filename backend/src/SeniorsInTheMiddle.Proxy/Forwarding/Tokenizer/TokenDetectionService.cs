@@ -3,6 +3,10 @@ using SeniorsInTheMiddle.Proxy.Telemetry;
 
 namespace SeniorsInTheMiddle.Proxy.Forwarding.Tokenizer;
 
+/// <summary>
+/// Asks the PII service what personal data a body contains, and folds its raw findings into
+/// one entry per distinct value: the token, every position it occurs at, and its risk facts.
+/// </summary>
 public sealed class TokenDetectionService
 {
     private readonly IPiiServiceClient _piiClient;

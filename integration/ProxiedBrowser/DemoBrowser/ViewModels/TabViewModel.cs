@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -353,14 +353,14 @@ public sealed class TabViewModel : ObservableObject, IDisposable
     /// <summary>
     /// Asks the proxy for the certificate it minted for <paramref name="host"/> and puts it in the lock popup.
     ///
-    /// WHY this is needed: the chain used to arrive for free, because every site behind the proxy raised a
-    /// certificate error and OnCertificateError carries the certificate. It no longer does — the proxy's signing
-    /// key is pinned before the engine starts, so Chromium accepts those certificates silently, which is the only
-    /// way subresources on other origins can load at all. CEF exposes no way to read the certificate of a
-    /// *successful* connection (its DevTools Security domain stays silent and Network.getCertificate answers with
-    /// an empty list), so the certificate is fetched the same way the browser got it: through the proxy.
+    /// WHY this is needed: the proxy's signing key is pinned before the engine starts, so Chromium accepts its
+    /// certificates silently. That is the only way subresources on other origins can load at all, but it also
+    /// means OnCertificateError never fires and never hands over a certificate. CEF exposes no way to read the
+    /// certificate of a *successful* connection (its DevTools Security domain stays silent and
+    /// Network.getCertificate answers with an empty list), so it is fetched the same way the browser got it:
+    /// through the proxy.
     ///
-    /// Best effort and off the navigation path — a lock popup without a chain is a small loss, a blocked
+    /// Best effort and off the navigation path -- a lock popup without a chain is a small loss, a blocked
     /// navigation is not.
     /// </summary>
     private async Task AttachInterceptedCertificateAsync(string host)

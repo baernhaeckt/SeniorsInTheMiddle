@@ -6,6 +6,10 @@ using SeniorsInTheMiddle.Proxy.Services.PrivacyCheck;
 
 namespace SeniorsInTheMiddle.Proxy.Services;
 
+/// <summary>
+/// Registers the clients for the Python sidecar services, plus the startup probe and health
+/// check that report whether they are actually answering.
+/// </summary>
 public static class Registrar
 {
     public const string HealthPath = "/healthz";

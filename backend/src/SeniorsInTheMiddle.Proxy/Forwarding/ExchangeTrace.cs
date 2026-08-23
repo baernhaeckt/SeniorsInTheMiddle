@@ -26,15 +26,15 @@ sealed record RequestFacts(
 /// events; the transformer and the mutation report facts to it and nothing else.
 ///
 /// It exists because of one awkwardness in the protocol: <c>request.observed</c> carries the
-/// treatment -- passthrough, clean or treated -- and the treatment is only known after the
-/// body has been scanned. So the announcement is held back until the decision is made, and
-/// released just ahead of the first exchange event. The pump delivers in publish order, so a
-/// burst is fine; each event still carries the time its step really happened.
+/// treatment -- passthrough, clean or treated -- which is only known after the body has been
+/// scanned. So the announcement is held back until the decision is made and released just
+/// ahead of the first exchange event. The pump delivers in publish order, so a burst is fine;
+/// each event still carries the time its step really happened.
 ///
 /// The guarantees, whatever path the request took: <c>request.observed</c> is published exactly
 /// once and before anything else about the request; a treated exchange always reaches
-/// <c>exchange.delivered</c>, with the steps it never got to filled in as empty, so a packet
-/// on the dashboard's band never stalls; <c>request.completed</c> is last. Nothing here throws.
+/// <c>exchange.delivered</c>, with the steps it never got to filled in as empty, so a packet on
+/// the dashboard's band never stalls; <c>request.completed</c> is last. Nothing here throws.
 ///
 /// One instance per request, touched from that request's own flow only. The observer half is
 /// what a body mutation sees of it.

@@ -2,6 +2,11 @@
 
 namespace SeniorsInTheMiddle.Proxy.Services.Pii;
 
+/// <summary>
+/// Talks to the Python PII service over its unix socket. Callers must check
+/// <see cref="IsEnabled"/> first: with no socket path configured, every call throws
+/// <see cref="ServiceUnavailableException"/>.
+/// </summary>
 sealed class PiiServiceClient(ServiceConnections services) : IPiiServiceClient
 {
     private readonly ServiceConnection _connection = services.Get(ServiceConnections.PiiService);
