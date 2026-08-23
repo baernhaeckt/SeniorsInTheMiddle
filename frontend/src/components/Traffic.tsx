@@ -15,7 +15,6 @@ export function Traffic() {
   const traffic = useStore((state) => state.traffic)
   const { requests, treated } = useStore((state) => state.metrics)
   const pinnedId = useStore((state) => state.pinnedId)
-  const hoveredDevice = useStore((state) => state.hoveredDevice)
   const [treatedOnly, setTreatedOnly] = useState(false)
 
   const rows = treatedOnly
@@ -23,7 +22,7 @@ export function Traffic() {
     : traffic.slice(0, LIMITS.traffic)
 
   return (
-    <section className="panel" aria-label="All requests through the proxy">
+    <section className="panel traffic" aria-label="All requests through the proxy">
       <div className="panel__head">
         <span className="u-label">Traffic</span>
         <span className="panel__note">
@@ -51,7 +50,6 @@ export function Traffic() {
             key={entry.requestId}
             entry={entry}
             pinned={entry.exchangeId !== undefined && pinnedId === entry.exchangeId}
-            deviceHot={hoveredDevice === entry.clientLabel}
           />
         ))}
       </div>
@@ -64,10 +62,9 @@ export function Traffic() {
 interface RowProps {
   entry: TrafficEntry
   pinned: boolean
-  deviceHot: boolean
 }
 
-const Row = memo(function Row({ entry, pinned, deviceHot }: RowProps) {
+const Row = memo(function Row({ entry, pinned }: RowProps) {
   const treated = entry.treatment === 'treated'
   const brief = [
     entry.status ? `${entry.status}` : '…',
@@ -103,12 +100,7 @@ const Row = memo(function Row({ entry, pinned, deviceHot }: RowProps) {
 
   if (!treated) {
     return (
-      <div
-        className="tr"
-        data-treatment={entry.treatment}
-        data-device-hot={deviceHot}
-        title={detail}
-      >
+      <div className="tr" data-treatment={entry.treatment} title={detail}>
         {inner}
       </div>
     )
@@ -120,7 +112,6 @@ const Row = memo(function Row({ entry, pinned, deviceHot }: RowProps) {
       className="tr"
       data-treatment="treated"
       data-active={pinned}
-      data-device-hot={deviceHot}
       aria-pressed={pinned}
       title={detail}
       onClick={() => {

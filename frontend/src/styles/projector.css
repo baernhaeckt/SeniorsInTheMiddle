@@ -36,7 +36,7 @@
  */
 [data-projector='on'] .shell {
   font-size: var(--pj-body);
-  grid-template-rows: auto minmax(320px, 50fr) auto minmax(280px, 50fr);
+  grid-template-rows: auto minmax(320px, 50fr) minmax(280px, 50fr);
 }
 
 /* Tracking that reads as deliberate at 10px reads as gaps at 13px. */
@@ -261,40 +261,6 @@
   width: 5px;
   height: 5px;
   margin: -2.5px 0 0 -2.5px;
-}
-
-/* -------------------------------------------------------------- devices -- */
-
-[data-projector='on'] .device {
-  gap: 12px;
-  padding: 7px 13px 7px 11px;
-}
-
-[data-projector='on'] .device__nums {
-  gap: 13px;
-  padding-left: 13px;
-}
-
-[data-projector='on'] .device__dot {
-  width: 9px;
-  height: 9px;
-}
-
-[data-projector='on'] .device__kind {
-  font-size: 11px;
-}
-
-[data-projector='on'] .device__owner {
-  font-size: var(--pj-body);
-}
-
-[data-projector='on'] .device__num b {
-  font-size: var(--pj-lead);
-}
-
-[data-projector='on'] .device__num .u-label {
-  font-size: 10.5px;
-  letter-spacing: 0.11em;
 }
 
 /* --------------------------------------------------------------- panels -- */

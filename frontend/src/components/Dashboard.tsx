@@ -4,7 +4,6 @@ import type { Session } from '../auth/session'
 import { apiBaseOf, type RuntimeConfig } from '../config'
 import { store } from '../engine/store'
 import { createTransport } from '../transport'
-import { Devices } from './Devices'
 import { FlowBand } from './FlowBand'
 import { Header } from './Header'
 import { Inspector } from './Inspector'
@@ -97,7 +96,6 @@ export function Dashboard({
         onSignOut={onSignOut}
       />
       <FlowBand />
-      <Devices />
       <div className="floor">
         <Traffic />
         <Inspector />
