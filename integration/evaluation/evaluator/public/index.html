@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SITM replacement quality</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f6f8;
+    --panel: #ffffff;
+    --sunk: #eef0f3;
+    --line: #dde1e6;
+    --ink: #1a1d21;
+    --muted: #697079;
+    --accent: #4a5cc4;
+    --ok: #187a4b;
+    --bad: #c0392b;
+    --warn: #a8700f;
+    --info: #2b6cb0;
+    --ok-wash: #187a4b1f;
+    --bad-wash: #c0392b26;
+    --warn-wash: #a8700f26;
+    --info-wash: #2b6cb01f;
+    --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #131619;
+      --panel: #1b1f23;
+      --sunk: #15181b;
+      --line: #2b3137;
+      --ink: #e5e8eb;
+      --muted: #939ba4;
+      --accent: #8b9aec;
+      --ok: #4fc98a;
+      --bad: #f08172;
+      --warn: #dfb35c;
+      --info: #6aa9e9;
+      --ok-wash: #4fc98a24;
+      --bad-wash: #f0817233;
+      --warn-wash: #dfb35c2e;
+      --info-wash: #6aa9e924;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+
+  header { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: baseline;
+    padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel);
+    position: sticky; top: 0; z-index: 5; }
+  h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: .01em; }
+  h1 span { color: var(--accent); }
+  h2 { font-size: 11px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); font-weight: 650; }
+  h3 { font-size: 13px; margin: 18px 0 8px; font-weight: 650; }
+  .chip { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+  .chip b { color: var(--ink); font-weight: 600; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .dot.idle { background: var(--muted); }
+  .dot.busy { background: var(--warn); animation: pulse 1.1s ease-in-out infinite; }
+  .dot.down { background: var(--bad); }
+  @keyframes pulse { 50% { opacity: .3 } }
+
+  main { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; padding: 16px 20px 48px; align-items: start; }
+  @media (max-width: 1080px) { main { grid-template-columns: minmax(0, 1fr); } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 14px 16px; }
+  section + section { margin-top: 14px; }
+  aside { position: sticky; top: 60px; }
+  @media (max-width: 1080px) { aside { position: static; } }
+
+  .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  .controls .wide { grid-column: 1 / -1; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 10.5px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .07em; font-weight: 600; }
+  input, select { font: inherit; font-size: 13px; font-family: var(--mono); padding: 6px 8px; width: 100%;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+  input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: -1px; }
+  button { font: inherit; font-size: 13px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--bg); color: var(--ink); cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:hover:not(:disabled) { filter: brightness(1.1); color: #fff; }
+  .row { display: flex; gap: 8px; margin-top: 10px; }
+  .row button { flex: 1; }
+
+  .bar { height: 5px; border-radius: 3px; background: var(--sunk); overflow: hidden; margin: 10px 0 6px; }
+  .bar > div { height: 100%; background: var(--accent); transition: width .25s ease; }
+
+  .runs { list-style: none; margin: 0; padding: 0; max-height: 46vh; overflow: auto; }
+  .runs li { padding: 7px 9px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
+  .runs li:hover { background: var(--sunk); }
+  .runs li.selected { background: color-mix(in srgb, var(--accent) 13%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+  .runs .when { font-family: var(--mono); font-size: 11.5px; }
+  .runs .meta { font-size: 11px; color: var(--muted); }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 10px; }
+  .card { border: 1px solid var(--line); border-radius: 7px; padding: 9px 11px; background: var(--sunk); }
+  .card .label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; font-weight: 600; }
+  .card .value { font-family: var(--mono); font-size: 21px; line-height: 1.25; margin-top: 2px; }
+  .card .sub { font-size: 10.5px; color: var(--muted); }
+  .card.hero { grid-column: span 2; }
+  .card.hero .value { font-size: 27px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { text-align: left; font-weight: 650; color: var(--muted); font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: .07em; padding: 5px 7px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); }
+  td { padding: 4px 7px; border-bottom: 1px solid var(--line); }
+  td.num, th.num { text-align: right; font-family: var(--mono); }
+  td.mono { font-family: var(--mono); font-size: 12px; }
+  tbody tr.click { cursor: pointer; }
+  tbody tr.click:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+  tbody tr.selected { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+  .scroll { max-height: 62vh; overflow: auto; margin: 0 -4px; padding: 0 4px; }
+
+  .ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+  .info { color: var(--info); } .muted { color: var(--muted); }
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600;
+    letter-spacing: .03em; border: 1px solid var(--line); color: var(--muted); }
+  .tag.bad { border-color: var(--bad); color: var(--bad); background: var(--bad-wash); }
+  .tag.ok { border-color: var(--ok); color: var(--ok); background: var(--ok-wash); }
+  .tag.warn { border-color: var(--warn); color: var(--warn); background: var(--warn-wash); }
+  .tag.info { border-color: var(--info); color: var(--info); background: var(--info-wash); }
+
+  .lede { font-size: 14px; line-height: 1.6; margin: 0 0 4px; }
+  .note { font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+
+  .panes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 1400px) { .panes { grid-template-columns: minmax(0, 1fr); } }
+  .pane h3 { margin-top: 0; }
+  pre { font-family: var(--mono); font-size: 11.5px; line-height: 1.55; background: var(--sunk);
+    border: 1px solid var(--line); border-radius: 7px; padding: 11px; overflow: auto; max-height: 58vh;
+    white-space: pre-wrap; word-break: break-word; margin: 0; }
+  mark { border-radius: 3px; padding: 0 1px; background: none; color: inherit; }
+  mark.leaked { background: var(--bad-wash); box-shadow: inset 0 -2px 0 var(--bad); color: var(--ink); }
+  mark.replaced { background: var(--ok-wash); box-shadow: inset 0 -2px 0 var(--ok); color: var(--ink); }
+  mark.partial { background: var(--warn-wash); box-shadow: inset 0 -2px 0 var(--warn); color: var(--ink); }
+  mark.keep { background: var(--info-wash); box-shadow: inset 0 -2px 0 var(--info); color: var(--ink); }
+  mark.expected { background: var(--ok-wash); box-shadow: inset 0 -2px 0 var(--ok); }
+  mark.collateral { background: var(--info-wash); box-shadow: inset 0 -2px 0 var(--info); }
+  mark.unclassified { background: var(--warn-wash); box-shadow: inset 0 -2px 0 var(--warn); }
+  mark['over-redaction'], mark.overredaction { background: var(--bad-wash); box-shadow: inset 0 -2px 0 var(--bad); }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; color: var(--muted); margin: 0 0 8px; }
+  .legend span::before { content: ''; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
+  .legend .l-ok::before { background: var(--ok); }
+  .legend .l-bad::before { background: var(--bad); }
+  .legend .l-warn::before { background: var(--warn); }
+  .legend .l-info::before { background: var(--info); }
+
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 0 0 14px; }
+  .tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none;
+    padding: 7px 11px; color: var(--muted); font-weight: 600; font-size: 12.5px; }
+  .tabs button:hover { color: var(--ink); }
+  .tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
+  .empty { color: var(--muted); font-size: 13px; padding: 26px 0; text-align: center; }
+  .back { font-size: 12px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SITM <span>replacement quality</span></h1>
+  <span class="chip"><span id="link-dot" class="dot down"></span><b id="link-state">connecting</b></span>
+  <span class="chip">proxy <b id="h-proxy">…</b></span>
+  <span class="chip">destination <b id="h-target">…</b></span>
+  <span class="chip">corpus <b id="h-corpus">…</b></span>
+  <span class="chip">must be hidden <b id="h-redact">…</b></span>
+  <span class="chip" id="h-ca" title=""></span>
+</header>
+
+<main>
+  <aside>
+    <section>
+      <h2>Run the corpus</h2>
+      <div class="controls">
+        <label class="wide">label (optional)
+          <input id="c-label" type="text" placeholder="e.g. after the vault fix">
+        </label>
+        <label>scheme
+          <select id="c-scheme">
+            <option value="https">https · CONNECT</option>
+            <option value="http">http · absolute</option>
+          </select>
+        </label>
+        <label>to the proxy
+          <select id="c-proxyTls">
+            <option value="false">plain :3128</option>
+            <option value="true">tls :3127</option>
+          </select>
+        </label>
+        <label>workers <input id="c-concurrency" type="number" min="1" max="16" step="1"></label>
+        <label>pause ms <input id="c-delayMs" type="number" min="0" max="10000" step="50"></label>
+        <label class="wide">repeat <input id="c-times" type="number" min="1" max="50" step="1" value="1"></label>
+      </div>
+      <div class="row">
+        <button id="b-run" class="primary">Run</button>
+        <button id="b-cancel" disabled>Cancel queue</button>
+      </div>
+      <div id="progress"></div>
+    </section>
+
+    <section>
+      <h2>Runs on disk</h2>
+      <ul class="runs" id="run-list"></ul>
+    </section>
+  </aside>
+
+  <div id="stage">
+    <section><div class="empty">Loading…</div></section>
+  </div>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id)
+  const escape = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]))
+  const int = (v) => (v ?? 0).toLocaleString('en-US')
+  const pct = (v) => (v === null || v === undefined ? '—' : (v * 100).toFixed(1) + '%')
+  const bytes = (v) => { if (!v) return '0 B'; const u=['B','kB','MB']; let i=0,s=v; while(s>=1024&&i<u.length-1){s/=1024;i++} return s.toFixed(i?1:0)+' '+u[i] }
+  const when = (iso) => { const d = new Date(iso); return isNaN(d) ? '—' : d.toLocaleString('en-GB', { hour12: false }) }
+
+  let state = null
+  let selectedRun = null      // run id
+  let openRun = null          // loaded summary
+  let openDocument = null     // loaded document detail
+  let tab = 'overview'
+  let editing = false
+  let busy = false
+
+  const api = async (path, options) => {
+    const response = await fetch(path, options)
+    const value = await response.json()
+    if (!response.ok) throw new Error(value.error ?? response.statusText)
+    return value
+  }
+
+  // ---- header and controls -------------------------------------------------
+
+  function renderHeader() {
+    const { config, progress, corpus, groundTruth, ca } = state
+    $('h-proxy').textContent = config.proxy
+    $('h-target').textContent = config.target
+    $('h-corpus').textContent = `${int(corpus.documents)} docs · ${bytes(corpus.bytes)}`
+    $('h-redact').textContent = int(groundTruth.totals.redact)
+    $('h-ca').innerHTML = ca ? `CA <b>${escape((ca.fingerprint ?? '').slice(0, 23))}…</b>` : ''
+    if (ca) $('h-ca').title = `${ca.subject}\n${ca.fingerprint}\nvalid to ${ca.validTo}`
+
+    const active = progress.active
+    $('link-dot').className = 'dot ' + (active ? 'busy' : 'idle')
+    $('link-state').textContent = active
+      ? `running ${progress.done}/${progress.total}`
+      : progress.queued > 0 ? `${progress.queued} queued` : 'idle'
+
+    if (!editing) {
+      $('c-scheme').value = config.scheme
+      $('c-proxyTls').value = String(config.proxyTls)
+      $('c-concurrency').value = config.concurrency
+      $('c-delayMs').value = config.delayMs
+    }
+    $('b-run').disabled = active
+    $('b-run').textContent = active ? 'Running…' : 'Run'
+    $('b-cancel').disabled = progress.queued === 0
+
+    $('progress').innerHTML = active
+      ? `<div class="bar"><div style="width:${(progress.done / Math.max(1, progress.total) * 100).toFixed(1)}%"></div></div>
+         <div class="chip">${escape(progress.current ?? '…')} · ${int(progress.leaked)} leaked so far${progress.failed ? ` · <span class="bad">${int(progress.failed)} failed</span>` : ''}</div>`
+      : progress.queued > 0 ? `<div class="chip muted">${int(progress.queued)} more queued</div>` : ''
+  }
+
+  function renderRunList() {
+    $('run-list').innerHTML = state.runs.length === 0
+      ? '<li class="muted" style="cursor:default">No runs yet — press Run.</li>'
+      : state.runs.map((run) => {
+          const tone = !run.complete ? 'muted' : run.leaked > 0 ? 'bad' : 'ok'
+          const detail = run.complete
+            ? `${int(run.leaked)} leaked · ${pct(run.coverage)} covered${run.failed ? ` · ${int(run.failed)} failed` : ''}`
+            : 'incomplete'
+          return `<li data-run="${escape(run.id)}" class="${selectedRun === run.id ? 'selected' : ''}">
+            <div class="when">${escape(when(run.at ?? run.id.replace(/-(\d{2})-(\d{2})-(\d{3})Z$/, ':$1:$2.$3Z')))}</div>
+            <div class="meta ${tone}">${escape(detail)}</div>
+            ${run.label ? `<div class="meta">${escape(run.label)}</div>` : ''}
+          </li>`
+        }).join('')
+  }
+
+  // ---- the stage: a run, or one document inside it --------------------------
+
+  const card = (label, value, sub, tone, hero) =>
+    `<div class="card${hero ? ' hero' : ''}"><div class="label">${escape(label)}</div>` +
+    `<div class="value ${tone ?? ''}">${value}</div><div class="sub">${escape(sub ?? '')}</div></div>`
+
+  function renderStage() {
+    if (openDocument) return renderDocument()
+    if (openRun) return renderRun()
+    $('stage').innerHTML = `<section><div class="empty">${
+      state && state.runs.length ? 'Pick a run on the left.' : 'No runs yet. Press <b>Run</b> to send the corpus through the proxy.'
+    }</div></section>`
+  }
+
+  function verdictLine(summary) {
+    const h = summary.headline
+    if (h.documents === 0) return 'Nothing was evaluated.'
+    if (h.failed === h.documents) return '<b class="bad">Every document failed to get through the proxy.</b> Nothing was measured.'
+    const parts = []
+    parts.push(h.leaked === 0
+      ? `<b class="ok">Nothing leaked.</b> All ${int(h.redactable)} protected values were replaced before the destination host saw the body.`
+      : `<b class="bad">${int(h.leaked)} of ${int(h.redactable)} protected values reached the destination host unchanged</b> — ${pct(h.coverage)} covered.`)
+    parts.push(h.damaged === 0
+      ? 'Every value the client sent came back to the client.'
+      : `<b class="bad">${int(h.damaged)} ${h.damaged === 1 ? 'value' : 'values'} did not come back to the client</b>, so the round trip is lossy.`)
+    if (h.overRedacted > 0) parts.push(`<span class="warn">${int(h.overRedacted)} values on the keep list were changed anyway — a policy difference, not necessarily a fault.</span>`)
+    if (h.failed > 0) parts.push(`<span class="warn">${int(h.failed)} documents never completed an exchange.</span>`)
+    return parts.join(' ')
+  }
+
+  function renderRun() {
+    const s = openRun
+    const h = s.headline
+    const tabs = [['overview','Overview'],['kinds','By kind'],['documents','Documents'],['review','Worth a look'],['method','Method']]
+
+    $('stage').innerHTML = `
+      <section>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;justify-content:space-between">
+          <div>
+            <h2 style="margin-bottom:4px">Run ${escape(when(s.startedAt))}${s.label ? ' · ' + escape(s.label) : ''}</h2>
+            <div class="chip">${escape(s.runId)} · ${escape(s.config.scheme)} · ${s.config.proxyTls ? 'tls to proxy' : 'plain to proxy'} · ${int(s.config.concurrency)} workers</div>
+          </div>
+          <a href="/api/runs/${encodeURIComponent(s.runId)}/report.md"><button class="primary">Download report .md</button></a>
+        </div>
+        <p class="lede" style="margin-top:14px">${verdictLine(s)}</p>
+        <div class="tabs">${tabs.map(([key,name]) => `<button data-tab="${key}" class="${tab===key?'on':''}">${name}</button>`).join('')}</div>
+        <div id="tab-body"></div>
+      </section>`
+
+    const body = $('tab-body')
+    if (tab === 'overview') body.innerHTML = overviewHtml(s, h)
+    else if (tab === 'kinds') body.innerHTML = kindsHtml(s)
+    else if (tab === 'documents') body.innerHTML = documentsHtml(s)
+    else if (tab === 'review') body.innerHTML = reviewHtml(s)
+    else body.innerHTML = methodHtml(s)
+  }
+
+  function overviewHtml(s, h) {
+    return `<div class="cards">
+      ${card('leaked', int(h.leaked), 'protected values the destination saw', h.leaked ? 'bad' : 'ok', true)}
+      ${card('not returned', int(h.damaged), 'sent by the client, never came back', h.damaged ? 'bad' : 'ok', true)}
+      ${card('coverage', pct(h.coverage), 'of everything that had to be hidden', h.coverage === 1 ? 'ok' : '')}
+      ${card('unambiguous only', pct(h.strongCoverage), 'full names, shaped identifiers')}
+      ${card('bare names', pct(h.weakCoverage), 'a surname or first name alone')}
+      ${card('restoration', pct(h.restoration), 'values the client got back', h.restoration === 1 ? 'ok' : 'warn')}
+      ${card('over-redaction', int(h.overRedacted), 'on the keep list, changed anyway', h.overRedacted ? 'warn' : 'ok')}
+      ${card('precision', pct(h.precision), `strict floor ${pct(h.strictPrecision)}`)}
+      ${card('clean docs', `${int(h.cleanDocuments)}/${int(h.documents)}`, 'nothing protected got out', h.cleanDocuments === h.documents ? 'ok' : '')}
+      ${card('intact docs', `${int(h.intactDocuments)}/${int(h.documents)}`, 'everything came back', h.intactDocuments === h.documents ? 'ok' : '')}
+      ${card('exchanges failed', int(h.failed), 'never completed', h.failed ? 'bad' : 'ok')}
+      ${card('substitutions', int(s.totals.substitutions), `${int(s.totals.unclassified)} not covered by ground truth`)}
+    </div>
+    <h3>By document category</h3>
+    ${tableHtml(['Category','Documents','Protected','Leaked','Not returned'],
+      Object.entries(s.byCategory).sort((a,b)=>a[0].localeCompare(b[0],'en')).map(([name,c]) => [
+        name, int(c.documents), int(c.redactable),
+        `<span class="${c.leaked?'bad':'ok'}">${int(c.leaked)}</span>`,
+        `<span class="${c.damaged?'bad':'ok'}">${int(c.damaged)}</span>`,
+      ]), [0,1,1,1,1], true)}
+    <p class="note">Where a substitution landed: <b class="ok">${int(s.totals.expected)}</b> on a protected value,
+      <b class="warn">${int(s.totals['over-redaction'])}</b> on a value on the keep list,
+      <b class="info">${int(s.totals.collateral)}</b> on a company name, town, date, contract or amount, and
+      <b>${int(s.totals.unclassified)}</b> on something the ground truth does not cover. Only the first two are scored — the
+      other ${int(s.totals.collateral + s.totals.unclassified)} are cases this harness has declined to judge, and they are
+      listed under <b>Worth a look</b>.</p>`
+  }
+
+  function kindsHtml(s) {
+    const rows = Object.entries(s.byKind).sort((a,b) => b[1].total - a[1].total).map(([kind, c]) => [
+      `<b>${escape(kind)}</b>`, int(c.total), int(c.replaced), int(c.partial),
+      `<span class="${c.leaked?'bad':'ok'}">${int(c.leaked)}</span>`,
+      `<span class="${c.damaged?'bad':'ok'}">${int(c.damaged)}</span>`,
+      pct(c.total ? (c.replaced + c.partial) / c.total : null),
+    ])
+    return `<h3 style="margin-top:4px">What happened to each kind of value</h3>
+      ${tableHtml(['Kind','Expected','Replaced','Partly','Leaked','Not returned','Coverage'], rows, [0,1,1,1,1,1,1], true)}
+      <p class="note"><b>Partly</b> means an identifying fragment survived: a word of four letters or more —
+        <code>Bern</code>, <code>Beat</code>, <code>Freiburgstrasse</code> — or a fragment covering more than 40% of the value,
+        which catches half an AHV number even though it has no letters in it. Everything else is a remnant, not a partial hit:
+        <code>Sulgenrainweg 80, 3250 Lyss</code> comes back with the street and the town both replaced and <code>80, 3250</code>
+        still standing, and that is a value the proxy hid. What survived is shown on every finding either way.</p>`
+  }
+
+  function documentsHtml(s) {
+    const rows = s.documents.map((d) => {
+      const c = d.counts
+      const status = d.failure ? `<span class="tag bad">failed</span>`
+        : d.clean && d.intact && d.faithful ? `<span class="tag ok">clean</span>`
+        : [!d.clean ? '<span class="tag bad">leak</span>' : '', !d.intact ? '<span class="tag bad">lossy</span>' : '',
+           !d.faithful ? '<span class="tag warn">over</span>' : ''].filter(Boolean).join(' ')
+      return {
+        id: d.id,
+        cells: [
+          `<b>${escape(d.id)}</b> <span class="muted">${escape(d.title)}</span>`,
+          escape(d.category), int(c?.redactable),
+          `<span class="${c?.leaked?'bad':'ok'}">${int(c?.leaked)}</span>`,
+          `<span class="${c?.damaged?'bad':''}">${int(c?.damaged)}</span>`,
+          `<span class="${c?.overRedacted?'warn':''}">${int(c?.overRedacted)}</span>`,
+          status, int(d.transport?.durationMs),
+        ],
+      }
+    })
+    return `<div class="scroll"><table><thead><tr>
+        ${['Document','Category','Protected','Leaked','Not returned','Over-redacted','','ms']
+          .map((h,i) => `<th class="${[2,3,4,5,7].includes(i)?'num':''}">${h}</th>`).join('')}
+      </tr></thead><tbody>${rows.map((r) =>
+        `<tr class="click" data-doc="${escape(r.id)}">${r.cells.map((c,i) =>
+          `<td class="${[2,3,4,5,7].includes(i)?'num':''}">${c}</td>`).join('')}</tr>`).join('')}
+      </tbody></table></div>
+      <p class="note">Click a document to see the three copies side by side.</p>`
+  }
+
+  function reviewHtml(s) {
+    const items = s.toReview ?? []
+    return `<h3 style="margin-top:4px">Substitutions worth a look</h3>
+      <p class="lede">Neither group is scored, and the two are not the same accusation.</p>
+      <p class="lede"><span class="tag warn">over-redaction</span> is measured against the policy in force: the value was on the
+        keep list in <code>policy.json</code> and was changed anyway. That list is a choice, not a law — a proxy that redacts
+        every mail address including the published invoicing one is defensible, and moving the value out of <code>keep</code> is
+        the right answer if that is the intent.</p>
+      <p class="lede"><span class="tag">unclassified</span> is not an accusation at all. The proxy changed something the ground
+        truth has no entry for, which is as often the proxy being right about something the derivation missed — an abbreviated
+        first name, a hostname — as it is the proxy reaching too far into ordinary prose. Reading a few is the only way to tell
+        them apart, which is why they are listed rather than counted.</p>
+      ${tableHtml(['Document','Verdict','Original','Became'], items.map((i) => [
+        `<span class="mono">${escape(i.document)}</span>`,
+        `<span class="tag ${i.verdict === 'over-redaction' ? 'warn' : ''}">${escape(i.verdict)}</span>`,
+        `<span class="mono">${escape(i.before) || '<span class="muted">(inserted)</span>'}</span>`,
+        `<span class="mono">${escape(i.after)}</span>`,
+      ]), [0,0,0,0], true)}`
+  }
+
+  function methodHtml(s) {
+    const g = s.groundTruth
+    return `<h3 style="margin-top:4px">How this is measured</h3>
+      <p class="lede">Every document went through the proxy as the user message of a chat completion. Three copies are compared:
+        what left the evaluator, what arrived at the destination host — read back from the receiver directly, not through the
+        proxy — and what came back to the client after the proxy restored the real values.</p>
+      <p class="lede">The proxy substitutes plausible stand-ins rather than <code>[PERSON_1]</code>-style tokens, so a redacted
+        body looks exactly like an unredacted one and searching it for personal-data shapes proves nothing. What the figures rest
+        on instead is the alignment between the copies: which spans of the document the proxy changed. A protected value inside a
+        changed span was hidden; one inside an unchanged span leaked.</p>
+      <h3>Ground truth</h3>
+      <p class="lede">Derived from the corpus itself — ${int(g.people)} people and ${int(g.organisations)} organisations, each
+        vouched for by structure in the documents (a contact-list row, an angle-bracketed address, a chat prefix) or by a mail
+        local part matching the name. Nothing is hand-listed, so the corpus can change without a dictionary changing with it.</p>
+      ${g.totals.corrected ? `<p class="lede warn"><b>${int(g.totals.corrected)} of ${int(s.headline.documents)} documents were
+        scored against a hand-corrected sidecar</b> in <code>evaluation/groundtruth/</code> rather than against the derivation.
+        A sidecar wins wherever it exists, so an improvement to the derivation will not show up for those documents until the
+        sidecar is refreshed or deleted.</p>` : ''}
+      ${tableHtml(['Policy','Applies to'], [
+        ['<b class="bad">Must be hidden</b>', escape(g.policy.redact.join(', '))],
+        ['<b class="info">Must survive unchanged</b>', g.policy.keep.map((v) => `<code>${escape(v)}</code>`).join(', ')],
+        ['<b class="muted">Counted, never scored</b>', escape(g.policy.informational.join(', '))],
+      ], [0,0], true)}
+      <h3>What is in the corpus</h3>
+      ${tableHtml(['Kind','Found'], Object.entries(g.totals.byKind).sort((a,b)=>b[1]-a[1])
+        .map(([kind, n]) => [escape(kind), int(n)]), [0,1], true)}
+      <p class="note">Values that must survive are the provider's own front door — the published hotline, the invoicing address,
+        the no-reply sender. Rewriting one is not a safety win, it is a body arriving wrong for no benefit.</p>`
+  }
+
+  function tableHtml(headers, rows, numeric, scroll) {
+    const body = `<table><thead><tr>${headers.map((h,i) =>
+        `<th class="${numeric[i]?'num':''}">${h}</th>`).join('')}</tr></thead>
+      <tbody>${rows.length ? rows.map((r) => `<tr>${r.map((c,i) =>
+        `<td class="${numeric[i]?'num':''}">${c}</td>`).join('')}</tr>`).join('') :
+        `<tr><td colspan="${headers.length}" class="muted">none</td></tr>`}</tbody></table>`
+    return scroll ? `<div class="scroll">${body}</div>` : body
+  }
+
+  // ---- one document, three copies ------------------------------------------
+
+  /** Paints spans onto text. Spans must not overlap; they are sorted here, not merged. */
+  function paint(text, spans) {
+    const ordered = [...spans].filter((s) => s.end > s.start).sort((a, b) => a.start - b.start)
+    let out = ''
+    let cursor = 0
+    for (const span of ordered) {
+      if (span.start < cursor) continue
+      out += escape(text.slice(cursor, span.start))
+      out += `<mark class="${span.kind}" title="${escape(span.title ?? '')}">${escape(text.slice(span.start, span.end))}</mark>`
+      cursor = span.end
+    }
+    return out + escape(text.slice(cursor))
+  }
+
+  function renderDocument() {
+    const d = openDocument
+    const a = d.analysis
+    const legend = `<p class="legend">
+      <span class="l-ok">replaced</span><span class="l-warn">partly replaced</span>
+      <span class="l-bad">leaked / over-redacted</span><span class="l-info">must survive · collateral</span></p>`
+
+    const sentSpans = (a?.findings ?? []).filter((f) => f.policy !== 'informational').map((f) => ({
+      start: f.start, end: f.end,
+      kind: f.policy === 'keep' ? (f.outcome === 'leaked' ? 'keep' : 'leaked') : f.outcome,
+      title: `${f.kind} · ${f.tier} · ${f.policy} · ${f.outcome}${f.substitute ? ` → ${f.substitute}` : ''}`,
+    }))
+    const receivedSpans = (a?.replacements ?? []).map((r) => ({
+      start: r.bStart, end: r.bEnd,
+      kind: r.verdict === 'over-redaction' ? 'leaked' : r.verdict,
+      title: `${r.verdict} · was “${r.before}”`,
+    }))
+    const returnedSpans = (a?.restorationFailures ?? []).map((r) => ({
+      start: r.bStart, end: r.bEnd, kind: 'leaked', title: `sent “${r.before}”, got this back`,
+    }))
+
+    const leaked = (a?.findings ?? []).filter((f) => f.policy === 'redact' && f.outcome === 'leaked')
+    const partly = (a?.findings ?? []).filter((f) => f.policy === 'redact' && f.outcome === 'partial')
+    const over = (a?.findings ?? []).filter((f) => f.policy === 'keep' && f.outcome !== 'leaked')
+
+    $('stage').innerHTML = `
+      <section>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;justify-content:space-between">
+          <div>
+            <button class="back" id="b-back">← back to the run</button>
+            <h2 style="margin:10px 0 4px">${escape(d.document.id)} — ${escape(d.document.title)}</h2>
+            <div class="chip">${escape(d.document.path)} · ${bytes(d.document.bytes)} ·
+              ${escape(d.transport?.scheme ?? '')} ${d.transport?.intercepted ? '· intercepted' : ''} ·
+              ${int(d.transport?.durationMs)} ms</div>
+          </div>
+          <a href="/api/runs/${encodeURIComponent(openRun.runId)}/documents/${encodeURIComponent(d.document.id)}/report.md">
+            <button>Download this document .md</button></a>
+        </div>
+        ${d.failure ? `<p class="lede bad" style="margin-top:12px"><b>This exchange did not complete:</b> ${escape(d.failure)}</p>` : ''}
+        ${a ? `<div class="cards" style="margin-top:14px">
+          ${card('leaked', int(a.counts.leaked), 'seen by the destination', a.counts.leaked ? 'bad' : 'ok')}
+          ${card('replaced', int(a.counts.replaced), `${int(a.counts.partial)} only partly`)}
+          ${card('not returned', int(a.counts.damaged), 'never came back', a.counts.damaged ? 'bad' : 'ok')}
+          ${card('over-redacted', int(a.counts.overRedacted), 'had to survive', a.counts.overRedacted ? 'warn' : 'ok')}
+          ${card('substitutions', int(a.counts.substitutions), `${int(a.counts.unclassified)} unclassified`)}
+        </div>` : ''}
+      </section>
+
+      ${leaked.length || partly.length || over.length ? `<section>
+        <h2>What went wrong</h2>
+        ${leaked.length ? `<h3 style="margin-top:0">Reached the destination host unchanged</h3>
+          ${tableHtml(['Line','Kind','Tier','Value'], leaked.map((f) =>
+            [int(f.line), escape(f.kind), escape(f.tier), `<span class="mono bad">${escape(f.text)}</span>`]), [1,0,0,0])}` : ''}
+        ${partly.length ? `<h3${leaked.length ? '' : ' style="margin-top:0"'}>Only partly replaced</h3>
+          ${tableHtml(['Line','Kind','Value','What survived'], partly.map((f) =>
+            [int(f.line), escape(f.kind), `<span class="mono">${escape(f.text)}</span>`,
+             `<span class="mono warn">${escape((f.remnants ?? f.survived).join(' · '))}</span>`]), [1,0,0,0])}` : ''}
+        ${over.length ? `<h3>Rewritten although it had to survive</h3>
+          ${tableHtml(['Line','Kind','Value','Became'], over.map((f) =>
+            [int(f.line), escape(f.kind), `<span class="mono">${escape(f.text)}</span>`,
+             `<span class="mono warn">${escape(f.substitute ?? '')}</span>`]), [1,0,0,0])}` : ''}
+      </section>` : ''}
+
+      <section>
+        <h2>The three copies</h2>
+        ${legend}
+        <div class="panes">
+          <div class="pane"><h3>What left the evaluator</h3><pre>${paint(d.sent, sentSpans)}</pre></div>
+          <div class="pane"><h3>What the destination host saw</h3><pre>${
+            d.received ? paint(d.received, receivedSpans) : '<span class="muted">not captured</span>'}</pre></div>
+          <div class="pane"><h3>What came back to the client</h3><pre>${
+            d.returned ? paint(d.returned, returnedSpans) : '<span class="muted">no usable response</span>'}</pre></div>
+        </div>
+      </section>
+
+      ${a ? `<section>
+        <h2>Every substitution the proxy made</h2>
+        ${tableHtml(['Verdict','Original','Seen by the destination'], a.replacements.map((r) => [
+          `<span class="tag ${r.verdict==='expected'?'ok':r.verdict==='over-redaction'?'bad':r.verdict==='collateral'?'info':'warn'}">${escape(r.verdict)}</span>`,
+          `<span class="mono">${escape(r.before)}</span>`, `<span class="mono">${escape(r.after)}</span>`,
+        ]), [0,0,0], true)}
+      </section>` : ''}`
+  }
+
+  // ---- loading -------------------------------------------------------------
+
+  async function openRunId(runId) {
+    selectedRun = runId
+    openDocument = null
+    tab = 'overview'
+    try {
+      openRun = await api(`/api/runs/${encodeURIComponent(runId)}`)
+    } catch (cause) {
+      openRun = null
+      $('stage').innerHTML = `<section><div class="empty bad">${escape(cause.message)}</div></section>`
+      return
+    }
+    renderRunList()
+    renderStage()
+  }
+
+  async function openDocumentId(documentId) {
+    try {
+      openDocument = await api(`/api/runs/${encodeURIComponent(openRun.runId)}/documents/${encodeURIComponent(documentId)}`)
+    } catch (cause) {
+      return alert(cause.message)
+    }
+    renderStage()
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  async function poll() {
+    try {
+      const next = await api('/api/state')
+      const wasActive = state?.progress?.active
+      const runsChanged = JSON.stringify(next.runs.map((r) => r.id)) !== JSON.stringify(state?.runs?.map((r) => r.id) ?? null)
+      state = next
+      renderHeader()
+      if (runsChanged) {
+        renderRunList()
+        // A run that has just finished is the one worth looking at.
+        if (wasActive && !next.progress.active && next.runs[0]) openRunId(next.runs[0].id)
+      }
+      if (!openRun && !state.progress.active && state.runs.length && !selectedRun) openRunId(state.runs[0].id)
+      else if (!openRun && !openDocument) renderStage()
+    } catch {
+      $('link-dot').className = 'dot down'
+      $('link-state').textContent = 'evaluator unreachable'
+    }
+  }
+
+  // ---- interaction ---------------------------------------------------------
+
+  for (const id of ['c-scheme','c-proxyTls','c-concurrency','c-delayMs']) {
+    $(id).addEventListener('focus', () => { editing = true })
+    $(id).addEventListener('blur', () => { editing = false })
+    $(id).addEventListener('change', async () => {
+      await api('/api/config', { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          scheme: $('c-scheme').value, proxyTls: $('c-proxyTls').value === 'true',
+          concurrency: Number($('c-concurrency').value), delayMs: Number($('c-delayMs').value),
+        }) })
+      editing = false
+      poll()
+    })
+  }
+
+  $('b-run').addEventListener('click', async () => {
+    if (busy) return
+    busy = true
+    try {
+      await api('/api/run', { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ times: Number($('c-times').value), label: $('c-label').value.trim() || null }) })
+      poll()
+    } catch (cause) { alert(cause.message) } finally { busy = false }
+  })
+
+  $('b-cancel').addEventListener('click', async () => { await api('/api/cancel', { method: 'POST' }); poll() })
+
+  $('run-list').addEventListener('click', (event) => {
+    const item = event.target.closest('li[data-run]')
+    if (item) openRunId(item.dataset.run)
+  })
+
+  $('stage').addEventListener('click', (event) => {
+    const tabButton = event.target.closest('button[data-tab]')
+    if (tabButton) { tab = tabButton.dataset.tab; return renderStage() }
+    if (event.target.closest('#b-back')) { openDocument = null; return renderStage() }
+    const row = event.target.closest('tr[data-doc]')
+    if (row) openDocumentId(row.dataset.doc)
+  })
+
+  poll()
+  setInterval(poll, 1000)
+})()
+</script>
+</body>
+</html>

@@ -1,0 +1,173 @@
+# Evaluation harness for backend/Dockerfile.
+#
+#   certgen    issues the harness CA and the receiver's certificate, once
+#   proxy      THE THING UNDER TEST -- built from backend/Dockerfile, unmodified
+#   receiver   an ordinary destination host, and the only place the redacted body exists
+#   evaluator  sends every document in testdata/ through the proxy and scores the result,
+#              plus the web UI on :3200
+#
+# Standalone on purpose: its own PKI, its own proxy container, its own network. The
+# harness next door in ../docker-compose.yml keeps traffic flowing for hours and this one
+# runs a corpus and stops, and neither should be able to disturb the other's numbers.
+# Ports are offset by one from that harness so both can run at the same time.
+#
+#   docker compose -f evaluation/docker-compose.yml up --build     run it, then open :3200
+#   EVAL_ON_START=true EVAL_EXIT_AFTER_RUN=true docker compose ... up --abort-on-container-exit
+#                                                                  one pass, non-zero on a leak
+#
+# The proxy image is used exactly as it is built. Everything it needs from the harness
+# arrives as environment variables and mounted volumes.
+
+name: sitm-eval
+
+services:
+  # ---------------------------------------------------------------- certificates
+  certgen:
+    image: alpine/openssl:latest
+    # The script is bind-mounted from a Windows checkout as often as not, so strip CR
+    # before running it rather than depending on the checkout's line endings.
+    entrypoint: ["/bin/sh", "-c", "tr -d '\\r' < /scripts/gen-certs.sh > /tmp/gen-certs.sh && sh /tmp/gen-certs.sh"]
+    volumes:
+      - ../pki:/scripts:ro
+      - pki:/pki
+    networks: [evaluation]
+
+  # ------------------------------------------------------------------- the proxy
+  proxy:
+    image: ${PROXY_IMAGE:-sitm-proxy:eval}
+    build:
+      # Repo root: backend/Dockerfile also bundles the python services.
+      context: ../..
+      dockerfile: backend/Dockerfile
+    depends_on:
+      certgen:
+        condition: service_completed_successfully
+    environment:
+      # Without a key the JwtBearer registration builds a SymmetricSecurityKey over zero
+      # bytes and the app fails to start. appsettings.json ships it empty on purpose.
+      Jwt__Key: ${JWT_KEY:-aGFybmVzcy1vbmx5LWtleS1ub3QtYS1zZWNyZXQtMDAwMQ==}
+      Proxy__HttpPort: "3128"
+      Proxy__HttpsPort: "3127"
+      Proxy__ApiPort: "8080"
+      # Added to the dashboard certificate and used by ForwardProxyMiddleware to spot an
+      # absolute-form request that points back at this app.
+      Proxy__HostNames__0: proxy
+      Cors__AllowedOrigins__0: http://localhost:8082
+      Cors__AllowedOrigins__1: http://localhost:5173
+      # The receiver's certificate is signed by the harness CA, and ConnectProxyMiddleware
+      # validates upstream certificates normally. This bundle is the image's own trust
+      # store plus that CA -- .NET on Linux resolves trust through OpenSSL, which honours
+      # SSL_CERT_FILE. Nothing in the image is changed.
+      SSL_CERT_FILE: /pki/bundle.pem
+      Logging__LogLevel__Default: ${PROXY_LOG_LEVEL:-Information}
+    volumes:
+      # One MITM CA that survives a restart, so the evaluator does not have to trust a new
+      # root every time the container is recreated -- and so two runs are comparable.
+      - certs:/app/certs
+      - pki:/pki:ro
+    ports:
+      - "3228:3128"
+      - "3227:3127"
+      - "8180:8080"
+    networks: [evaluation]
+
+  # -------------------------------------------------------- the destination host
+  # Built from ../receiver, the same image the traffic harness uses. Its eval routes hold
+  # each request body exactly as it arrived: the one view of the redaction that exists
+  # anywhere, because by the time the answer reaches the client the proxy has undone it.
+  receiver:
+    build:
+      context: ../receiver
+    depends_on:
+      certgen:
+        condition: service_completed_successfully
+    environment:
+      HTTP_PORT: "3000"
+      HTTPS_PORT: "3443"
+      TLS_CERT: /pki/receiver.crt
+      TLS_KEY: /pki/receiver.key
+      # A corpus pass is megabytes of request bodies held in memory until the run releases
+      # them. These caps are what happens when a run dies before it can.
+      EVAL_MAX_BODIES: ${EVAL_MAX_BODIES:-2000}
+      EVAL_MAX_BYTES: ${EVAL_MAX_BYTES:-134217728}
+    volumes:
+      - pki:/pki:ro
+    # Published for manual pokes only. The evaluator reaches it through the proxy for the
+    # traffic, and over the compose network for the captures.
+    ports:
+      - "3010:3000"
+      - "3453:3443"
+    networks:
+      evaluation:
+        aliases:
+          - receiver.sitm.local
+
+  # ------------------------------------------- the client, the scoring and the UI
+  evaluator:
+    build:
+      context: ./evaluator
+    depends_on:
+      - proxy
+      - receiver
+    environment:
+      PROXY_HOST: proxy
+      PROXY_PORT: "3128"
+      PROXY_TLS_PORT: "3127"
+      TARGET_HOST: receiver.sitm.local
+      TARGET_HTTP_PORT: "3000"
+      TARGET_HTTPS_PORT: "3443"
+      RECEIVER_BASE_URL: http://receiver:3000
+      CORPUS_DIR: /corpus
+      DATA_DIR: /data
+      # Optional. A JSON file with `redact`, `informational` and `keep` overrides the
+      # defaults in groundtruth.js, so the corpus's rules can change without a rebuild.
+      POLICY_FILE: ${POLICY_FILE:-/policy.json}
+      # Hand-corrected ground truth, one <DOC-ID>.json per document, used in preference to
+      # the derivation. Empty by default; see evaluation/groundtruth/README.md.
+      GROUNDTRUTH_DIR: ${GROUNDTRUTH_DIR:-/groundtruth}
+      UI_PORT: "3200"
+      EVAL_SCHEME: ${EVAL_SCHEME:-https}
+      EVAL_PROXY_TLS: ${EVAL_PROXY_TLS:-false}
+      EVAL_CONCURRENCY: ${EVAL_CONCURRENCY:-2}
+      EVAL_DELAY_MS: ${EVAL_DELAY_MS:-0}
+      # Run the corpus once as soon as the proxy answers, rather than waiting for someone
+      # to press the button. With EVAL_EXIT_AFTER_RUN the container then exits non-zero if
+      # anything leaked, anything failed, or anything did not come back -- which is the
+      # whole harness as one CI step.
+      EVAL_ON_START: ${EVAL_ON_START:-false}
+      EVAL_EXIT_AFTER_RUN: ${EVAL_EXIT_AFTER_RUN:-false}
+      STARTUP_TIMEOUT_MS: ${STARTUP_TIMEOUT_MS:-180000}
+    volumes:
+      # The corpus, read-only: a harness that can edit its own test data is not a harness.
+      - ./testdata:/corpus:ro
+      - ./policy.json:/policy.json:ro
+      # Read-write: `node src/tools/dumpGroundTruth.js` writes the derivation here so it
+      # can be reviewed, corrected and committed.
+      - ./groundtruth:/groundtruth
+      # Runs land on the host, so they outlive the container and can be read with an
+      # ordinary editor.
+      - ./data:/data
+    ports:
+      - "3200:3200"
+    # The evaluator gives up if the proxy has not answered /ca.crt within three minutes,
+    # rather than hanging forever. Restarting is how it waits for a slow first build.
+    restart: unless-stopped
+    networks: [evaluation]
+
+  # ------------------------------------------------------- optional, off by default
+  # The dashboard SPA, so a run can be watched arriving in the product's own UI.
+  dashboard:
+    profiles: [dashboard]
+    build:
+      context: ../../frontend
+    ports:
+      - "8082:8080"
+    networks: [evaluation]
+
+volumes:
+  pki:
+  certs:
+
+networks:
+  evaluation:
+    driver: bridge

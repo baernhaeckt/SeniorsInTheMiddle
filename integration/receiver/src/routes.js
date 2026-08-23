@@ -64,6 +64,20 @@ export async function handle(ctx, res, deps) {
     return json(res, 200, deps.stats())
   }
 
+  // The evaluation harness reads these directly, never through the proxy. See evalStore.js.
+  if (pathname === '/_harness/eval/health' && method === 'GET') {
+    return json(res, 200, deps.evalStore.health())
+  }
+
+  if (pathname === '/_harness/eval/capture' && method === 'GET') {
+    const capture = deps.evalStore.get(ctx.query.get('run') ?? '', ctx.query.get('doc') ?? '')
+    return json(res, 200, capture ? { found: true, ...capture } : { found: false })
+  }
+
+  if (pathname === '/_harness/eval/captures' && ctx.method === 'DELETE') {
+    return json(res, 200, { released: deps.evalStore.release(ctx.query.get('run') ?? '') })
+  }
+
   const asset = ASSETS[pathname]
   if (asset) {
     if (method !== 'GET') return json(res, 405, { error: 'GET only' })
@@ -101,6 +115,11 @@ export async function handle(ctx, res, deps) {
     return json(res, 200, {
       id: `chatcmpl-harness-${ctx.seq}`,
       model: parsed.value?.model ?? 'harness-echo-1',
+      // The prompt exactly as it arrived, for an evaluation request only. The answer
+      // below quotes it too, but with a sentence in front, and the evaluator compares
+      // this against what it sent character for character -- a prefix it has to strip is
+      // a prefix it can strip wrongly.
+      ...(ctx.headers['x-eval-doc'] ? { echo: prompt } : {}),
       choices: [
         {
           index: 0,

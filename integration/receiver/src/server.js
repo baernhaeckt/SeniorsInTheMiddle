@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs'
 import { handle, readsBody } from './routes.js'
 import { inspect } from './pii.js'
 import { createStats, record, snapshot } from './stats.js'
+import { createEvalStore } from './evalStore.js'
 
 const HTTP_PORT = Number(process.env.HTTP_PORT ?? 3000)
 const HTTPS_PORT = Number(process.env.HTTPS_PORT ?? 3443)
@@ -24,6 +25,7 @@ const TLS_KEY = process.env.TLS_KEY ?? '/pki/receiver.key'
 const MAX_BODY = Number(process.env.MAX_BODY_BYTES ?? 2_000_000)
 
 const stats = createStats()
+const evalStore = createEvalStore()
 let seq = 0
 
 /**
@@ -79,9 +81,19 @@ function listener(scheme) {
       if (readsBody(ctx.pathname)) {
         ctx.body = raw.toString('utf8')
         ctx.inspection = inspect(ctx.body, declaredNames(req.headers['x-harness-names']))
+
+        // The one view only this process has: the body after the proxy was done with it.
+        // Filed verbatim, before anything here parses or answers it. See evalStore.js.
+        if (req.headers['x-eval-doc']) {
+          ctx.captured = evalStore.capture(req.headers['x-eval-run'], req.headers['x-eval-doc'], ctx.body, {
+            scheme,
+            route: ctx.pathname,
+            contentType: req.headers['content-type'] ?? null,
+          })
+        }
       }
 
-      outcome = await handle(ctx, res, { stats: () => snapshot(stats) })
+      outcome = await handle(ctx, res, { stats: () => snapshot(stats), evalStore })
     } catch (cause) {
       if (!res.headersSent) {
         const body = JSON.stringify({ error: cause.message })
@@ -115,6 +127,8 @@ function listener(scheme) {
         durationMs: Number(durationMs.toFixed(1)),
         sawRawPii: ctx.inspection?.sawRawPii ?? null,
         tokens: ctx.inspection?.tokenCount ?? null,
+        evalDoc: req.headers['x-eval-doc'] ?? null,
+        captured: ctx.captured ?? null,
       }),
     )
   }

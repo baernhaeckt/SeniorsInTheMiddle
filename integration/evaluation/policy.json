@@ -1,0 +1,29 @@
+{
+  "_comment": [
+    "What the proxy is expected to do with each kind of value in testdata/.",
+    "",
+    "redact         must not reach the destination host. Missing one is a leak, and the",
+    "               harness leads with that number.",
+    "keep           must reach the destination unchanged. These are the provider's own",
+    "               published contact points: rewriting one is not a safety win, it is a",
+    "               body arriving wrong for no benefit.",
+    "informational  counted and shown, never scored. Whether a company name or a contract",
+    "               number should be hidden is a policy question this harness has no",
+    "               business deciding, so it reports what happened and leaves the",
+    "               judgement to whoever reads it.",
+    "",
+    "Move ORG into redact to score company names as well; the report follows whatever is",
+    "here. Deleting this file falls back to the defaults in evaluator/src/groundtruth.js."
+  ],
+
+  "redact": ["PERSON", "EMAIL", "PHONE", "IBAN", "AHV", "ADDRESS", "BIRTHDATE"],
+
+  "informational": ["ORG", "DATE", "CONTRACT_ID", "TICKET_ID", "MONEY"],
+
+  "keep": [
+    "rechnung@natron.io",
+    "no-reply@ticketsystem.example",
+    "+41 31 528 00 00",
+    "Güterstrasse 24, 3008 Bern"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "name": "sitm-eval-evaluator",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Runs the testdata corpus through the proxy and scores the quality of the replacement. Node core modules only, no dependencies, no build step.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/main.js",
+    "groundtruth": "node src/tools/dumpGroundTruth.js"
+  }
+}
