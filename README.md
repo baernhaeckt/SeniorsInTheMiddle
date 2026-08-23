@@ -15,7 +15,8 @@ Ausführliche Beschreibung: `docs/` (Jury-Dokumentation).
 - `/backend` : Forward-Proxy, WebAPI und Telemetry-Stream als ein Prozess
   (`backend/src/SeniorsInTheMiddle.Proxy`). Das Image (`backend/Dockerfile`,
   Build-Context ist das Repo-Root) enthält zusätzlich die Python-Services aus
-  `/services` als Daemons unter supervisord.
+  `/services` als Daemons unter supervisord. Siehe
+  [backend/README.md](backend/README.md).
 - `/services` : Python-Services und die gemeinsame Unix-Socket-Runtime, die im
   Backend-Container neben dem Proxy laufen. `pii_service` (Presidio/spaCy) und
   `privacy_check_service` (Re-Identifikationsrisiko, sentence-transformers/pymc)

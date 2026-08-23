@@ -67,7 +67,7 @@ public class PrivacyAssessorTests
         Assert.AreEqual("[PERSON_1]", risk.Token);
         Assert.AreEqual(0.73, risk.Probability);
         Assert.AreEqual(0.73, assessed.MaxProbability);
-        Assert.IsTrue(assessed.AssessedMs >= 0);
+        Assert.IsGreaterThanOrEqualTo(0d, assessed.AssessedMs);
     }
 
     [TestMethod]

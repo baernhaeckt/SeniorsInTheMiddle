@@ -81,7 +81,7 @@ public class RestoringStreamTests
 
         Assert.AreEqual("Renée", read);
         Assert.AreEqual("Renée", string.Concat(mutation.Chunks));
-        Assert.IsFalse(read.Contains('�'), "The split character was decoded as a replacement character.");
+        Assert.DoesNotContain("�", read, "The split character was decoded as a replacement character.");
     }
 
     /// <summary>A reader with less room than there is to give gets the rest on the next read,
