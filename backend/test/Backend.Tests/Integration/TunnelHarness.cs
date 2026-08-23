@@ -303,6 +303,7 @@ internal sealed class TunnelHarness : IAsyncDisposable
             .AddSingleton<SelfHostNames>()
             .AddSingleton<InterceptionBypass>()
             .AddSingleton<InspectionScope>()
+            .AddSingleton<Detours>()
             .AddSingleton<MitmCertificateProvider>()
             .AddSingleton<IStreamProxyFactory, StreamProxyFactory>()
             .AddSingleton<ConnectProxyMiddleware>()

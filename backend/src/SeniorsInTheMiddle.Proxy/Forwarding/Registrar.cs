@@ -33,6 +33,7 @@ public static class Registrar
             .AddSingleton<SelfHostNames>()
             .AddSingleton<InterceptionBypass>()
             .AddSingleton<InspectionScope>()
+            .AddSingleton<Detours>()
             .AddSingleton<UpstreamHttpClient>()
             .AddSingleton<IForwardProxy, ForwardProxy>()
             .AddSingleton<MitmCertificateProvider>()

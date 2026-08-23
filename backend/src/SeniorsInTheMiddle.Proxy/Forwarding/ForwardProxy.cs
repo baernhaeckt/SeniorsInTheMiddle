@@ -13,6 +13,7 @@ sealed class ForwardProxy : IForwardProxy
     private readonly IBodyMutationFactory _bodyMutations;
     private readonly BodyLimits _bodyLimits;
     private readonly InspectionScope _scope;
+    private readonly Detours _detours;
     private readonly ILogger<ForwardProxyTransformer> _transformerLogger;
     private readonly PrivacyAssessor _privacy;
 
@@ -30,6 +31,7 @@ sealed class ForwardProxy : IForwardProxy
         IBodyMutationFactory bodyMutations,
         BodyLimits bodyLimits,
         InspectionScope scope,
+        Detours detours,
         UpstreamHttpClient upstream,
         ILogger<ForwardProxyTransformer> transformerLogger,
         PrivacyAssessor privacy)
@@ -40,6 +42,7 @@ sealed class ForwardProxy : IForwardProxy
         _bodyMutations = bodyMutations;
         _bodyLimits = bodyLimits;
         _scope = scope;
+        _detours = detours;
         _upstream = upstream;
         _transformerLogger = transformerLogger;
         _privacy = privacy;
@@ -57,6 +60,24 @@ sealed class ForwardProxy : IForwardProxy
 
         ExchangeTrace trace = new(_telemetry, CorrelationIds.NextRequest(), Facts(context, destination), _privacy);
         long startedAt = Stopwatch.GetTimestamp();
+
+        // Answered here and never forwarded -- see Detours. The trace still sees it, so the
+        // dashboard shows the request and its reason says where it went.
+        if (_detours.For(destination) is { } detour)
+        {
+            trace.Passthrough($"detoured to {detour.Host}");
+
+            context.Response.StatusCode = StatusCodes.Status302Found;
+            context.Response.Headers.Location = detour.ToString();
+            context.Response.Headers.CacheControl = "no-store";
+            await context.Response.CompleteAsync();
+
+            trace.Completed(
+                context.Response.StatusCode,
+                0,
+                Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
+            return;
+        }
 
         // Counted on the way out rather than read from Content-Length, which a chunked
         // response does not carry -- see CountingStream.
