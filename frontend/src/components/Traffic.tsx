@@ -1,5 +1,5 @@
-import { memo } from 'react'
-import { store, type TrafficEntry } from '../engine/store'
+import { memo, useState } from 'react'
+import { LIMITS, store, type TrafficEntry } from '../engine/store'
 import { clockOf, formatBytes, typeTag } from '../engine/text'
 import { useStore } from '../engine/useStore'
 import { Ticker } from './Ticker'
@@ -7,28 +7,46 @@ import { Ticker } from './Ticker'
 /**
  * Every request the proxy saw, newest first, marked with what it did about it.
  * Treated rows are the ones playing out on the band above. Click one to hold it
- * in the inspector.
+ * in the inspector. The "treated" toggle hides everything else, and reaches
+ * further back: the store keeps treated rows long after the noise around them
+ * has been evicted.
  */
 export function Traffic() {
   const traffic = useStore((state) => state.traffic)
   const { requests, treated } = useStore((state) => state.metrics)
   const pinnedId = useStore((state) => state.pinnedId)
   const hoveredDevice = useStore((state) => state.hoveredDevice)
+  const [treatedOnly, setTreatedOnly] = useState(false)
+
+  const rows = treatedOnly
+    ? traffic.filter((entry) => entry.treatment === 'treated').slice(0, LIMITS.treatedTraffic)
+    : traffic.slice(0, LIMITS.traffic)
 
   return (
     <section className="panel" aria-label="All requests through the proxy">
       <div className="panel__head">
         <span className="u-label">Traffic</span>
         <span className="panel__note">
-          {requests} seen · <span className="traffic__treated">{treated} treated</span>
+          {requests} seen ·{' '}
+          <button
+            type="button"
+            className="traffic__treated traffic__filter"
+            aria-pressed={treatedOnly}
+            title={treatedOnly ? 'Show all requests' : 'Show treated requests only'}
+            onClick={() => setTreatedOnly((on) => !on)}
+          >
+            {treated} treated
+          </button>
         </span>
       </div>
 
       <div className="panel__body">
-        {traffic.length === 0 && (
-          <p className="matrix__empty panel__empty">Nothing has crossed yet.</p>
+        {rows.length === 0 && (
+          <p className="matrix__empty panel__empty">
+            {treatedOnly ? 'Nothing has been treated yet.' : 'Nothing has crossed yet.'}
+          </p>
         )}
-        {traffic.map((entry) => (
+        {rows.map((entry) => (
           <Row
             key={entry.requestId}
             entry={entry}

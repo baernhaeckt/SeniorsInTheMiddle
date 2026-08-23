@@ -173,7 +173,10 @@ export interface AppState {
 }
 
 export const LIMITS = {
+  /** Newest rows of any kind kept in the list. */
   traffic: 140,
+  /** Treated rows kept beyond that, so they are not buried by untreated noise. */
+  treatedTraffic: 1000,
   exchanges: 12,
   vault: 40,
   latencies: 60,
@@ -330,6 +333,25 @@ function touchDevice(
   )
 }
 
+/**
+ * Keep the newest rows, plus the newest treated rows past that point. Treated
+ * requests are rare next to the static noise around them, so capping them
+ * together would wash the interesting ones out within seconds.
+ */
+export function evictTraffic(traffic: TrafficEntry[]): TrafficEntry[] {
+  if (traffic.length <= LIMITS.traffic) return traffic
+  let treatedSeen = 0
+  return traffic.filter((entry, index) => {
+    if (index < LIMITS.traffic) {
+      if (entry.treatment === 'treated') treatedSeen += 1
+      return true
+    }
+    if (entry.treatment !== 'treated') return false
+    treatedSeen += 1
+    return treatedSeen <= LIMITS.treatedTraffic
+  })
+}
+
 function patchTraffic(
   traffic: TrafficEntry[],
   match: (entry: TrafficEntry) => boolean,
@@ -460,7 +482,7 @@ export function reduce(current: AppState, action: Action, trafficSeq = 0, logSeq
       }
       return {
         ...current,
-        traffic: [entry, ...current.traffic].slice(0, LIMITS.traffic),
+        traffic: evictTraffic([entry, ...current.traffic]),
         metrics: {
           ...current.metrics,
           requests: current.metrics.requests + 1,

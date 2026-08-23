@@ -4,6 +4,24 @@
   color: var(--alert);
 }
 
+.traffic__filter {
+  font: inherit;
+  color: inherit;
+  padding: 0 4px;
+  margin: 0 -4px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.traffic__filter:hover {
+  background: rgba(212, 112, 141, 0.12);
+}
+
+.traffic__filter[aria-pressed='true'] {
+  background: var(--alert);
+  color: var(--void);
+}
+
 .tr {
   display: grid;
   grid-template-columns: 50px 32px minmax(0, 1fr) auto;
