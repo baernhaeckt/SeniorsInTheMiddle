@@ -238,8 +238,30 @@ describe('caps', () => {
     const many = Array.from({ length: LIMITS.traffic + 10 }, (_, i) => ({
       ...observed,
       requestId: `r-${i}`,
+      treatment: 'passthrough' as const,
     }))
     expect(replay(many).traffic).toHaveLength(LIMITS.traffic)
+  })
+
+  it('keeps treated rows past the cap until their own, larger cap', () => {
+    const observed = byType('request.observed')
+    const treatedRows = Array.from({ length: LIMITS.treatedTraffic + 5 }, (_, i) => ({
+      ...observed,
+      requestId: `t-${i}`,
+      treatment: 'treated' as const,
+    }))
+    const noise = Array.from({ length: LIMITS.traffic * 2 }, (_, i) => ({
+      ...observed,
+      requestId: `n-${i}`,
+      treatment: 'passthrough' as const,
+    }))
+    const state = replay([...treatedRows, ...noise])
+    const kept = state.traffic.filter((entry) => entry.treatment === 'treated')
+    expect(kept).toHaveLength(LIMITS.treatedTraffic)
+    expect(kept[0]?.requestId).toBe(`t-${LIMITS.treatedTraffic + 4}`)
+    expect(state.traffic.slice(0, LIMITS.traffic).every((e) => e.treatment !== 'treated')).toBe(
+      true,
+    )
   })
 
   it('evicts finished exchanges before in-flight ones', () => {

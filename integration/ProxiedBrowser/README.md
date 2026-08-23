@@ -98,9 +98,12 @@ anywhere else still fails, and still lands in `HandleServerCertificateError`.
 
 ### Two consequences worth knowing
 
-**Restart the browser when you restart the proxy.** The pin is a command-line switch, read once at engine
-start, and a restarted proxy generates a new signing key. This is the same restart the proxy settings already
-require.
+**A restarted proxy means a restarted engine — and the app does that by itself.** The pin is a command-line
+switch, read once at engine start, and a restarted proxy generates a new signing key. The first certificate that
+no longer chains to the loaded CA (or a failed proxy tunnel) makes `MainViewModel` fetch `CaCertUrl` again; if
+the CA really changed, the app restarts itself in flight — see
+[In-flight restart](#in-flight-restart-proxy-settings-and-a-re-issued-ca). A genuinely bad site certificate with
+an unchanged CA just shows Chromium's error page, as before.
 
 **The lock popup no longer gets its certificate for free.** It used to arrive with the certificate error;
 there is no error any more. CEF exposes no way to read the certificate of a *successful* connection (its
@@ -163,7 +166,7 @@ All state lives under `~/Library/Application Support/DemoBrowser/` (macOS) resp.
 | Path | Purpose |
 |------|---------|
 | `settings.json` | Proxy, CA URL and start page (schema below). Created with defaults on first run. |
-| `CEF/` | The Chromium profile: cookies, cache, history, local storage — shared by all tabs **within one run only**. It is deleted on every start and again on exit, so each launch is a clean profile with a single tab on `StartPage`. Nothing (tabs, history, cookies) is restored from a previous run. (CEF hosts the browser in-process, so parts of the profile stay memory-mapped until the process is gone; a detached `/bin/sh` waits for the PID to disappear and removes the folder. Even if that fails, the next start wipes it.) |
+| `CEF/` | The Chromium profile: cookies (session cookies included, `PersistSessionCookies = true`), cache and local storage — shared by all tabs and **kept between runs**, so logins and cached assets survive a restart. What is deliberately *not* kept is where you were: every launch opens a single tab on `StartPage`, and the list of open tabs is never written to disk. Delete the folder to start from a clean profile. |
 | `cef.log` | Chromium's own log (warnings and errors only). |
 
 ### settings.json schema
@@ -187,7 +190,7 @@ All state lives under `~/Library/Application Support/DemoBrowser/` (macOS) resp.
 | `ProxyHost`, `ProxyPort` | Proxy endpoint. Port must be 1–65535. |
 | `ProxyBypassList` | Chromium `--proxy-bypass-list` syntax, e.g. `localhost;*.corp.example.com`. Empty = nothing bypassed. |
 | `CaCertUrl` | URL serving the proxy CA as PEM or DER. The proxy publishes it (and `proxy.pac`) on its plain-HTTP port: `http://<host>:3128/ca.cer`. An https URL is validated with full TLS. |
-| `StartPage` | URL opened for new tabs and when there is no session to restore. |
+| `StartPage` | URL opened at launch and for every new tab. A new tab puts the focus into the address bar with the URL selected, so typing replaces it. |
 
 The gear button opens a dialog that edits all of these with validation.
 
@@ -203,16 +206,38 @@ or, with `UseProxy: false`, the single switch `--no-proxy-server` (without it Ch
 the system proxy configuration, so "proxy off" would not mean "direct" on a machine that has one)
 
 (passed as individual switches through `CefRuntimeLoader.Initialize(settings, flags)`; values unquoted — quotes
-would be passed to Chromium verbatim) and `CachePath` pointing at the freshly wiped `CEF/` profile. Every tab's
-`AvaloniaCefBrowser` is created in that one runtime, so every tab uses the proxy and shares one (per-run) session.
+would be passed to Chromium verbatim) and `CachePath` pointing at the persistent `CEF/` profile. Every tab's
+`AvaloniaCefBrowser` is created in that one runtime, so every tab uses the proxy and shares one session.
 
 No `--ignore-certificate-errors` or other blanket TLS switch is used.
 
-### Limitation: proxy changes require a restart
+### In-flight restart: proxy settings and a re-issued CA
 
-Chromium reads `--proxy-server` from the browser process command line, which CEF fixes when the runtime is
-initialised. There is no API to change it on a running runtime. The settings dialog therefore saves the file and
-tells you to restart; the running instance keeps its original proxy.
+Chromium reads `--proxy-server` and the SPKI pins from the browser process command line, which CEF fixes when
+the runtime is initialised, and CEF initialises the runtime **exactly once per process**. There is no API to
+change either on a running runtime and no way to "reload the browser control" with new switches.
+
+What the app does instead is restart *itself*, without the user closing and reopening anything
+(`App.RestartInFlightAsync`):
+
+1. `MainWindow.CaptureRestartState` collects the open tabs' URLs, the active tab and the window geometry.
+2. A successor process is started from `Environment.ProcessPath` with that state as **command-line arguments**
+   (`RestartState`). It is an in-memory hand-over only — nothing is written to disk, so a normal exit still
+   leaves no trace of which tabs were open.
+3. The successor shows the splash and waits (up to 15 s) for the predecessor's PID to disappear: Chromium refuses
+   a `cache_path` another process still holds.
+4. The predecessor closes (tabs disposed, `CefShutdown`, profile flushed); the successor goes through the normal
+   startup — CA download, pin probe, engine start — and reopens the same tabs at the same window position.
+
+Two things trigger it:
+
+* **Saving proxy/CA settings.** `SettingsWindow` returns `true` when any proxy field changed; the main window
+  requests the restart. There is no "restart required" dialog any more.
+* **The proxy's CA changed** (the proxy was restarted and minted a new signing key). `TabViewModel` raises
+  `CertificateProblem` when a certificate does not chain to the loaded CA or a main-frame load fails with a
+  certificate / proxy-tunnel error. `MainViewModel` then re-downloads `CaCertUrl` (at most once per 20 s) and
+  compares thumbprints; only a real change restarts the engine. A CA appearing where none could be loaded at
+  startup counts as a change too, so a proxy that was briefly unreachable at launch heals itself.
 
 ## How in-app CA trust works
 
@@ -264,12 +289,13 @@ error fires and the chain list stays empty; state, protocol and cipher are still
 |------|------|
 | `SettingsService` | JSON persistence via a source-generated `JsonSerializerContext`. |
 | `CertificateService` | Download, parse, hold the CA; shared `HandleServerCertificateError`. |
-| `BrowserEnvironmentService` | One-time, guarded initialisation of the CEF runtime (proxy switches, wiped profile); shutdown on exit. |
+| `BrowserEnvironmentService` | One-time, guarded initialisation of the CEF runtime (proxy switches, persistent profile); shutdown on exit. |
+| `RestartState` | Tabs + window geometry handed to the successor process of an in-flight restart, as command-line arguments. |
 | `TabBrowser` | `AvaloniaCefBrowser` subclass exposing the underlying `CefBrowser` (≈ `CoreWebView2`). |
 | `TabViewModel` | Title / Source / IsActive / loading state, status text and the tab's own `TabBrowser`; CEF handlers for certificate errors, popups and DevTools events. |
 | `MainViewModel` | Tab collection, active tab, toolbar commands, address resolution. |
 | `MainWindow` | Header-only tab strip (`ItemsControl`) plus a single `Grid` hosting **all** browser controls simultaneously; switching tabs only toggles `IsVisible`. Controls are never re-parented, so the native browser survives tab switches. A status bar shows Chromium's link/loading status (CEF has no built-in overlay). |
-| `SettingsWindow` | Settings editor with validation and the restart notice. |
+| `SettingsWindow` | Settings editor with validation; reports whether the engine has to be restarted in flight. |
 | `CertificateInfoWindow` | Lock-icon popup with the TLS parameters and certificate chain. |
 | `SplashWindow` | Animated startup screen (minimum one second). |
 | `MessageDialog` | OK message box in the app's own chrome (Avalonia has no `MessageBox`). |
@@ -288,5 +314,5 @@ error fires and the chain list stays empty; state, protocol and cipher are still
 | `GetDevToolsProtocolEventReceiver` + `CallDevToolsProtocolMethodAsync` | `AddDevToolsMessageObserver` + `SendDevToolsMessage` |
 | `CoreWebView2.OpenDevToolsWindow()` | `CefBrowserHost.ShowDevTools` / `CloseDevTools` / `HasDevTools` with a dedicated `CefClient` |
 | `Security.visibleSecurityStateChanged` (TLS details + chain) | `Network.responseReceived` (TLS details) + `OnCertificateError` (chain) — CEF emits no Security domain |
-| browser process wait + profile wipe on exit | wait for every browser's `OnBeforeClose`, then `CefRuntime.Shutdown()` + profile wipe (finished by a detached helper) |
+| browser process wait on exit | wait for every browser's `OnBeforeClose`, then `CefRuntime.Shutdown()` (profile is kept) |
 | `Visibility.Collapsed` per inactive tab | `IsVisible = false` per inactive tab |

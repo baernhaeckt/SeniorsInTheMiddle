@@ -1,4 +1,4 @@
-namespace SeniorsInTheMiddle.Proxy.Forwarding;
+﻿namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
 /// <summary>
 /// Passes writes straight through and counts the bytes that went past.

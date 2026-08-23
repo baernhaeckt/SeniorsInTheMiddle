@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.SignalR;
+﻿using Microsoft.AspNetCore.SignalR;
 
 namespace SeniorsInTheMiddle.Proxy.Telemetry;
 
@@ -15,16 +15,16 @@ namespace SeniorsInTheMiddle.Proxy.Telemetry;
 /// </summary>
 sealed class TelemetryHub : Hub
 {
-    private readonly TelemetryDescriptor descriptor;
+    private readonly TelemetryDescriptor _descriptor;
 
     public TelemetryHub(TelemetryDescriptor descriptor)
     {
-        this.descriptor = descriptor;
+        _descriptor = descriptor;
     }
 
     public override async Task OnConnectedAsync()
     {
-        await Clients.Caller.SendAsync("event", TelemetryJson.Serialize(await descriptor.HelloAsync(Context.ConnectionAborted)));
+        await Clients.Caller.SendAsync("event", TelemetryJson.Serialize(await _descriptor.HelloAsync(Context.ConnectionAborted)));
         await base.OnConnectedAsync();
     }
 }

@@ -40,6 +40,21 @@ describe('Traffic', () => {
     expect(store.getSnapshot().pinnedId).toBeNull()
   })
 
+  it('the treated toggle hides untreated rows and back again', async () => {
+    for (const frame of frames) store.apply(frame)
+    render(<Traffic />)
+    expect(document.querySelectorAll('.tr').length).toBeGreaterThan(1)
+    const toggle = screen.getByRole('button', { name: /treated/i })
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await userEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    const rows = Array.from(document.querySelectorAll('.tr'))
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toHaveAttribute('data-treatment', 'treated')
+    await userEvent.click(toggle)
+    expect(document.querySelectorAll('.tr').length).toBeGreaterThan(1)
+  })
+
   it('shows the proxy log lines with their level, newest first', () => {
     render(<Traffic />)
     expect(screen.getByText(/waiting for the proxy/i)).toBeInTheDocument()

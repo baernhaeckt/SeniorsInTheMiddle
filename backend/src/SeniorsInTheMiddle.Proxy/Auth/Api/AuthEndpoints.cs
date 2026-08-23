@@ -51,6 +51,9 @@ public static class AuthEndpoints
                 return Results.BadRequest(new { message = "All fields are required" });
             }
 
+            // Deliberately lax: accounts live in memory for one demo and nothing else. A
+            // deployment that keeps real accounts wants a password policy, an e-mail format
+            // check and a rate limit on /login before any of this is reused.
             if (request.Password.Length < 4)
             {
                 return Results.BadRequest(new { message = "Password must be at least 4 characters long" });

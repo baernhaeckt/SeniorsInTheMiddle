@@ -1,4 +1,4 @@
-namespace SeniorsInTheMiddle.Proxy.Telemetry;
+﻿namespace SeniorsInTheMiddle.Proxy.Telemetry;
 
 /// <summary>
 /// Where the proxy hands events off. Every call is on a request or tunnel thread, so this

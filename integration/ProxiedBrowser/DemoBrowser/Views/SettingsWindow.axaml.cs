@@ -145,16 +145,9 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        if (proxyChanged)
-        {
-            await MessageDialog.ShowAsync(
-                this,
-                "Settings saved.\n\nProxy and CA changes take effect only after restarting the application: " +
-                "Chromium reads the proxy exclusively when the browser engine is initialised and it cannot be changed on a running engine.",
-                "Restart required",
-                MessageDialogIcon.Information);
-        }
-
-        Close(true);
+        // The dialog result tells the main window whether the engine has to be restarted in flight: Chromium reads
+        // the proxy (and the CA pins) exclusively when the engine is initialised, so the main window reopens the
+        // current tabs in a fresh process with the new settings.
+        Close(proxyChanged);
     }
 }

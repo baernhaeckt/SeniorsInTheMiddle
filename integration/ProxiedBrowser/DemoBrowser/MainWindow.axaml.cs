@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using DemoBrowser.Models;
 using DemoBrowser.Services;
 using DemoBrowser.ViewModels;
@@ -37,6 +38,7 @@ public partial class MainWindow : Window
         viewModel.LastTabClosed += Close;
         viewModel.ActiveSourceChanged += OnActiveSourceChanged;
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
+        viewModel.NewTabOpened += OnNewTabOpened;
 
         // Ctrl on Windows/Linux, ⌘ on macOS (both registered so the build behaves the same everywhere).
         foreach (var modifier in new[] { KeyModifiers.Control, KeyModifiers.Meta })
@@ -168,6 +170,23 @@ public partial class MainWindow : Window
         AddressBar.SelectAll();
     }
 
+    /// <summary>
+    /// A new tab starts in the address bar, URL selected, like every browser. The native browser is created a
+    /// moment later (once the control has a size) and may grab the focus on creation, so the address bar is
+    /// focused again at that point — unless the user has already left it.
+    /// </summary>
+    private void OnNewTabOpened(TabViewModel tab)
+    {
+        FocusAddressBar();
+        tab.WebView.BrowserInitialized += () => Dispatcher.UIThread.Post(() =>
+        {
+            if (tab.SuppressNavigationFocus && ReferenceEquals(_viewModel.ActiveTab, tab))
+            {
+                FocusAddressBar();
+            }
+        });
+    }
+
     /// <summary>Lock icon: shows the certificate / connection details of the active tab.</summary>
     private async void OnSecurityInfoClick(object? sender, RoutedEventArgs e)
     {
@@ -180,8 +199,51 @@ public partial class MainWindow : Window
     private async void OnSettingsClick(object? sender, RoutedEventArgs e)
     {
         var dialog = new SettingsWindow(_settingsService);
-        await dialog.ShowDialog(this);
+        var proxyChanged = await dialog.ShowDialog<bool?>(this);
+        if (proxyChanged == true)
+        {
+            _viewModel.RequestRestart("proxy settings changed");
+        }
     }
+
+    /// <summary>Everything a restarted instance needs to look like this one: the tabs and the window geometry.</summary>
+    public RestartState CaptureRestartState()
+    {
+        var (urls, active) = _viewModel.CaptureTabs();
+        var maximized = WindowState == WindowState.Maximized;
+        return new RestartState
+        {
+            PreviousProcessId = Environment.ProcessId,
+            TabUrls = urls,
+            ActiveTabIndex = active,
+            X = Position.X,
+            Y = Position.Y,
+            Width = Width,
+            Height = Height,
+            Maximized = maximized,
+        };
+    }
+
+    /// <summary>Applies the geometry handed over by the previous instance (before the window is shown).</summary>
+    public void ApplyRestartState(RestartState state)
+    {
+        if (!state.HasGeometry)
+        {
+            return;
+        }
+
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Position = new PixelPoint(state.X!.Value, state.Y!.Value);
+        Width = Math.Max(MinWidth, state.Width!.Value);
+        Height = Math.Max(MinHeight, state.Height!.Value);
+        if (state.Maximized)
+        {
+            WindowState = WindowState.Maximized;
+        }
+    }
+
+    /// <summary>Closes without the usual "last tab" semantics: the successor process is already on its way.</summary>
+    public void CloseForRestart() => Close();
 
     private void OnDiagnosticsClick(object? sender, RoutedEventArgs e) => ShowDiagnostics();
 

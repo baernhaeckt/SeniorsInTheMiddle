@@ -1,4 +1,4 @@
-namespace SeniorsInTheMiddle.Proxy.Forwarding.Tokenizer;
+﻿namespace SeniorsInTheMiddle.Proxy.Forwarding.Tokenizer;
 
 /// <summary>One span of the body text and what goes in its place.</summary>
 /// <param name="Token">The value found and its classification.</param>

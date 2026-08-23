@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Json;
 
 using Microsoft.AspNetCore.Hosting;
@@ -69,9 +69,9 @@ public class DemoAccountEndpointTests
         public const string SeedUsername = "seeded-demo";
         public const string SeedPassword = "seeded-secret";
 
-        private readonly bool advertise;
+        private readonly bool _advertise;
 
-        public SeedConfiguredFactory(bool advertise) => this.advertise = advertise;
+        public SeedConfiguredFactory(bool advertise) => _advertise = advertise;
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -84,7 +84,7 @@ public class DemoAccountEndpointTests
                     ["Auth:SeedUser:Username"] = SeedUsername,
                     ["Auth:SeedUser:Email"] = "seeded@test.ch",
                     ["Auth:SeedUser:Password"] = SeedPassword,
-                    ["Auth:SeedUser:Advertise"] = advertise ? "true" : "false",
+                    ["Auth:SeedUser:Advertise"] = _advertise ? "true" : "false",
                 });
             });
         }

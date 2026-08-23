@@ -1,4 +1,4 @@
-namespace SeniorsInTheMiddle.Proxy.Telemetry;
+﻿namespace SeniorsInTheMiddle.Proxy.Telemetry;
 
 public static class Registrar
 {

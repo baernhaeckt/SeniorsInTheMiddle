@@ -168,12 +168,13 @@ export interface AppState {
   pinnedId: string | null
   /** Entity the person is pointing at, highlighted everywhere at once. */
   hoveredToken: string | null
-  /** Device tile the person is pointing at; its rows light up in the traffic list. */
-  hoveredDevice: string | null
 }
 
 export const LIMITS = {
+  /** Newest rows of any kind kept in the list. */
   traffic: 140,
+  /** Treated rows kept beyond that, so they are not buried by untreated noise. */
+  treatedTraffic: 1000,
   exchanges: 12,
   vault: 40,
   latencies: 60,
@@ -194,7 +195,6 @@ export const initialState: AppState = {
   logs: [],
   pinnedId: null,
   hoveredToken: null,
-  hoveredDevice: null,
 }
 
 /** Actions the view raises itself. Protocol events are the other kind of input. */
@@ -202,7 +202,6 @@ type ViewAction =
   | { type: 'view.settle'; exchangeId: string; at: number }
   | { type: 'view.pin'; exchangeId: string | null }
   | { type: 'view.hover'; token: string | null }
-  | { type: 'view.hoverDevice'; clientLabel: string | null }
   | { type: 'view.link'; link: LinkStatus }
   | { type: 'view.reset' }
 
@@ -216,7 +215,6 @@ export interface Store {
   setLink: (link: LinkStatus) => void
   pin: (exchangeId: string | null) => void
   hover: (token: string | null) => void
-  hoverDevice: (clientLabel: string | null) => void
   /** Finish an animation-driven stage: egress → thinking, deliver → done. */
   settle: (exchangeId: string, at?: number) => void
   reset: () => void
@@ -264,9 +262,6 @@ export function createStore(seed: AppState = initialState): Store {
     },
     hover: (token) => {
       dispatch({ type: 'view.hover', token })
-    },
-    hoverDevice: (clientLabel) => {
-      dispatch({ type: 'view.hoverDevice', clientLabel })
     },
     settle: (exchangeId, at = Date.now()) => {
       dispatch({ type: 'view.settle', exchangeId, at })
@@ -328,6 +323,25 @@ function touchDevice(
     0,
     LIMITS.devices,
   )
+}
+
+/**
+ * Keep the newest rows, plus the newest treated rows past that point. Treated
+ * requests are rare next to the static noise around them, so capping them
+ * together would wash the interesting ones out within seconds.
+ */
+export function evictTraffic(traffic: TrafficEntry[]): TrafficEntry[] {
+  if (traffic.length <= LIMITS.traffic) return traffic
+  let treatedSeen = 0
+  return traffic.filter((entry, index) => {
+    if (index < LIMITS.traffic) {
+      if (entry.treatment === 'treated') treatedSeen += 1
+      return true
+    }
+    if (entry.treatment !== 'treated') return false
+    treatedSeen += 1
+    return treatedSeen <= LIMITS.treatedTraffic
+  })
 }
 
 function patchTraffic(
@@ -406,11 +420,6 @@ export function reduce(current: AppState, action: Action, trafficSeq = 0, logSeq
         ? current
         : { ...current, hoveredToken: action.token }
 
-    case 'view.hoverDevice':
-      return current.hoveredDevice === action.clientLabel
-        ? current
-        : { ...current, hoveredDevice: action.clientLabel }
-
     case 'view.reset':
       return { ...initialState, link: current.link }
 
@@ -460,7 +469,7 @@ export function reduce(current: AppState, action: Action, trafficSeq = 0, logSeq
       }
       return {
         ...current,
-        traffic: [entry, ...current.traffic].slice(0, LIMITS.traffic),
+        traffic: evictTraffic([entry, ...current.traffic]),
         metrics: {
           ...current.metrics,
           requests: current.metrics.requests + 1,

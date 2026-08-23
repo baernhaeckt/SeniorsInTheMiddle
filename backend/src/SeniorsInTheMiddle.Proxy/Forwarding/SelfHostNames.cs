@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Sockets;
 
 namespace SeniorsInTheMiddle.Proxy.Forwarding;
@@ -10,11 +10,11 @@ namespace SeniorsInTheMiddle.Proxy.Forwarding;
 /// </summary>
 sealed class SelfHostNames
 {
-    private readonly HashSet<string> lookup = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<string> ordered = [];
+    private readonly HashSet<string> _lookup = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<string> _ordered = [];
 
     /// <summary>Ordered, de-duplicated. The first entry becomes the certificate's subject.</summary>
-    public IReadOnlyList<string> Names => ordered;
+    public IReadOnlyList<string> Names => _ordered;
 
     public SelfHostNames(IConfiguration configuration, ILogger<SelfHostNames> logger)
     {
@@ -45,15 +45,15 @@ sealed class SelfHostNames
             logger.LogDebug(exception, "Could not resolve the local host name.");
         }
 
-        logger.LogInformation("Answering as {HostNames}.", string.Join(", ", ordered));
+        logger.LogInformation("Answering as {HostNames}.", string.Join(", ", _ordered));
     }
 
-    public bool Contains(string host) => lookup.Contains(host);
+    public bool Contains(string host) => _lookup.Contains(host);
 
     private void Add(string name)
     {
         string trimmed = name.Trim();
-        if (trimmed.Length > 0 && lookup.Add(trimmed))
-            ordered.Add(trimmed);
+        if (trimmed.Length > 0 && _lookup.Add(trimmed))
+            _ordered.Add(trimmed);
     }
 }

@@ -20,9 +20,9 @@ sealed class CodePointOffsetMap
     private static readonly CodePointOffsetMap Identity = new(null);
 
     /// <summary>Index into the string for each code point, plus one entry for its end.</summary>
-    private readonly int[]? indices;
+    private readonly int[]? _indices;
 
-    private CodePointOffsetMap(int[]? indices) => this.indices = indices;
+    private CodePointOffsetMap(int[]? indices) => _indices = indices;
 
     public static CodePointOffsetMap For(string text)
     {
@@ -55,9 +55,9 @@ sealed class CodePointOffsetMap
         if (codePointOffset < 0)
             return -1;
 
-        if (indices is null)
+        if (_indices is null)
             return codePointOffset;
 
-        return codePointOffset < indices.Length ? indices[codePointOffset] : -1;
+        return codePointOffset < _indices.Length ? _indices[codePointOffset] : -1;
     }
 }

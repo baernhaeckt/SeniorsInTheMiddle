@@ -15,7 +15,7 @@
 /// <param name="leaveRestOpen">True when someone else owns <paramref name="rest"/>.</param>
 sealed class PrefixedStream(byte[] prefix, Stream rest, bool leaveRestOpen) : Stream
 {
-    private int consumed;
+    private int _consumed;
 
     /// <summary>
     /// Whether the prefix still has bytes to give.
@@ -25,7 +25,7 @@ sealed class PrefixedStream(byte[] prefix, Stream rest, bool leaveRestOpen) : St
     /// stream supports -- would otherwise be sent to the socket while buffered bytes sat
     /// unread, and wait for a client that already sent them.
     /// </summary>
-    private bool PrefixRemains => consumed < prefix.Length;
+    private bool PrefixRemains => _consumed < prefix.Length;
 
     public override bool CanRead => true;
 
@@ -81,9 +81,9 @@ sealed class PrefixedStream(byte[] prefix, Stream rest, bool leaveRestOpen) : St
     /// <summary>Serves as much of the prefix as fits in <paramref name="destination"/>.</summary>
     private int CopyFromPrefix(Span<byte> destination)
     {
-        int available = Math.Min(prefix.Length - consumed, destination.Length);
-        prefix.AsSpan(consumed, available).CopyTo(destination);
-        consumed += available;
+        int available = Math.Min(prefix.Length - _consumed, destination.Length);
+        prefix.AsSpan(_consumed, available).CopyTo(destination);
+        _consumed += available;
 
         return available;
     }

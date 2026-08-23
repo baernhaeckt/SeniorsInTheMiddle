@@ -120,6 +120,115 @@ export function prettyBody(text: string | undefined, contentType?: string): stri
   }
 }
 
+/** One piece of a readout line: plain text, or an identifier that can animate. */
+export interface ReadoutRun {
+  text: string
+  /**
+   * Set on identifiers only, and the same string at every stage, so React keeps
+   * one component on the run as its text turns from a value into a token — a
+   * remounted one has nothing to animate from.
+   */
+  key?: string
+}
+
+export interface ReadoutLine {
+  /**
+   * Named after the identifier it carries rather than its position: a body
+   * changes shape between stages, and a line that shifted a row would take a
+   * fresh set of runs with it.
+   */
+  key: string
+  runs: ReadoutRun[]
+}
+
+export interface ReadoutWindow {
+  /** True when the body laid out as JSON, so every line is one field. */
+  structured: boolean
+  /** Exactly as many entries as were asked for, padded with blanks. */
+  lines: ReadoutLine[]
+}
+
+/**
+ * A body as a few lines, framed on the identifiers that are about to change.
+ *
+ * The gate readout used to take one window of raw JSON and let the box wrap it.
+ * That put the identifier wherever the wrapping happened to land — often on the
+ * line under the fold, which is the one line it must never be on. Laid out, a
+ * body has real lines: the one carrying the first identifier goes in the middle
+ * and the neighbours give it context, so the thing that changes is always in
+ * the same place and always on screen.
+ *
+ * Every identifier in the window is marked, not only the one the window is
+ * anchored on. Four fields of a payload are visible at once here, and a screen
+ * where one value churns into its token while the three beside it flick over is
+ * a screen that says the churn is decoration.
+ *
+ * `width` bounds a line that carries an identifier, and generously — the box
+ * clips what it cannot fit. It is there so a long line cannot push an
+ * identifier off the right-hand edge, not to decide how much text fits.
+ *
+ * Bodies that are not JSON have no lines to work with, so they come back as one
+ * window of `lines * width` characters for the box to wrap as before.
+ */
+export function readoutWindow(
+  text: string,
+  entities: Entity[],
+  useToken: boolean,
+  lines: number,
+  width: number,
+): ReadoutWindow {
+  const needleOf = (entity: Entity) => (useToken ? entity.token : entity.value)
+  const marked = entities.filter((entity) => needleOf(entity).length > 0)
+
+  /** The line's own text, cut down to keep its first identifier in view. */
+  const clip = (line: string, room: number): string => {
+    const on = marked.find((entity) => line.includes(needleOf(entity)))
+    if (!on) return line
+    const part = excerptAround(line, needleOf(on), room)
+    return part.before + part.focus + part.after
+  }
+
+  const toLine = (line: string, index: number, used: Set<string>): ReadoutLine => {
+    const runs = splitByValues(line, marked, useToken).map((run) => ({
+      text: run.text,
+      ...(run.entity ? { key: run.entity.id } : {}),
+    }))
+    const named = runs.find((run) => run.key !== undefined)?.key
+    // Two lines carrying the same identifier would otherwise share a key.
+    const key = named !== undefined && !used.has(named) ? named : `line-${index}`
+    used.add(key)
+    return { key, runs }
+  }
+
+  if (!text) return { structured: false, lines: [] }
+
+  const laidOut = prettyBody(text).split('\n')
+  const used = new Set<string>()
+
+  if (laidOut.length < 2) {
+    return { structured: false, lines: [toLine(clip(text, lines * width), 0, used)] }
+  }
+
+  const anchorNeedle = marked[0] ? needleOf(marked[0]) : ''
+  const found = anchorNeedle ? laidOut.findIndex((line) => line.includes(anchorNeedle)) : -1
+  const anchor = Math.max(0, found)
+  const first = Math.min(
+    Math.max(0, anchor - Math.floor((lines - 1) / 2)),
+    Math.max(0, laidOut.length - lines),
+  )
+
+  const window: ReadoutLine[] = []
+  for (let index = first; index < first + lines; index += 1) {
+    const line = laidOut[index]
+    window.push(
+      line === undefined
+        ? { key: `line-${index}`, runs: [] }
+        : toLine(clip(line, width), index, used),
+    )
+  }
+  return { structured: true, lines: window }
+}
+
 export function formatBytes(bytes: number | undefined): string {
   if (bytes === undefined) return '—'
   if (bytes < 1024) return `${bytes} B`

@@ -205,14 +205,32 @@ to hold it in the inspector, and `follow live` releases it again.
 
 ### The payload inspector
 
-One treated exchange as a matrix: what the client sent and what the destination
-saw, outbound and inbound. JSON bodies are laid out for reading when they parse.
-Hovering an identifier highlights it in every panel at once.
+One treated exchange, outbound and inbound. What the client sent and what the
+destination saw are stacked over each other rather than set side by side, and
+the ruler between them wipes from one to the other: drag it to read a name
+turning into its token where the name stood, or press it to jump to one side
+whole. Each row is one scroller holding both readings, so they cannot drift out
+of step. JSON bodies are laid out for reading when they parse. Hovering an
+identifier highlights it in every panel at once.
 
 ### The vault
 
 The token-to-value table. Values stay blurred until you hover them, because that
 table is the one place the real data still exists.
+
+### Projector mode
+
+The `AA` button in the header switches the dashboard to a size a room can read.
+A FullHD projector has a laptop's pixel count and none of its viewing distance,
+so this is not a zoom: the type collapses from fifteen sizes onto four that all
+start at 13px, and the desk detail pays for the room it needs — timestamps, byte
+counts, the log ticker, the near misses, the proxy address and the kind chips
+beside each held value all step out.
+
+The choice is remembered in `localStorage` under `sitm.projector.v1` and the
+button toggles it back. It is one attribute on the root element, so everything
+the mode does lives in [`src/styles/projector.css`](src/styles/projector.css) —
+with the mode off, none of those rules match.
 
 ## Deployment
 

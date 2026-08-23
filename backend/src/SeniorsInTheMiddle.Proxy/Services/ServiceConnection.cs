@@ -1,4 +1,4 @@
-using System.Net.Sockets;
+﻿using System.Net.Sockets;
 using System.Text.Json;
 
 namespace SeniorsInTheMiddle.Proxy.Services;
@@ -13,15 +13,15 @@ namespace SeniorsInTheMiddle.Proxy.Services;
 /// </summary>
 public sealed class ServiceConnection : IAsyncDisposable
 {
-    private readonly SemaphoreSlim gate = new(1, 1);
-    private readonly ILogger logger;
-    private ServiceSocketClient? client;
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly ILogger _logger;
+    private ServiceSocketClient? _client;
 
     public ServiceConnection(string name, ServiceEndpointOptions options, ILogger logger)
     {
         Name = name;
         Options = options;
-        this.logger = logger;
+        _logger = logger;
     }
 
     public string Name { get; }
@@ -32,18 +32,30 @@ public sealed class ServiceConnection : IAsyncDisposable
     /// <see cref="ServiceUnavailableException"/>.</summary>
     public bool IsConfigured => Options.IsConfigured;
 
-    /// <summary>True while a connection is open. Does not probe the socket.</summary>
-    public bool IsConnected => client is not null;
-
     /// <summary>Calls <paramref name="method"/> and returns the raw <c>result</c> element.
     /// The payload is serialized with camelCase; name properties in snake_case yourself
-    /// where the python side expects it (<c>new { pii_type = x }</c> stays <c>pii_type</c>).</summary>
+    /// where the python side expects it (<c>new { pii_type = x }</c> stays <c>pii_type</c>).
+    ///
+    /// A call that takes longer than <see cref="ServiceEndpointOptions.CallTimeoutSeconds"/>
+    /// throws <see cref="ServiceUnavailableException"/>. The connection is kept: the daemon
+    /// is slow, not gone, and the late answer is dropped by the client when it arrives.</summary>
     public async Task<JsonElement> CallAsync(string method, object? payload = null, CancellationToken cancellationToken = default)
     {
         ServiceSocketClient connected = await GetClientAsync(cancellationToken);
+
+        using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(Options.CallTimeoutSeconds));
+
         try
         {
-            return await connected.CallAsync(method, payload, cancellationToken);
+            return await connected.CallAsync(method, payload, timeout.Token);
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new ServiceUnavailableException(
+                Name,
+                $"The {Name} service did not answer {method} within {Options.CallTimeoutSeconds}s.",
+                ex);
         }
         // JsonException and KeyNotFoundException belong here too: a malformed or incomplete
         // response frame kills the client's read loop, and a connection whose read loop is
@@ -54,18 +66,6 @@ public sealed class ServiceConnection : IAsyncDisposable
             await DropAsync(connected, ex);
             throw new ServiceUnavailableException(Name, $"The {Name} service connection failed.", ex);
         }
-    }
-
-    /// <summary>Calls <paramref name="method"/> and deserializes the result with
-    /// <paramref name="serializerOptions"/>.</summary>
-    public async Task<T?> CallAsync<T>(
-        string method,
-        object? payload,
-        JsonSerializerOptions serializerOptions,
-        CancellationToken cancellationToken = default)
-    {
-        JsonElement result = await CallAsync(method, payload, cancellationToken);
-        return result.ValueKind == JsonValueKind.Undefined ? default : result.Deserialize<T>(serializerOptions);
     }
 
     /// <summary>Round trip through the runtime's built-in <c>$ping</c>.</summary>
@@ -81,19 +81,20 @@ public sealed class ServiceConnection : IAsyncDisposable
         if (!IsConfigured)
             throw new ServiceUnavailableException(Name, $"The {Name} service has no socket path configured (Services:{Name}:SocketPath).");
 
-        ServiceSocketClient? existing = client;
+        // Read outside the gate, so a connected caller never waits on one that is connecting.
+        ServiceSocketClient? existing = Volatile.Read(ref _client);
         if (existing is not null)
             return existing;
 
-        await gate.WaitAsync(cancellationToken);
+        await _gate.WaitAsync(cancellationToken);
         try
         {
-            if (client is not null)
-                return client;
+            if (_client is not null)
+                return _client;
 
             try
             {
-                client = await ServiceSocketClient.ConnectAsync(
+                _client = await ServiceSocketClient.ConnectAsync(
                     Options.SocketPath,
                     TimeSpan.FromSeconds(Options.ConnectTimeoutSeconds),
                     Options.MaxFrameBytes,
@@ -104,29 +105,29 @@ public sealed class ServiceConnection : IAsyncDisposable
                 throw new ServiceUnavailableException(Name, $"Could not connect to the {Name} service at {Options.SocketPath}.", ex);
             }
 
-            logger.LogInformation("Connected to the {Service} service at {SocketPath}", Name, Options.SocketPath);
-            return client;
+            _logger.LogInformation("Connected to the {Service} service at {SocketPath}", Name, Options.SocketPath);
+            return _client;
         }
         finally
         {
-            gate.Release();
+            _gate.Release();
         }
     }
 
     private async Task DropAsync(ServiceSocketClient failed, Exception reason)
     {
-        await gate.WaitAsync();
+        await _gate.WaitAsync();
         try
         {
-            if (!ReferenceEquals(client, failed))
+            if (!ReferenceEquals(_client, failed))
                 return;
 
-            client = null;
-            logger.LogWarning(reason, "Lost the connection to the {Service} service; reconnecting on the next call", Name);
+            _client = null;
+            _logger.LogWarning(reason, "Lost the connection to the {Service} service; reconnecting on the next call", Name);
         }
         finally
         {
-            gate.Release();
+            _gate.Release();
         }
 
         await failed.DisposeAsync();
@@ -134,11 +135,11 @@ public sealed class ServiceConnection : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        ServiceSocketClient? open = Interlocked.Exchange(ref client, null);
+        ServiceSocketClient? open = Interlocked.Exchange(ref _client, null);
         if (open is not null)
             await open.DisposeAsync();
 
-        gate.Dispose();
+        _gate.Dispose();
     }
 }
 

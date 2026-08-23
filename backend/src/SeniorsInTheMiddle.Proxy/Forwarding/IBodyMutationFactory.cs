@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 
 namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
@@ -7,8 +7,12 @@ namespace SeniorsInTheMiddle.Proxy.Forwarding;
 ///
 /// It is a factory rather than a single shared mutation because the two halves of an exchange
 /// are not independent. Replacing an identifier on the way out only works if the same value can
-/// be put back on the way in, and the map between the two belongs to that one request and its
-/// response, not to the process.
+/// be put back on the way in, and what holds the map between the two is the mutation this
+/// returns rather than the process.
+///
+/// The map itself may well outlive the exchange -- a chat client is answered in one request and
+/// draws the answer from another -- which is why the client is named here. Anything a mutation
+/// keeps beyond the exchange is that client's, and reaches no other.
 ///
 /// Adding a mutation:
 /// 1. Implement this and <see cref="IExchangeBodyMutation"/> next to
@@ -21,12 +25,20 @@ namespace SeniorsInTheMiddle.Proxy.Forwarding;
 interface IBodyMutationFactory
 {
     /// <summary>
+    /// Whether this mutation changes bodies at all. The dashboard's hello reports the policy
+    /// from this rather than from a type check, so a new mutation cannot be announced as
+    /// "observe-only" by accident.
+    /// </summary>
+    bool Rewrites { get; }
+
+    /// <summary>
     /// The mutation for one request and the response it earns.
     ///
     /// The factory itself is resolved once and called concurrently, so it has to be stateless
-    /// or thread-safe. What it returns does not: each exchange gets its own.
+    /// or thread-safe. What it returns is one exchange's, but whatever it shares with the
+    /// exchanges before it -- see <see cref="ClientIdentity"/> -- is not.
     /// </summary>
-    IExchangeBodyMutation CreateForExchange(Uri destination, IExchangeObserver observer);
+    IExchangeBodyMutation CreateForExchange(ClientIdentity client, Uri destination, IExchangeObserver observer);
 }
 
 /// <summary>
@@ -50,6 +62,18 @@ interface IExchangeObserver
 
     /// <summary>The response body with the proxy's stand-ins put back, and how many were.</summary>
     void Restored(string responseBody, int restored);
+
+    /// <summary>
+    /// The request body as the mutation decoded it. Optional: a mutation that reads the body
+    /// as text hands the text over so the trace does not decode the same bytes a second time.
+    /// </summary>
+    void RequestText(string text) { }
+
+    /// <summary>The rewritten request body as text, for the same reason as <see cref="RequestText"/>.</summary>
+    void RewrittenText(string text) { }
+
+    /// <summary>The response body as text, before anything was put back.</summary>
+    void ResponseText(string text) { }
 }
 
 /// <summary>What a scan cost and what it left out, beside the entities it produced.</summary>
@@ -108,14 +132,52 @@ interface IExchangeBodyMutation
     /// The same, for the response, and the place where anything replaced on the way out is put
     /// back.
     ///
-    /// It is not called at all for a response that must not be held: a protocol upgrade, an
-    /// event stream, a partial body, or a media type nothing here can read. A mutation that
-    /// counts what it restored will see nothing for those, which is the honest answer.
+    /// It is not called at all for a response that must not be held: a protocol upgrade, a
+    /// partial body, or a media type nothing here can read. An event stream is not in that list
+    /// any more -- see <see cref="CreateResponseStream"/>.
     /// </summary>
     ValueTask<byte[]?> MutateResponseAsync(
         ReadOnlyMemory<byte> body,
         BodyDescriptor descriptor,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The restore for a response that cannot be held, or null when this mutation has nothing to
+    /// put back into one.
+    ///
+    /// An event stream is the body a chat backend answers with, and it is also the one body this
+    /// proxy is not allowed to buffer: it ends when the conversation does, and holding it whole
+    /// is not a slow response but no response at all. So it is rewritten as it goes, in whatever
+    /// pieces the origin sends, which the whole-body call above never has to think about.
+    ///
+    /// Returning null leaves the stream untouched, which is what a mutation that has hidden
+    /// nothing should do rather than paying to copy every byte through itself -- and is the
+    /// default, so a mutation that only rewrites whole documents says nothing about streams and
+    /// gets the behaviour it had before this existed.
+    /// </summary>
+    IExchangeStreamMutation? CreateResponseStream(BodyDescriptor descriptor) => null;
+}
+
+/// <summary>
+/// A rewrite applied to a response as it arrives, for the bodies that must not be buffered.
+///
+/// The contract is text in, text out, and the difference from the whole-body call is entirely in
+/// what it is allowed to keep: <see cref="Mutate"/> may return less than it was given, holding
+/// the tail back until the next chunk says what it was the start of. <see cref="Flush"/> is
+/// called exactly once, when the origin has nothing more to send, and returns whatever is still
+/// held.
+///
+/// Calls are ordered and never concurrent -- one stream, read one chunk at a time.
+/// </summary>
+interface IExchangeStreamMutation
+{
+    /// <summary>The text to write in place of <paramref name="chunk"/>. May be empty: a chunk
+    /// that is entirely the possible beginning of a stand-in is held, not dropped.</summary>
+    string Mutate(string chunk);
+
+    /// <summary>Whatever is still held back, once the origin has ended. Called once, and after
+    /// it nothing else is.</summary>
+    string Flush();
 }
 
 /// <summary>What a mutation is told about the body it is handed.</summary>

@@ -4,6 +4,7 @@ import { hasProxyAddress, proxyAddressOf, type RuntimeConfig } from '../config'
 import { COPY } from '../copy'
 import { median } from '../engine/store'
 import { useStore } from '../engine/useStore'
+import { useProjector } from '../ui/projector'
 import { PROTOCOL_VERSION } from '../protocol/types'
 import type { LinkState } from '../transport/types'
 import { Mark, Wordmark } from './Brand'
@@ -31,6 +32,7 @@ interface HeaderProps {
 }
 
 export function Header({ config, onOpenGuide, onReconfigure, session, onSignOut }: HeaderProps) {
+  const [projector, toggleProjector] = useProjector()
   const metrics = useStore((state) => state.metrics)
   const link = useStore((state) => state.link)
   const protocolVersion = useStore((state) => state.protocolVersion)
@@ -124,6 +126,25 @@ export function Header({ config, onOpenGuide, onReconfigure, session, onSignOut 
 
         <button type="button" className="reconf" onClick={onReconfigure}>
           Reconfigure
+        </button>
+
+        {/*
+          Last, because projector mode hides Reconfigure: anything ahead of that
+          button moves when the mode is switched, and this is the button you go
+          back to. Here its distance from the right edge is the same either way.
+        */}
+        <button
+          type="button"
+          className="tsize"
+          data-on={projector}
+          aria-pressed={projector}
+          aria-label="Projector mode"
+          title="Larger type, less detail. For a projector or a wall display."
+          onClick={toggleProjector}
+        >
+          <span className="tsize__mark" aria-hidden="true">
+            A<b>A</b>
+          </span>
         </button>
 
         {session && <UserBubble session={session} onSignOut={onSignOut} />}

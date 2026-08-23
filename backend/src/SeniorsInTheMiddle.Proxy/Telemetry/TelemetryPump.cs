@@ -1,4 +1,4 @@
-using System.Threading.Channels;
+﻿using System.Threading.Channels;
 using Microsoft.AspNetCore.SignalR;
 
 namespace SeniorsInTheMiddle.Proxy.Telemetry;
@@ -17,23 +17,23 @@ namespace SeniorsInTheMiddle.Proxy.Telemetry;
 /// </summary>
 sealed class TelemetryPump : BackgroundService, ITelemetrySink
 {
-    private readonly Channel<TelemetryEvent> queue;
-    private readonly IHubContext<TelemetryHub> hub;
-    private readonly ILogger<TelemetryPump> logger;
+    private readonly Channel<TelemetryEvent> _queue;
+    private readonly IHubContext<TelemetryHub> _hub;
+    private readonly ILogger<TelemetryPump> _logger;
 
-    private long dropped;
-    private long reportedDrops;
+    private long _dropped;
+    private long _reportedDrops;
 
     public TelemetryPump(
         IHubContext<TelemetryHub> hub,
         IConfiguration configuration,
         ILogger<TelemetryPump> logger)
     {
-        this.hub = hub;
-        this.logger = logger;
+        _hub = hub;
+        _logger = logger;
 
         int capacity = Math.Max(16, configuration.GetValue("Telemetry:QueueCapacity", 2048));
-        queue = Channel.CreateBounded<TelemetryEvent>(new BoundedChannelOptions(capacity)
+        _queue = Channel.CreateBounded<TelemetryEvent>(new BoundedChannelOptions(capacity)
         {
             FullMode = BoundedChannelFullMode.DropWrite,
             SingleReader = true,
@@ -42,9 +42,9 @@ sealed class TelemetryPump : BackgroundService, ITelemetrySink
 
     public void Publish(TelemetryEvent telemetryEvent)
     {
-        if (!queue.Writer.TryWrite(telemetryEvent))
+        if (!_queue.Writer.TryWrite(telemetryEvent))
         {
-            Interlocked.Increment(ref dropped);
+            Interlocked.Increment(ref _dropped);
         }
     }
 
@@ -52,7 +52,7 @@ sealed class TelemetryPump : BackgroundService, ITelemetrySink
     {
         try
         {
-            await foreach (TelemetryEvent telemetryEvent in queue.Reader.ReadAllAsync(stoppingToken))
+            await foreach (TelemetryEvent telemetryEvent in _queue.Reader.ReadAllAsync(stoppingToken))
             {
                 await SendAsync(telemetryEvent, stoppingToken);
                 await ReportDropsAsync(stoppingToken);
@@ -68,7 +68,7 @@ sealed class TelemetryPump : BackgroundService, ITelemetrySink
     {
         try
         {
-            await hub.Clients.All.SendAsync("event", TelemetryJson.Serialize(telemetryEvent), cancellationToken);
+            await _hub.Clients.All.SendAsync("event", TelemetryJson.Serialize(telemetryEvent), cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -77,7 +77,7 @@ sealed class TelemetryPump : BackgroundService, ITelemetrySink
         catch (Exception exception)
         {
             // A dashboard that went away mid-send must not take the pump with it.
-            logger.LogDebug(exception, "Dropping a telemetry frame the hub would not take.");
+            _logger.LogDebug(exception, "Dropping a telemetry frame the hub would not take.");
         }
     }
 
@@ -87,13 +87,13 @@ sealed class TelemetryPump : BackgroundService, ITelemetrySink
     /// </summary>
     private async Task ReportDropsAsync(CancellationToken cancellationToken)
     {
-        long total = Interlocked.Read(ref dropped);
-        if (total == reportedDrops)
+        long total = Interlocked.Read(ref _dropped);
+        if (total == _reportedDrops)
             return;
 
-        long missed = total - reportedDrops;
-        reportedDrops = total;
-        logger.LogWarning("Telemetry queue full; dropped {Count} events.", missed);
+        long missed = total - _reportedDrops;
+        _reportedDrops = total;
+        _logger.LogWarning("Telemetry queue full; dropped {Count} events.", missed);
 
         await SendAsync(
             new ProxyLog(

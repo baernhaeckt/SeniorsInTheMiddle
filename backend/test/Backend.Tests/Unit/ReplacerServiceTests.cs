@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 
 using SeniorsInTheMiddle.Proxy.Forwarding;
 using SeniorsInTheMiddle.Proxy.Forwarding.Tokenizer;
@@ -444,8 +444,9 @@ public class ReplacerServiceTests
 
         Assert.IsNull(mutated);
         // The label-only finding is nested in the cross-value one, so the overlap rule drops
-        // it first; only the outer span reaches the document check.
-        Assert.AreEqual(1, events.OfType<ProxyLog>().Count(l => l.Level == TelemetryLogLevel.Warn));
+        // it first; only the outer span reaches the document check. (The stub faker hands
+        // every PERSON the same stand-in, so a separate collision warning is expected too.)
+        Assert.AreEqual(1, events.OfType<ProxyLog>().Count(l => l.Level == TelemetryLogLevel.Warn && l.Message.Contains("dropped")));
     }
 
     /// <summary>What does not parse is not JSON, whatever the header says, and is analysed as
@@ -466,8 +467,209 @@ public class ReplacerServiceTests
         Assert.AreEqual("name=<PERSON>&city=Bern", Encoding.UTF8.GetString(mutated));
     }
 
-    private static IExchangeBodyMutation Exchange(ReplacerService replacer, IExchangeObserver observer)
-        => ((IBodyMutationFactory)replacer).CreateForExchange(new Uri("https://example.ch/"), observer);
+    /// <summary>
+    /// The bug a person saw on a chat screen: they typed their own name, the proxy hid it, and
+    /// the message drawn back into the conversation was the stand-in.
+    ///
+    /// It is not the answer that goes wrong -- an answer written about a fake name is expected to
+    /// be about a fake name. It is the person's own message, which the client does not keep but
+    /// re-reads from the server in a *later* request. A map that lived for one exchange was
+    /// already gone by then, so nothing put it back.
+    /// </summary>
+    [TestMethod]
+    public async Task A_Later_Request_Restores_What_An_Earlier_One_Hid()
+    {
+        const string sent = "Mein Name ist Christoph Keller, wann habe ich Geburtstag?";
+        ReplacerService replacer = Replacer(Faking(sent, "Christoph Keller", "René Bauer"), []);
+        BodyDescriptor text = new("text/plain", Encoding.UTF8);
+
+        byte[]? hidden = await Exchange(replacer, new Observer()).MutateRequestAsync(
+            Encoding.UTF8.GetBytes(sent),
+            text,
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.IsNotNull(hidden);
+        StringAssert.Contains(Encoding.UTF8.GetString(hidden), "René Bauer");
+
+        // A separate exchange, the way the conversation the client re-fetches is one.
+        Observer observer = new();
+        byte[]? restored = await Exchange(replacer, observer).MutateResponseAsync(
+            Encoding.UTF8.GetBytes("""{"message":{"author":"user","text":"Mein Name ist René Bauer, wann habe ich Geburtstag?"}}"""),
+            new BodyDescriptor("application/json", Encoding.UTF8),
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.IsNotNull(restored);
+        StringAssert.Contains(Encoding.UTF8.GetString(restored), "Mein Name ist Christoph Keller,");
+        Assert.AreEqual(1, observer.RestoredCount);
+    }
+
+    /// <summary>
+    /// The limit on the above. One device's stand-in is never put back for another, whatever the
+    /// two of them happen to be reading -- a shared map is one person's real name appearing in
+    /// somebody else's response.
+    /// </summary>
+    [TestMethod]
+    public async Task Another_Client_Gets_Nothing_Put_Back()
+    {
+        const string sent = "Ich heisse Christoph Keller.";
+        ReplacerService replacer = Replacer(Faking(sent, "Christoph Keller", "René Bauer"), []);
+        BodyDescriptor text = new("text/plain", Encoding.UTF8);
+
+        await Exchange(replacer, new Observer()).MutateRequestAsync(
+            Encoding.UTF8.GetBytes(sent),
+            text,
+            TestContext.CancellationTokenSource.Token);
+
+        Observer observer = new();
+        byte[]? restored = await Exchange(replacer, observer, client: "Tablet|10.0.0.9").MutateResponseAsync(
+            Encoding.UTF8.GetBytes("Hallo René Bauer."),
+            text,
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.IsNull(restored, "A stand-in was put back for a client that never hid anything.");
+        Assert.AreEqual(0, observer.RestoredCount);
+    }
+
+    /// <summary>
+    /// The same host, too. A stand-in registered against a chat backend must not rewrite the
+    /// same run of characters on an unrelated site, where it is somebody else's name and not a
+    /// stand-in for anything.
+    /// </summary>
+    [TestMethod]
+    public async Task Another_Host_Gets_Nothing_Put_Back()
+    {
+        const string sent = "Ich heisse Christoph Keller.";
+        ReplacerService replacer = Replacer(Faking(sent, "Christoph Keller", "René Bauer"), []);
+        BodyDescriptor text = new("text/plain", Encoding.UTF8);
+
+        await Exchange(replacer, new Observer()).MutateRequestAsync(
+            Encoding.UTF8.GetBytes(sent),
+            text,
+            TestContext.CancellationTokenSource.Token);
+
+        byte[]? restored = await Exchange(replacer, new Observer(), destination: "https://news.example.ch/")
+            .MutateResponseAsync(
+                Encoding.UTF8.GetBytes("Ein Beitrag von René Bauer."),
+                text,
+                TestContext.CancellationTokenSource.Token);
+
+        Assert.IsNull(restored, "A stand-in was put back in a response from a host it was never sent to.");
+    }
+
+    /// <summary>
+    /// The other half of why the chat screen stayed wrong. A Python backend writes JSON with
+    /// ensure_ascii on by default, so the "René Bauer" this proxy sent comes back spelled
+    /// "René Bauer" -- and a restore that searches for the characters it wrote finds
+    /// nothing at all.
+    /// </summary>
+    [TestMethod]
+    public async Task A_Stand_In_The_Origin_Escaped_Is_Still_Found()
+    {
+        const string sent = "Ich heisse Christoph Keller.";
+        ReplacerService replacer = Replacer(Faking(sent, "Christoph Keller", "René Bauer"), []);
+        IExchangeBodyMutation exchange = Exchange(replacer, new Observer());
+
+        await exchange.MutateRequestAsync(
+            Encoding.UTF8.GetBytes(sent),
+            new BodyDescriptor("text/plain", Encoding.UTF8),
+            TestContext.CancellationTokenSource.Token);
+
+        // Built from "\\u00e9" rather than written out, so this is unmistakably the six
+        // characters a Python writer emits and not an e-acute something decoded on the way in.
+        string origin = "{\"text\":\"Hallo Ren" + "\\u00e9" + " Bauer!\"}";
+        Assert.DoesNotContain("é", origin, "The origin body is not the escaped spelling.");
+
+        byte[]? restored = await exchange.MutateResponseAsync(
+            Encoding.UTF8.GetBytes(origin),
+            new BodyDescriptor("application/json", Encoding.UTF8),
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.IsNotNull(restored);
+        Assert.AreEqual("""{"text":"Hallo Christoph Keller!"}""", Encoding.UTF8.GetString(restored));
+    }
+
+    /// <summary>
+    /// And the direction that corrupts rather than misses: a real value spliced raw into a JSON
+    /// string ends the string early and hands the client a body it cannot parse.
+    /// </summary>
+    [TestMethod]
+    public async Task A_Real_Value_Is_Written_Back_Escaped_For_The_Body_It_Lands_In()
+    {
+        const string sent = """Ich heisse Hans "Hausi" Meier.""";
+        ReplacerService replacer = Replacer(Faking(sent, """Hans "Hausi" Meier""", "Peter Muster"), []);
+        IExchangeBodyMutation exchange = Exchange(replacer, new Observer());
+
+        await exchange.MutateRequestAsync(
+            Encoding.UTF8.GetBytes(sent),
+            new BodyDescriptor("text/plain", Encoding.UTF8),
+            TestContext.CancellationTokenSource.Token);
+
+        byte[]? restored = await exchange.MutateResponseAsync(
+            Encoding.UTF8.GetBytes("""{"text":"Hallo Peter Muster!"}"""),
+            new BodyDescriptor("application/json", Encoding.UTF8),
+            TestContext.CancellationTokenSource.Token);
+
+        Assert.IsNotNull(restored);
+        Assert.AreEqual("""{"text":"Hallo Hans \"Hausi\" Meier!"}""", Encoding.UTF8.GetString(restored));
+    }
+
+    /// <summary>
+    /// An event stream is the body a chat backend answers with, and the one body that must not
+    /// be held. It is restored in the pieces it arrives in -- including when a piece ends in the
+    /// middle of a stand-in, which a packet boundary does whenever it feels like it.
+    /// </summary>
+    [TestMethod]
+    public async Task An_Event_Stream_Is_Restored_As_It_Arrives()
+    {
+        const string sent = "Ich heisse Christoph Keller.";
+        Observer observer = new();
+        ReplacerService replacer = Replacer(Faking(sent, "Christoph Keller", "René Bauer"), []);
+        IExchangeBodyMutation exchange = Exchange(replacer, observer);
+
+        await exchange.MutateRequestAsync(
+            Encoding.UTF8.GetBytes(sent),
+            new BodyDescriptor("text/plain", Encoding.UTF8),
+            TestContext.CancellationTokenSource.Token);
+
+        IExchangeStreamMutation? stream = exchange.CreateResponseStream(
+            new BodyDescriptor("text/event-stream", Encoding.UTF8));
+
+        Assert.IsNotNull(stream);
+
+        // The boundary falls three characters into the stand-in, so those three are held rather
+        // than written out where the next chunk can no longer reach them.
+        string first = stream.Mutate("""data: {"v":"Hallo Ren""");
+        Assert.AreEqual("""data: {"v":"Hallo """, first);
+
+        string second = stream.Mutate("é Bauer\"}\n\n");
+        string tail = stream.Flush();
+
+        Assert.AreEqual("data: {\"v\":\"Hallo Christoph Keller\"}\n\n", first + second + tail);
+        Assert.AreEqual(1, observer.RestoredCount);
+    }
+
+    /// <summary>A stream from a client that hid nothing is left alone rather than copied
+    /// through a rewrite that could not find anything.</summary>
+    [TestMethod]
+    public void An_Event_Stream_With_Nothing_To_Put_Back_Is_Not_Rewritten_At_All()
+        => Assert.IsNull(
+            Exchange(Replacer(new StubPiiService([]), []), new Observer())
+                .CreateResponseStream(new BodyDescriptor("text/event-stream", Encoding.UTF8)));
+
+    /// <summary>An analyzer that finds <paramref name="detectedText"/> in <paramref name="content"/>,
+    /// and a faker that always hands back <paramref name="standIn"/> for it.</summary>
+    private static StubPiiService Faking(string content, string detectedText, string standIn)
+        => new([Finding(content, detectedText, "PERSON")], standIn);
+
+    private static IExchangeBodyMutation Exchange(
+        ReplacerService replacer,
+        IExchangeObserver observer,
+        string client = "Laptop|127.0.0.1",
+        string destination = "https://example.ch/")
+        => ((IBodyMutationFactory)replacer).CreateForExchange(
+            new ClientIdentity(client),
+            new Uri(destination),
+            observer);
 
     public TestContext TestContext { get; set; } = null!;
 
@@ -487,7 +689,15 @@ public class ReplacerServiceTests
     }
 
     private static ReplacerService Replacer(StubPiiService client, List<TelemetryEvent> events)
-        => new(new TokenDetectionService(client), new TokenAnonymizerService(client), new CollectingSink(events));
+    {
+        CollectingSink sink = new(events);
+
+        return new ReplacerService(
+            new TokenDetectionService(client),
+            client,
+            sink,
+            new AnonymizerVault(new VaultLifetime(TimeSpan.FromHours(VaultLifetime.DefaultTtlHours), VaultLifetime.DefaultMaxClients), sink));
+    }
 
     /// <summary>A finding over text that is actually in the body, with the offset the analyzer
     /// would report for it -- counted in code points, as the python side counts.</summary>

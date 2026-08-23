@@ -1,4 +1,4 @@
-using SeniorsInTheMiddle.Proxy.Telemetry;
+﻿using SeniorsInTheMiddle.Proxy.Telemetry;
 
 namespace SeniorsInTheMiddle.Proxy.Forwarding.Tokenizer;
 

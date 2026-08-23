@@ -1,4 +1,4 @@
-namespace SeniorsInTheMiddle.Proxy.Services;
+﻿namespace SeniorsInTheMiddle.Proxy.Services;
 
 /// <summary>
 /// The python services this process talks to, one unix socket each.

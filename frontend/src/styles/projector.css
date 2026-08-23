@@ -1,0 +1,464 @@
+/*
+ * Projector mode. The dashboard read from the back of a room.
+ *
+ * A projector gives you 1920x1080 and takes away the viewing distance, so this
+ * is not a zoom: the screen has no more room than before, and everything that
+ * grows has to be paid for by something that goes. What stays is the story the
+ * room is being told — how much crossed, what was held, what the destination
+ * saw instead. What goes is the desk detail: timestamps, byte counts, latency
+ * strings, the log ticker, the addresses that only matter while wiring the
+ * thing up.
+ *
+ * Sizes collapse from fifteen steps onto four. At eight metres the difference
+ * between 9px and 10.5px is not a hierarchy, it is two kinds of unreadable, so
+ * hierarchy is carried by weight and colour instead and every step lands on
+ * --pj-label or above. The steps sit as low as legibility allows: one further
+ * and the panels read as blocks of type rather than as data.
+ *
+ * Scoped to the attribute `ui/projector.ts` writes. With the mode off, not one
+ * of these rules matches and the desk layout is untouched.
+ */
+
+:root[data-projector='on'] {
+  --pj-label: 13px;
+  --pj-body: 17px;
+  --pj-lead: 22px;
+  --pj-num: clamp(22px, 1.7vw, 30px);
+
+  --gap: 13px;
+  --pad-x: 20px;
+  --pad-y: 11px;
+}
+
+/*
+ * On the shell rather than on body: the setup and sign-in screens are read at a
+ * desk by whoever is wiring the proxy up, never from the back of a room.
+ */
+[data-projector='on'] .shell {
+  font-size: var(--pj-body);
+  grid-template-rows: auto minmax(320px, 50fr) minmax(280px, 50fr);
+}
+
+/* Tracking that reads as deliberate at 10px reads as gaps at 13px. */
+[data-projector='on'] .u-label {
+  font-size: var(--pj-label);
+  letter-spacing: 0.14em;
+}
+
+/* Wide enough to grab from a laptop trackpad at the lectern. */
+[data-projector='on'] ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+/* ----------------------------------------------------------------- head -- */
+
+/*
+ * The room already knows what the product is called and nobody in it is going
+ * to type a proxy address, so the header keeps the wordmark, the counters and
+ * the one line that proves the feed is live.
+ *
+ * It is also the one band whose height is pure overhead -- it never grows with
+ * the traffic -- so every row it gives up here goes to the band and the floor,
+ * which do. The counters lead on weight and colour rather than on size; they
+ * are already the only thing up there set in the mono face at that scale.
+ */
+[data-projector='on'] .head__sub,
+[data-projector='on'] .head__cta,
+[data-projector='on'] .reconf,
+[data-projector='on'] .spark {
+  display: none;
+}
+
+[data-projector='on'] .head__mark {
+  width: 32px;
+  height: 32px;
+}
+
+[data-projector='on'] .head__name {
+  font-size: clamp(19px, 1.45vw, 26px);
+}
+
+[data-projector='on'] .stats {
+  gap: clamp(16px, 1.9vw, 32px);
+}
+
+[data-projector='on'] .stat__value {
+  font-size: var(--pj-num);
+}
+
+[data-projector='on'] .stat__value small {
+  font-size: var(--pj-label);
+}
+
+/* The label's own leading, not the shell's 1.5, which is set for reading. */
+[data-projector='on'] .stat__label {
+  line-height: 1.2;
+}
+
+[data-projector='on'] .link {
+  gap: 8px;
+  padding: 6px 11px;
+  font-size: var(--pj-label);
+}
+
+[data-projector='on'] .link__dot {
+  width: 8px;
+  height: 8px;
+}
+
+[data-projector='on'] .service {
+  font-size: var(--pj-label);
+}
+
+/* ----------------------------------------------------------------- band -- */
+
+[data-projector='on'] .band__zonelabel,
+[data-projector='on'] .rail__tag {
+  font-size: var(--pj-label);
+  letter-spacing: 0.14em;
+}
+
+[data-projector='on'] .band__caption,
+[data-projector='on'] .legend__item {
+  font-size: var(--pj-label);
+}
+
+[data-projector='on'] .legend {
+  gap: 17px;
+}
+
+[data-projector='on'] .legend__item::before {
+  width: 7px;
+  height: 7px;
+}
+
+[data-projector='on'] .node {
+  width: clamp(150px, 14vw, 220px);
+}
+
+[data-projector='on'] .node__ring {
+  width: clamp(72px, 7.4vw, 98px);
+  height: clamp(72px, 7.4vw, 98px);
+}
+
+[data-projector='on'] .node__title {
+  font-size: var(--pj-lead);
+}
+
+[data-projector='on'] .node__meta {
+  font-size: var(--pj-label);
+  min-height: 38px;
+}
+
+/* ----------------------------------------------------------------- gate -- */
+
+/*
+ * The card keeps its width. It is the one box on the band whose size is also a
+ * number in `engine/geometry.ts` -- packets park clear of it by measuring it --
+ * and a card that grew here would leave them tucked under its corner. All the
+ * room it needs comes from the type inside it instead.
+ */
+[data-projector='on'] .gate__name {
+  font-size: var(--pj-lead);
+  letter-spacing: 0.12em;
+}
+
+[data-projector='on'] .gate__policy {
+  font-size: var(--pj-label);
+}
+
+[data-projector='on'] .gate__route {
+  font-size: var(--pj-label);
+}
+
+[data-projector='on'] .gate__method,
+[data-projector='on'] .gate__url {
+  font-size: var(--pj-label);
+}
+
+[data-projector='on'] .gate__steplabel,
+[data-projector='on'] .gate__idle {
+  font-size: var(--pj-label);
+}
+
+/*
+ * Only the type size: the box counts its height in lines, so it follows on its
+ * own and still holds exactly the four it is given.
+ */
+[data-projector='on'] .gate__readout {
+  font-size: var(--pj-body);
+}
+
+[data-projector='on'] .gate__kinds {
+  height: 28px;
+  gap: 5px;
+}
+
+[data-projector='on'] .gate__kind,
+[data-projector='on'] .gate__kind small,
+[data-projector='on'] .gate__nokinds {
+  font-size: var(--pj-label);
+}
+
+[data-projector='on'] .gate__footvalue {
+  font-size: var(--pj-body);
+}
+
+[data-projector='on'] .gate__footlabel {
+  font-size: 11px;
+  letter-spacing: 0.11em;
+}
+
+/*
+ * The timing bar keeps its proportions, which are the readable part of it; the
+ * five labelled millisecond counts under it are not, at any size that fits.
+ */
+[data-projector='on'] .waterfall__legend {
+  display: none;
+}
+
+[data-projector='on'] .waterfall__bar {
+  height: 6px;
+}
+
+/* One waiting card, legible, beats three that are not. */
+[data-projector='on'] .gatestack__queue > :nth-child(n + 2) {
+  display: none;
+}
+
+[data-projector='on'] .gateq {
+  padding: 5px 10px;
+  font-size: var(--pj-label);
+}
+
+/* -------------------------------------------------------------- packets -- */
+
+/*
+ * A packet in flight says who sent it and how much of it is being held. The
+ * excerpt it carries is a second copy of what the gate readout is already
+ * showing at three times the size, and at the width the packet has to keep it
+ * would be fifteen characters of it -- so the card flies as a label.
+ */
+[data-projector='on'] .pk {
+  padding: 6px 9px 7px;
+}
+
+/* Stacked, because the two halves no longer fit across a card this narrow. */
+[data-projector='on'] .pk__top {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  font-size: var(--pj-label);
+  margin-bottom: 0;
+}
+
+[data-projector='on'] .pk__text {
+  display: none;
+}
+
+[data-projector='on'] .mote {
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+}
+
+/* --------------------------------------------------------------- panels -- */
+
+[data-projector='on'] .panel__head {
+  padding: 10px var(--pad-x);
+}
+
+[data-projector='on'] .panel__note {
+  font-size: var(--pj-label);
+}
+
+[data-projector='on'] .hist__btn {
+  font-size: 11px;
+  padding: 3px 7px;
+}
+
+[data-projector='on'] .matrix__empty,
+[data-projector='on'] .panel__empty {
+  font-size: var(--pj-label);
+}
+
+/* -------------------------------------------------------------- traffic -- */
+
+/*
+ * A request is which host and whether it was held. The clock, the status code,
+ * the bytes and the round trip are all things you look up afterwards, from a
+ * chair — and dropping them is what lets the host name go from 10.5px to 17px
+ * and still finish on one line.
+ */
+[data-projector='on'] .tr__at,
+[data-projector='on'] .tr__detail,
+[data-projector='on'] .traffic__foot,
+[data-projector='on'] .ticker {
+  display: none;
+}
+
+[data-projector='on'] .tr {
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 5px 12px 5px 10px;
+  border-left-width: 3px;
+  font-size: var(--pj-body);
+  line-height: 1.5;
+}
+
+[data-projector='on'] .tr__method {
+  font-size: var(--pj-label);
+}
+
+[data-projector='on'] .tr__mark {
+  font-size: 11px;
+  padding: 1px 5px;
+}
+
+/* ------------------------------------------------------------ inspector -- */
+
+/*
+ * The outbound row is the demonstration — a name on the left, a token on the
+ * right — so it takes the larger share of what is left after the insights.
+ */
+[data-projector='on'] .matrix {
+  --rowhead: 40px;
+}
+
+[data-projector='on'] .matrix__body {
+  grid-template-rows: 1.3fr 1fr;
+}
+
+[data-projector='on'] .matrix__rowhead span {
+  font-size: 11px;
+  letter-spacing: 0.15em;
+}
+
+[data-projector='on'] .matrix__head {
+  padding: 9px 13px 9px calc(var(--rowhead) + 13px);
+}
+
+[data-projector='on'] .split__pane {
+  padding: 10px 13px;
+  font-size: var(--pj-body);
+  line-height: 1.55;
+}
+
+/* Wide enough to find and hit from a lectern, without covering the payload. */
+[data-projector='on'] .splitbar {
+  width: 23px;
+  margin-left: -11.5px;
+}
+
+[data-projector='on'] .splitbar__grip {
+  width: 31px;
+  height: 31px;
+}
+
+[data-projector='on'] .chip {
+  padding: 1px 4px;
+}
+
+/*
+ * Two verdicts, not four. The kinds found are already named on the gate card
+ * above, and a near miss is a footnote — worth a slide of its own, not a strip
+ * of chips under the payload that nobody in the room can read.
+ */
+[data-projector='on'] .insight--kinds,
+[data-projector='on'] .insight--misses {
+  display: none;
+}
+
+[data-projector='on'] .insights {
+  grid-template-columns: auto minmax(0, 1fr);
+  min-height: 74px;
+}
+
+[data-projector='on'] .insight {
+  gap: 7px;
+  padding: 9px 13px;
+}
+
+[data-projector='on'] .ring {
+  width: 44px;
+}
+
+[data-projector='on'] .ring svg {
+  width: 44px;
+  height: 44px;
+}
+
+[data-projector='on'] .ring__value {
+  font-size: var(--pj-label);
+}
+
+[data-projector='on'] .insight__none,
+[data-projector='on'] .privacy,
+[data-projector='on'] .privacy__token {
+  font-size: var(--pj-label);
+}
+
+[data-projector='on'] .privacy__max {
+  font-size: var(--pj-lead);
+}
+
+[data-projector='on'] .privacy__track {
+  height: 6px;
+}
+
+/* ---------------------------------------------------------------- vault -- */
+
+/*
+ * The kind chip repeats what the token already spells out — [PERSON_1] is a
+ * person — and the seal is a caption for whoever is standing at the screen.
+ * Both go, and the pair that is the whole point gets the width.
+ */
+[data-projector='on'] .vrow__kind,
+[data-projector='on'] .vault__seal {
+  display: none;
+}
+
+[data-projector='on'] .vault__count {
+  font-size: var(--pj-label);
+}
+
+[data-projector='on'] .vrow {
+  grid-template-columns: minmax(0, 1fr) 14px minmax(0, 1fr) auto;
+  gap: 9px;
+  padding: 7px 14px;
+  font-size: var(--pj-body);
+}
+
+[data-projector='on'] .vrow__uses {
+  font-size: 11px;
+}
+
+/* A blur tuned for 10px text does not hide 17px text. */
+[data-projector='on'] .vrow__value {
+  filter: blur(5px);
+}
+
+[data-projector='on'] .vrow:hover .vrow__value,
+[data-projector='on'] .vrow__value:focus-visible {
+  filter: blur(0);
+}
+
+/* ------------------------------------------------------- shorter screens -- */
+
+/*
+ * The mode is sized for the 1080 rows a FullHD projector has. On anything
+ * shorter -- a 720p beamer, a laptop panel someone is checking the mode on --
+ * the four bands no longer fit, so the page scrolls instead of quietly cutting
+ * the bottom panel off. The same thing layout.css already does on a tablet.
+ */
+@media (max-height: 899px) {
+  [data-projector='on'] body {
+    overflow: auto;
+  }
+
+  [data-projector='on'] .shell {
+    height: auto;
+    min-height: 100%;
+  }
+}

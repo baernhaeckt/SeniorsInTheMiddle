@@ -1,4 +1,4 @@
-namespace SeniorsInTheMiddle.Proxy.Forwarding;
+﻿namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
 /// <summary>
 /// A set of host names written the way an operator writes them, matched the way DNS means them.
@@ -13,10 +13,10 @@ namespace SeniorsInTheMiddle.Proxy.Forwarding;
 /// </summary>
 sealed class HostPattern
 {
-    private readonly HashSet<string> exact = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<string> suffixes = [];
+    private readonly HashSet<string> _exact = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<string> _suffixes = [];
 
-    public bool IsEmpty => exact.Count == 0;
+    public bool IsEmpty => _exact.Count == 0;
 
     public HostPattern(IEnumerable<string> entries)
     {
@@ -29,8 +29,8 @@ sealed class HostPattern
             if (name.Length == 0)
                 continue;
 
-            exact.Add(name);
-            suffixes.Add($".{name}");
+            _exact.Add(name);
+            _suffixes.Add($".{name}");
         }
     }
 
@@ -41,10 +41,10 @@ sealed class HostPattern
         if (name.Length == 0)
             return false;
 
-        if (exact.Contains(name))
+        if (_exact.Contains(name))
             return true;
 
-        foreach (string suffix in suffixes)
+        foreach (string suffix in _suffixes)
         {
             if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
                 return true;

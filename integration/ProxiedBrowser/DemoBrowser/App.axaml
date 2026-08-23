@@ -43,7 +43,10 @@
         <SolidColorBrush x:Key="TextControlForeground" Color="#FFFFFFFF" />
         <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="#FFFFFFFF" />
         <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#FFFFFFFF" />
-        <SolidColorBrush x:Key="TextControlSelectionHighlightColor" Color="#FF288879" />
+        <!-- Selection must stand out against the focused background (#288879), so it uses the cyan with dark text -->
+        <SolidColorBrush x:Key="TextControlSelectionHighlightColor" Color="#FF38B5EE" />
+        <SolidColorBrush x:Key="SelectionBrush" Color="#FF38B5EE" />
+        <SolidColorBrush x:Key="SelectionForegroundBrush" Color="#FF0D1216" />
         <SolidColorBrush x:Key="ComboBoxBackground" Color="#FF225851" />
         <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#FF288879" />
         <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#FF288879" />
@@ -72,7 +75,8 @@
             <Setter Property="CornerRadius" Value="8" />
             <Setter Property="FontSize" Value="13" />
             <Setter Property="CaretBrush" Value="{StaticResource TextBrush}" />
-            <Setter Property="SelectionBrush" Value="{StaticResource AccentBrush}" />
+            <Setter Property="SelectionBrush" Value="{StaticResource SelectionBrush}" />
+            <Setter Property="SelectionForegroundBrush" Value="{StaticResource SelectionForegroundBrush}" />
         </Style>
         <Style Selector="ComboBox">
             <Setter Property="CornerRadius" Value="8" />

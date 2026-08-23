@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Net;
 
 namespace SeniorsInTheMiddle.Proxy.Telemetry;
@@ -12,15 +12,27 @@ namespace SeniorsInTheMiddle.Proxy.Telemetry;
 /// </summary>
 sealed class ClientLabeler
 {
-    private readonly ConcurrentDictionary<string, string> labels = new();
+    private readonly ConcurrentDictionary<string, string> _labels = new();
 
     public string Label(IPAddress? address, string? userAgent)
-    {
-        string ip = Ip(address);
-        string kind = DeviceKind(userAgent);
+        => _labels.GetOrAdd(
+            Identity(address, userAgent),
+            _ => $"{DeviceKind(userAgent)} · {Suffix(Ip(address))}");
 
-        return labels.GetOrAdd($"{kind}|{ip}", _ => $"{kind} · {Suffix(ip)}");
-    }
+    /// <summary>
+    /// The same device across every request it makes, as far as a proxy can tell — the address
+    /// it connects from and the kind of thing its User-Agent claims to be.
+    ///
+    /// It is the key of <see cref="Label"/> rather than the label itself because two devices
+    /// that differ only in the part of the address the label hides must not share one: the
+    /// label is written to be read from across a room, and everything it drops on the way is
+    /// exactly what tells those two apart.
+    ///
+    /// Input:  127.0.0.1, "... Windows ..."  -&gt; "Laptop|127.0.0.1"
+    /// Input:  ::ffff:10.0.0.4, null         -&gt; "Device|10.0.0.4"
+    /// </summary>
+    public static string Identity(IPAddress? address, string? userAgent)
+        => $"{DeviceKind(userAgent)}|{Ip(address)}";
 
     /// <summary>
     /// Kestrel reports IPv4 clients as ::ffff:127.0.0.1 on a dual-stack socket, which makes

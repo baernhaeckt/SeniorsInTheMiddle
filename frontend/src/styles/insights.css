@@ -1,105 +1,9 @@
 /*
- * The insight surfaces added with protocol v3: the device strip, the log ticker,
+ * The insight surfaces added with protocol v3: the log ticker,
  * the detection insights under the inspector, the latency waterfall, the header
  * sparkline and service dots. Risk tiers share one ramp everywhere:
  *   1 = muted ink, 2 = warm, 3 = alert.
  */
-
-/* -------------------------------------------------------------- devices -- */
-
-.devices {
-  display: flex;
-  gap: var(--gap);
-  overflow-x: auto;
-  min-height: 0;
-  scrollbar-width: none;
-}
-
-.device {
-  flex: 0 0 auto;
-  display: grid;
-  grid-template-columns: auto auto auto;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 12px 6px 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: linear-gradient(180deg, var(--panel-hi), var(--panel));
-  animation: rise-flat 420ms var(--ease) both;
-  transition: border-color 160ms var(--ease);
-}
-
-.device[data-hot='true'] {
-  border-color: var(--warm-line);
-}
-
-.device__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ink-3);
-}
-
-.device[data-risk='2'] .device__dot {
-  background: var(--warm);
-}
-
-.device[data-risk='3'] .device__dot {
-  background: var(--alert);
-  box-shadow: 0 0 0 3px var(--alert-soft);
-}
-
-.device__who {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.device__kind {
-  font-size: 8px;
-}
-
-.device__owner {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--ink);
-  white-space: nowrap;
-}
-
-.device__nums {
-  display: flex;
-  gap: 10px;
-  padding-left: 10px;
-  border-left: 1px solid var(--line-soft);
-}
-
-.device__num {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  line-height: 1.1;
-}
-
-.device__num b {
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-  font-weight: 400;
-  font-size: 13px;
-  color: var(--ink-2);
-}
-
-.device__num[data-tone='alert'] b {
-  color: var(--alert);
-}
-
-.device__num[data-tone='warm'] b {
-  color: var(--warm);
-}
-
-.device__num .u-label {
-  font-size: 7.5px;
-  letter-spacing: 0.14em;
-}
 
 /* --------------------------------------------------------------- ticker -- */
 
@@ -653,10 +557,6 @@ button.ticker__line:hover,
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
   font-size: 9.5px;
-}
-
-.tr[data-device-hot='true'] {
-  background: rgba(56, 181, 238, 0.07);
 }
 
 @media (min-width: 1440px) {

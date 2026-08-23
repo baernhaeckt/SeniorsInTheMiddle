@@ -44,7 +44,7 @@ public static class InfrastructureRegistrations
             {
                 ValidateIssuerSigningKey = true,
                 IssuerSigningKey = new SymmetricSecurityKey(
-                    Encoding.UTF8.GetBytes(configuration["Jwt:Key"] ?? throw new InvalidOperationException())),
+                    Encoding.UTF8.GetBytes(configuration["Jwt:Key"] ?? throw new InvalidOperationException("JWT Key not configured"))),
                 ValidateIssuer = true,
                 ValidIssuer = configuration["Jwt:Issuer"],
                 ValidateAudience = true,
@@ -99,13 +99,17 @@ public static class InfrastructureRegistrations
     /// </summary>
     public static IServiceCollection AddAppCors(this IServiceCollection services, IConfiguration configuration)
     {
-        string[] origins = AllowedOrigins(configuration);
+        AllowedOrigins origins = AllowedOrigins.From(configuration);
+
+        // Registered once, so the CORS policy, the startup log and the telemetry origin guard
+        // all work from the same list.
+        services.AddSingleton(origins);
 
         services.AddCors(options =>
         {
             options.AddDefaultPolicy(policy =>
             {
-                policy.WithOrigins(origins)
+                policy.WithOrigins(origins.Values)
                       .AllowAnyMethod()
                       .AllowAnyHeader()
                       .AllowCredentials();
@@ -115,16 +119,6 @@ public static class InfrastructureRegistrations
         return services;
     }
 
-
-    /// <summary>
-    /// Browsers compare origins without a trailing slash, so a configured
-    /// "https://example.com/" would silently never match anything.
-    /// </summary>
-    public static string[] AllowedOrigins(IConfiguration configuration)
-        => [.. (configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
-            .Where(origin => !string.IsNullOrWhiteSpace(origin))
-            .Select(origin => origin.Trim().TrimEnd('/'))
-            .Distinct(StringComparer.OrdinalIgnoreCase)];
 
     public static void RegisterMiddlewares(this WebApplication app)
     {
@@ -148,7 +142,7 @@ public static class InfrastructureRegistrations
 
         // Add Cors headers. Logged because a missing origin surfaces in the browser as an
         // opaque network error, with nothing on the server to point at it.
-        string[] origins = AllowedOrigins(app.Configuration);
+        string[] origins = app.Services.GetRequiredService<AllowedOrigins>().Values;
         if (origins.Length == 0)
         {
             app.Logger.LogWarning(
@@ -185,7 +179,9 @@ internal sealed class SecuritySchemeTransformer : IOpenApiDocumentTransformer
         // Iterate through each path & operation
         foreach (IOpenApiPathItem path in document.Paths.Values)
         {
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
+            if (path.Operations is null)
+                continue;
+
             foreach (OpenApiOperation operation in path.Operations.Values)
             {
                 operation.Security ??= [];
@@ -194,9 +190,35 @@ internal sealed class SecuritySchemeTransformer : IOpenApiDocumentTransformer
                     [new OpenApiSecuritySchemeReference("Bearer", document)] = []
                 });
             }
-#pragma warning restore CS8602 // Dereference of a possibly null reference.
         }
 
         return Task.CompletedTask;
     }
+}
+
+/// <summary>
+/// The origins the dashboard may call from, as configured under <c>Cors:AllowedOrigins</c>.
+///
+/// Browsers compare origins without a trailing slash, so a configured
+/// "https://example.com/" would silently never match anything; the slash is trimmed here.
+/// </summary>
+public sealed class AllowedOrigins
+{
+    private readonly HashSet<string> _lookup;
+
+    public AllowedOrigins(string[] values)
+    {
+        Values = values;
+        _lookup = new HashSet<string>(values, StringComparer.OrdinalIgnoreCase);
+    }
+
+    public string[] Values { get; }
+
+    public bool Contains(string origin) => _lookup.Contains(origin);
+
+    public static AllowedOrigins From(IConfiguration configuration)
+        => new([.. (configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
+            .Where(origin => !string.IsNullOrWhiteSpace(origin))
+            .Select(origin => origin.Trim().TrimEnd('/'))
+            .Distinct(StringComparer.OrdinalIgnoreCase)]);
 }

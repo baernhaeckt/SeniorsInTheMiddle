@@ -78,6 +78,50 @@ public sealed class CertificateService(ProxyDiagnostics diagnostics)
         }
     }
 
+    /// <summary>
+    /// Fetches <paramref name="caCertUrl"/> again and reports whether the proxy now serves a different CA than
+    /// the one this instance was started with (a CA appearing where none could be loaded at startup counts too).
+    /// The loaded CA is left untouched: a changed CA means new pins, and those need a new browser process.
+    /// Unreachable or unparsable → <c>false</c>, since nothing can be done about it anyway.
+    /// </summary>
+    public async Task<bool> HasCaChangedAsync(string caCertUrl, CancellationToken cancellationToken = default)
+    {
+        if (!Uri.TryCreate(caCertUrl, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            using var response = await client.GetAsync(uri, cancellationToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+            using var current = Parse(bytes);
+            var loaded = _proxyCa;
+            var changed = loaded is null || !string.Equals(loaded.Thumbprint, current.Thumbprint, StringComparison.OrdinalIgnoreCase);
+            if (changed)
+            {
+                _diagnostics.Warning("CA", loaded is null
+                    ? "The proxy now serves a CA where none could be loaded at startup"
+                    : "The proxy CA has changed since startup", Describe(current));
+            }
+            else
+            {
+                _diagnostics.Info("CA", "Re-checked the proxy CA: unchanged");
+            }
+
+            return changed;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException
+                                   or CryptographicException or FormatException or ArgumentException)
+        {
+            _diagnostics.Warning("CA", $"Could not re-check the proxy CA at {caCertUrl}: {ex.Message}");
+            return false;
+        }
+    }
+
     /// <summary>Where the browser sends its traffic, and whether it speaks TLS to get there.</summary>
     public readonly record struct ProxyEndpoint(string Host, int Port, bool UseTls)
     {

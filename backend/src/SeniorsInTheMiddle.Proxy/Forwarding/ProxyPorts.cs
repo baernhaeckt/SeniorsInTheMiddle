@@ -1,4 +1,4 @@
-namespace SeniorsInTheMiddle.Proxy.Forwarding;
+﻿namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
 /// <summary>
 /// The three listeners this app opens, read from the <c>Proxy</c> configuration section.

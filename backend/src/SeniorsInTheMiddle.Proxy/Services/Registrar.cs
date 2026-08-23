@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+﻿using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 using SeniorsInTheMiddle.Proxy.Services.Pii;
@@ -40,9 +40,9 @@ public static class Registrar
     public static void MapServiceHealth(this IEndpointRouteBuilder routes)
     {
         routes.MapHealthChecks(HealthPath, new HealthCheckOptions
-            {
-                ResponseWriter = WriteAsync,
-            })
+        {
+            ResponseWriter = WriteAsync,
+        })
             .AllowAnonymous();
     }
 

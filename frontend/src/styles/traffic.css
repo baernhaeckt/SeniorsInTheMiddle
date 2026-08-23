@@ -1,12 +1,34 @@
 /* Traffic list rows and markings. */
 
+.traffic {
+  container-type: inline-size;
+}
+
 .traffic__treated {
   color: var(--alert);
 }
 
+.traffic__filter {
+  font: inherit;
+  color: inherit;
+  padding: 0 4px;
+  margin: 0 -4px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.traffic__filter:hover {
+  background: rgba(212, 112, 141, 0.12);
+}
+
+.traffic__filter[aria-pressed='true'] {
+  background: var(--alert);
+  color: var(--void);
+}
+
 .tr {
   display: grid;
-  grid-template-columns: 50px 32px minmax(0, 1fr) auto;
+  grid-template-columns: 50px 32px minmax(0, 1fr) auto minmax(46px, auto);
   gap: 7px;
   align-items: center;
   width: 100%;
@@ -71,8 +93,31 @@
   color: var(--warm);
 }
 
+.tr__detail {
+  color: var(--ink-3);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 190px;
+}
+
+/* In a narrow column the status and sizes would crush the URL, which is the
+   one thing a row has to say. They stay in the tooltip and for assistive tech. */
+@container (max-width: 400px) {
+  .tr {
+    grid-template-columns: 50px 32px minmax(0, 1fr) minmax(46px, auto);
+  }
+
+  .tr__detail {
+    display: none;
+  }
+}
+
 .tr__mark {
-  flex: none;
+  justify-self: end;
+  text-align: center;
   font-size: 9px;
   padding: 0 4px;
   border-radius: 2px;

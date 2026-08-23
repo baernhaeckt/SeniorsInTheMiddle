@@ -1,7 +1,7 @@
 root = true
 
 [*]
-end_of_line = clrf
+end_of_line = lf
 insert_final_newline = true
 indent_style = space
 indent_size = 4
@@ -9,3 +9,39 @@ charset = utf-8-bom
 
 [*.csproj]
 indent_size = 2
+
+[*.cs]
+# Constants and static readonly fields keep PascalCase, which is what the code already does.
+# Listed first: the more specific rule has to win over the general private-field rule below.
+dotnet_naming_rule.private_constants_are_pascal_case.severity = warning
+dotnet_naming_rule.private_constants_are_pascal_case.symbols = private_constants
+dotnet_naming_rule.private_constants_are_pascal_case.style = pascal_case
+
+dotnet_naming_symbols.private_constants.applicable_kinds = field
+dotnet_naming_symbols.private_constants.applicable_accessibilities = private
+dotnet_naming_symbols.private_constants.required_modifiers = const
+
+dotnet_naming_rule.private_static_readonly_are_pascal_case.severity = warning
+dotnet_naming_rule.private_static_readonly_are_pascal_case.symbols = private_static_readonly
+dotnet_naming_rule.private_static_readonly_are_pascal_case.style = pascal_case
+
+dotnet_naming_symbols.private_static_readonly.applicable_kinds = field
+dotnet_naming_symbols.private_static_readonly.applicable_accessibilities = private
+dotnet_naming_symbols.private_static_readonly.required_modifiers = static, readonly
+
+# Every other private field is _camelCase. Enforced as a warning so a stray
+# `private Foo foo;` shows up in the build rather than in a review.
+dotnet_naming_rule.private_fields_should_be_underscore_camel_case.severity = warning
+dotnet_naming_rule.private_fields_should_be_underscore_camel_case.symbols = private_fields
+dotnet_naming_rule.private_fields_should_be_underscore_camel_case.style = underscore_camel_case
+
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+
+dotnet_naming_style.underscore_camel_case.required_prefix = _
+dotnet_naming_style.underscore_camel_case.capitalization = camel_case
+
+dotnet_naming_style.pascal_case.capitalization = pascal_case
+
+# Fields are reached by name, never through `this.`.
+dotnet_style_qualification_for_field = false:warning
