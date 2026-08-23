@@ -33,20 +33,20 @@ sealed class TelemetryPump : BackgroundService, ITelemetrySink
         _logger = logger;
 
         int capacity = Math.Max(16, configuration.GetValue("Telemetry:QueueCapacity", 2048));
-        _queue = Channel.CreateBounded<TelemetryEvent>(new BoundedChannelOptions(capacity)
-        {
-            FullMode = BoundedChannelFullMode.DropWrite,
-            SingleReader = true,
-        });
+
+        // The drop is counted through this callback rather than from TryWrite's result:
+        // under DropWrite the write is reported as having succeeded even when the item was
+        // discarded, so a caller cannot tell a queued event from a dropped one.
+        _queue = Channel.CreateBounded<TelemetryEvent>(
+            new BoundedChannelOptions(capacity)
+            {
+                FullMode = BoundedChannelFullMode.DropWrite,
+                SingleReader = true,
+            },
+            _ => Interlocked.Increment(ref _dropped));
     }
 
-    public void Publish(TelemetryEvent telemetryEvent)
-    {
-        if (!_queue.Writer.TryWrite(telemetryEvent))
-        {
-            Interlocked.Increment(ref _dropped);
-        }
-    }
+    public void Publish(TelemetryEvent telemetryEvent) => _queue.Writer.TryWrite(telemetryEvent);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
