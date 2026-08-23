@@ -637,7 +637,7 @@ public class RequestBodyRewriteTests
 
         public bool Rewrites => true;
 
-        public IExchangeBodyMutation CreateForExchange(Uri destination, IExchangeObserver observer) => this;
+        public IExchangeBodyMutation CreateForExchange(ClientIdentity client, Uri destination, IExchangeObserver observer) => this;
 
         public ValueTask<byte[]?> MutateRequestAsync(
             ReadOnlyMemory<byte> body,

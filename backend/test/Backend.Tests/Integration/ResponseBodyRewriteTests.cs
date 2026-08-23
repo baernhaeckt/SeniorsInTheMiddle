@@ -282,7 +282,9 @@ public class ResponseBodyRewriteTests
 
     /// <summary>
     /// An event stream is text and never ends. Buffering one holds the client until the stream
-    /// closes, which for this media type is never, so it is the one text type that is refused.
+    /// closes, which for this media type is never, so it is the one text type never offered to
+    /// the whole-body half of a mutation -- see Event_Stream_Is_Restored_While_It_Flows for the
+    /// half it is offered to.
     /// </summary>
     [TestMethod]
     public async Task Event_Stream_Is_Never_Buffered()
@@ -320,6 +322,55 @@ public class ResponseBodyRewriteTests
 
         Assert.IsFalse(offered, "An event stream was buffered.");
         Assert.AreEqual("data: event-0", first);
+        Assert.IsLessThan(totalMs / 2, firstMs, $"The first event arrived after {firstMs:0}ms of {totalMs:0}ms, so the stream was held.");
+    }
+
+    /// <summary>
+    /// The stream a chat backend answers with, put right on the way past.
+    ///
+    /// Both halves matter and one used to be traded for the other: the stand-in is gone from what
+    /// the client reads, and the first event still arrives while the origin is still writing the
+    /// rest. A rewrite that only managed the first would be a conversation that appears when it
+    /// ends.
+    /// </summary>
+    [TestMethod]
+    public async Task Event_Stream_Is_Restored_While_It_Flows()
+    {
+        DelegateMutationFactory mutation = new(
+            onStreamChunk: chunk => chunk.Replace("René Bauer", "Christoph Keller", StringComparison.Ordinal));
+
+        await using ForwardingHarness harness = await ForwardingHarness.StartAsync(mutation, respond: async (context, _) =>
+        {
+            context.Response.ContentType = "text/event-stream";
+
+            for (int index = 0; index < 3; index++)
+            {
+                await context.Response.WriteAsync($"data: Hallo René Bauer ({index})\n\n", context.RequestAborted);
+                await context.Response.Body.FlushAsync(context.RequestAborted);
+                await Task.Delay(250, context.RequestAborted);
+            }
+        });
+        using HttpClient client = harness.CreateProxiedClient();
+
+        long startedAt = Stopwatch.GetTimestamp();
+        using HttpResponseMessage response = await client.GetAsync(
+            new Uri(harness.DestinationUri, "/conversation"), HttpCompletionOption.ResponseHeadersRead);
+
+        await using Stream stream = await response.Content.ReadAsStreamAsync();
+        using StreamReader reader = new(stream);
+
+        string? first = await reader.ReadLineAsync();
+        double firstMs = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
+        string rest = await reader.ReadToEndAsync();
+        double totalMs = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
+
+        Assert.AreEqual("data: Hallo Christoph Keller (0)", first);
+        Assert.DoesNotContain("René Bauer", rest, "A stand-in reached the client.");
+        Assert.Contains("data: Hallo Christoph Keller (2)", rest);
+
+        // A rewritten stream is still a stream: no length is asserted over a body whose end is
+        // not known when the headers go out.
+        Assert.IsNull(response.Content.Headers.ContentLength);
         Assert.IsLessThan(totalMs / 2, firstMs, $"The first event arrived after {firstMs:0}ms of {totalMs:0}ms, so the stream was held.");
     }
 
@@ -572,7 +623,7 @@ public class ResponseBodyRewriteTests
     {
         public bool Rewrites => true;
 
-        public IExchangeBodyMutation CreateForExchange(Uri destination, IExchangeObserver observer) => new Exchange(observer);
+        public IExchangeBodyMutation CreateForExchange(ClientIdentity client, Uri destination, IExchangeObserver observer) => new Exchange(observer);
 
         private sealed class Exchange(IExchangeObserver observer) : IExchangeBodyMutation
         {

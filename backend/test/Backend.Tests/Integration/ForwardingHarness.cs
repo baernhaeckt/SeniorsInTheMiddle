@@ -47,15 +47,18 @@ internal sealed record RecordedRequest(
 /// </summary>
 internal sealed class DelegateMutationFactory(
     Func<ReadOnlyMemory<byte>, BodyDescriptor, byte[]?>? onRequest = null,
-    Func<ReadOnlyMemory<byte>, BodyDescriptor, byte[]?>? onResponse = null) : IBodyMutationFactory
+    Func<ReadOnlyMemory<byte>, BodyDescriptor, byte[]?>? onResponse = null,
+    Func<string, string>? onStreamChunk = null) : IBodyMutationFactory
 {
-    public bool Rewrites => onRequest is not null || onResponse is not null;
+    public bool Rewrites => onRequest is not null || onResponse is not null || onStreamChunk is not null;
 
-    public IExchangeBodyMutation CreateForExchange(Uri destination, IExchangeObserver observer) => new Exchange(onRequest, onResponse);
+    public IExchangeBodyMutation CreateForExchange(ClientIdentity client, Uri destination, IExchangeObserver observer)
+        => new Exchange(onRequest, onResponse, onStreamChunk);
 
     private sealed class Exchange(
         Func<ReadOnlyMemory<byte>, BodyDescriptor, byte[]?>? onRequest,
-        Func<ReadOnlyMemory<byte>, BodyDescriptor, byte[]?>? onResponse) : IExchangeBodyMutation
+        Func<ReadOnlyMemory<byte>, BodyDescriptor, byte[]?>? onResponse,
+        Func<string, string>? onStreamChunk) : IExchangeBodyMutation
     {
         public ValueTask<byte[]?> MutateRequestAsync(
             ReadOnlyMemory<byte> body,
@@ -68,6 +71,19 @@ internal sealed class DelegateMutationFactory(
             BodyDescriptor descriptor,
             CancellationToken cancellationToken)
             => ValueTask.FromResult(onResponse?.Invoke(body, descriptor));
+
+        /// <summary>Null unless the test asked for a streaming rewrite, so every existing test
+        /// keeps the "an event stream is not touched" behaviour it was written against.</summary>
+        public IExchangeStreamMutation? CreateResponseStream(BodyDescriptor descriptor)
+            => onStreamChunk is null ? null : new Stream(onStreamChunk);
+
+        /// <summary>Holds nothing back: what a test hands over per chunk is what comes out.</summary>
+        private sealed class Stream(Func<string, string> onChunk) : IExchangeStreamMutation
+        {
+            public string Mutate(string chunk) => onChunk(chunk);
+
+            public string Flush() => string.Empty;
+        }
     }
 }
 
@@ -256,7 +272,10 @@ internal sealed class ForwardingHarness : IAsyncDisposable
             ? (target, _) => transformerFactory(target)
             : (target, trace) => new ForwardProxyTransformer(
                 target,
-                (mutation ?? new PassthroughMutationFactory()).CreateForExchange(target, trace),
+                (mutation ?? new PassthroughMutationFactory()).CreateForExchange(
+                    new ClientIdentity("harness"),
+                    target,
+                    trace),
                 limits ?? new BodyLimits(BodyLimits.DefaultMaxMutableBodyBytes),
                 // Unconfigured, so every path is inspected and these keep testing the forwarding
                 // itself rather than the narrowing -- InspectionScopeTests covers that.

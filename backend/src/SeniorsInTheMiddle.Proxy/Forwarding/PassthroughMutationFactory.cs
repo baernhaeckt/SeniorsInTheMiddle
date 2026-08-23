@@ -16,7 +16,10 @@ sealed class PassthroughMutationFactory : IBodyMutationFactory, IExchangeBodyMut
 {
     public bool Rewrites => false;
 
-    public IExchangeBodyMutation CreateForExchange(Uri destination, IExchangeObserver observer) => this;
+    public IExchangeBodyMutation CreateForExchange(
+        ClientIdentity client,
+        Uri destination,
+        IExchangeObserver observer) => this;
 
     public ValueTask<byte[]?> MutateRequestAsync(
         ReadOnlyMemory<byte> body,
@@ -29,4 +32,8 @@ sealed class PassthroughMutationFactory : IBodyMutationFactory, IExchangeBodyMut
         BodyDescriptor descriptor,
         CancellationToken cancellationToken)
         => ValueTask.FromResult<byte[]?>(null);
+
+    /// <summary>Nothing was hidden, so there is nothing to put back and no reason to copy an
+    /// event stream through this at all.</summary>
+    public IExchangeStreamMutation? CreateResponseStream(BodyDescriptor descriptor) => null;
 }

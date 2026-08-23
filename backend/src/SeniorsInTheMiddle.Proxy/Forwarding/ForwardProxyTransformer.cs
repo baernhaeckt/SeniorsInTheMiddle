@@ -309,6 +309,16 @@ sealed class ForwardProxyTransformer(
             return;
 
         MediaTypeHeaderValue? contentType = proxyResponse.Content.Headers.ContentType;
+
+        // Before IsInspectable, which refuses this one for a reason that only applies to holding
+        // it whole.
+        if (IsEventStream(contentType?.MediaType))
+        {
+            await RestoreEventStreamAsync(httpContext, proxyResponse, contentType, cancellationToken);
+
+            return;
+        }
+
         if (!IsInspectable(contentType?.MediaType))
             return;
 
@@ -397,6 +407,63 @@ sealed class ForwardProxyTransformer(
 
         Replace(proxyResponse, new ByteArrayContent(mutated));
         DescribeRewrittenBody(httpContext, mutated.Length);
+    }
+
+    /// <summary>
+    /// Puts the proxy's stand-ins back into an event stream, without holding it.
+    ///
+    /// This is the body a chat backend answers with, and the reason the rest of this method
+    /// cannot handle it is not that it is text -- it is that it has no end. Buffering it is not a
+    /// slow response, it is a response the client never sees, so the restore is applied to each
+    /// piece as it arrives and the stream keeps flowing -- see <see cref="RestoringStream"/>.
+    ///
+    /// The length is deliberately not restated afterwards. A stream never carried one, the
+    /// restored length is not known until it ends, and Kestrel frames it chunked either way.
+    /// </summary>
+    private async ValueTask RestoreEventStreamAsync(
+        HttpContext httpContext,
+        HttpResponseMessage proxyResponse,
+        MediaTypeHeaderValue? contentType,
+        CancellationToken cancellationToken)
+    {
+        // Inflating as it arrives is a different job from inflating a buffer, and one nothing
+        // here does yet. An event stream is not compressed in practice -- there is nothing to
+        // gain across frames sent one at a time -- so this passes through rather than growing a
+        // streaming decompressor for a case that has not been seen.
+        if (proxyResponse.Content.Headers.ContentEncoding.Count > 0)
+        {
+            logger.LogWarning(
+                "Event stream from {Host} left unrestored: it is {Encoding} encoded, and this is only read as it arrives.",
+                destination.Host,
+                string.Join(", ", proxyResponse.Content.Headers.ContentEncoding));
+
+            return;
+        }
+
+        BodyDescriptor descriptor = new(contentType?.ToString(), EncodingOf(contentType?.ToString()));
+        IExchangeStreamMutation? restore = mutation.CreateResponseStream(descriptor);
+
+        // Nothing was hidden that could come back in here, so the origin's own bytes are left to
+        // reach the client untouched rather than copied through a rewrite that would find
+        // nothing.
+        if (restore is null)
+            return;
+
+        trace.ResponseBuffered();
+
+        Stream origin = await proxyResponse.Content.ReadAsStreamAsync(cancellationToken);
+
+        // The replaced content owns the stream the replacement is about to read from, so
+        // disposing it here would close that stream; the RestoringStream releases it instead.
+        Replace(
+            proxyResponse,
+            new StreamContent(new RestoringStream(origin, restore, descriptor.Encoding)),
+            disposeReplaced: false);
+
+        foreach (string header in BodyDescribingHeaders)
+        {
+            httpContext.Response.Headers.Remove(header);
+        }
     }
 
     /// <summary>
@@ -493,7 +560,7 @@ sealed class ForwardProxyTransformer(
     /// Input:  "application/json"        -> true
     /// Input:  "application/ld+json"     -> true
     /// Input:  "text/html"               -> true
-    /// Input:  "text/event-stream"       -> false, it never ends
+    /// Input:  "text/event-stream"       -> false, it never ends -- see RestoreEventStreamAsync
     /// Input:  "image/png"               -> false
     ///
     /// Adding a type: one entry here, and a mutation that knows what to do with it.
@@ -503,8 +570,9 @@ sealed class ForwardProxyTransformer(
         if (string.IsNullOrEmpty(mediaType))
             return false;
 
-        // Under text/ but endless, so it is the one exception that has to come first.
-        if (mediaType.Equals("text/event-stream", StringComparison.OrdinalIgnoreCase))
+        // Under text/ but endless. It is not uninspectable, only unholdable, and the caller has
+        // already sent it down the streaming path by the time this is asked.
+        if (IsEventStream(mediaType))
             return false;
 
         // Code, not content. Two reasons, and either alone would be enough.
@@ -522,6 +590,14 @@ sealed class ForwardProxyTransformer(
                || mediaType.EndsWith("xml", StringComparison.OrdinalIgnoreCase)
                || mediaType.Equals("application/x-www-form-urlencoded", StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// Whether a media type is a body that arrives in pieces and ends when the far end says so,
+    /// rather than a document with a length.
+    /// </summary>
+    private static bool IsEventStream(string? mediaType)
+        => mediaType is not null
+           && mediaType.Equals("text/event-stream", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Whether a media type carries code rather than something a person wrote.

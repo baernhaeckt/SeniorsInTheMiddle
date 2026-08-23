@@ -17,7 +17,14 @@ public static class Registrar
             .AddHttpForwarder()
             .AddSingleton(provider => ProxyPorts.From(provider.GetRequiredService<IConfiguration>()))
             .AddSingleton(provider => BodyLimits.From(provider.GetRequiredService<IConfiguration>()))
+            .AddSingleton(provider => VaultLifetime.From(provider.GetRequiredService<IConfiguration>()))
             .AddSingleton<TokenDetectionService>()
+            // Where a client's stand-in map lives between the request that fills it and the
+            // later request whose response needs it -- see AnonymizerVault. Its clock is
+            // registered rather than taken from the default so a test can expire an entry
+            // without waiting two days for it.
+            .AddSingleton(TimeProvider.System)
+            .AddSingleton<AnonymizerVault>()
             // The rewrite applied to every proxied body, request and response, plaintext and
             // intercepted HTTPS alike. PassthroughMutationFactory is the one that changes
             // nothing, for a deployment that only watches -- see IBodyMutationFactory.

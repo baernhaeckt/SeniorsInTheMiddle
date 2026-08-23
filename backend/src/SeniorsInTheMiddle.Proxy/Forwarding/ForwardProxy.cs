@@ -74,7 +74,7 @@ sealed class ForwardProxy : IForwardProxy
                 _requestConfig,
                 new ForwardProxyTransformer(
                     destination,
-                    _bodyMutations.CreateForExchange(destination, trace),
+                    _bodyMutations.CreateForExchange(ClientIdentity.Of(context), destination, trace),
                     _bodyLimits,
                     _scope,
                     _transformerLogger,
