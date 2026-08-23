@@ -3,9 +3,10 @@
 Ein Man-in-the-Middle-Proxy als Grenzposten zwischen den Geräten einer Organisation
 und fremden Cloud-Diensten. Der Proxy terminiert auch verschlüsselte Verbindungen
 (CONNECT-Tunnel, eigenes CA-Zertifikat), liest nur Bodies, die überhaupt Personendaten
-tragen können, erkennt darin Namen, Adressen, AHV-Nummern, IBANs und Ähnliches und
-ersetzt sie formattreu, bevor die Anfrage die eigene Grenze verlässt. Die Tabelle von
-Token zu echtem Wert bleibt im Proxy. Ein Dashboard zeigt jeden Schritt live mit.
+tragen können, erkennt darin Namen, Adressen, IBANs und Ähnliches und ersetzt sie
+formattreu, bevor die Anfrage die eigene Grenze verlässt. Die Tabelle von Token zu
+echtem Wert bleibt im Proxy, je Client und Zielhost und für 48 Stunden. Ein Dashboard
+zeigt jeden Schritt live mit.
 
 Ausführliche Beschreibung: `docs/` (Jury-Dokumentation).
 

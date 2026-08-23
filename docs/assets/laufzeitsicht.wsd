@@ -22,73 +22,127 @@ skinparam sequence {
 actor C as "Client"
 participant P as "Proxy"
 participant S as "PII Service"
+participant R as "Privacy Checker"
 participant Z as "Zielserver"
 participant D as "Dashboard"
 
 C -> P: HTTP CONNECT host:443
 activate P
-P -> P: Zertifikat für Zielhost ausstellen
-P -->> C: HTTP 200 Connection Established
 
-C -> P: HTTPS Request (im Proxy im Klartext)
-P ->> D: request.observed
+alt Host auf der Bypass-Liste
 
-alt Content-Type ohne Personendaten
+    P -> Z: Bytes unverändert durchgereicht
+    note right of P
+        Kein Zertifikat, keine Entschlüsselung,
+        keine Telemetrie: der Verkehr ist für
+        den Proxy nicht sichtbar.
+    end note
 
-    P -> Z: Request unverändert (passthrough)
-    activate Z
-    Z -->> P: Response
-    deactivate Z
-    P -->> C: Response
+else Host wird abgefangen
 
-else Body mit Text oder JSON
+    P -> P: Zertifikat für Zielhost ausstellen
+    P -->> C: HTTP 200 Connection Established
 
-    P ->> D: exchange.opened
-    P -> S: analyze(text)
-    activate S
-    S -->> P: Treffer mit Typ, Position, Konfidenz, Risikostufe
-    deactivate S
-    P ->> D: detection.completed
+    C -> P: HTTPS Request (im Proxy im Klartext)
 
-    alt kein Treffer
+    alt Body, den der Proxy nicht öffnet
 
-        P -> Z: Request unverändert (clean)
+        note right of P
+            Kein Body, ein Content-Type ohne Personendaten, ein Pfad
+            ausserhalb der inspizierten Bereiche eines Hosts, ein Body
+            über der Grössengrenze oder einer, dessen Signatur eine
+            Änderung ungültig machen würde.
+        end note
+
+        P ->> D: request.observed (passthrough)
+        P -> Z: Request unverändert
         activate Z
         Z -->> P: Response
         deactivate Z
         P -->> C: Response
 
-    else Personendaten gefunden (treated)
+    else Body mit Text oder JSON
 
-        loop je erkanntem Wert
-            alt Wert bereits im Tresor
-                P -> P: bestehenden Token wiederverwenden
-            else neuer Wert
-                P -> S: replacement_text(entity_type)
-                activate S
-                S -->> P: formattreuer Ersatzwert
-                deactivate S
-                P -> P: Token zu Wert im Tresor ablegen
+        P -> S: analyze(text)
+        activate S
+        S -->> P: Treffer mit Typ, Position, Konfidenz, Risikostufe
+        deactivate S
+
+        alt kein Treffer
+
+            P ->> D: request.observed (clean)
+            P -> Z: Request unverändert
+            activate Z
+            Z -->> P: Response
+            deactivate Z
+            P -->> C: Response
+
+        else Personendaten gefunden (treated)
+
+            loop je erkanntem Wert
+                alt Wert bereits im Tresor
+                    P -> P: bestehenden Token wiederverwenden
+                else neuer Wert
+                    P -> S: replacement_text(entity_type)
+                    activate S
+                    S -->> P: formattreuer Token
+                    deactivate S
+                    P -> P: Token zu Wert im Tresor ablegen
+                end
             end
+
+            note right of P
+                Der Tresor ist auf Client und Zielhost
+                geschlüsselt und läuft nach 48 Stunden ab.
+            end note
+
+            P ->> D: request.observed (treated)
+            P ->> D: exchange.opened
+            P ->> D: detection.completed
+            P ->> D: redaction.completed
+
+            P ->> R: risk_check(tokenisierter Text)
+            note right of P
+                Abseits des Anfragepfads: die Prüfung
+                dauert Sekunden, die Antwort ist eine
+                Angabe für das Dashboard.
+            end note
+
+            P -> Z: Request mit Tokens
+            activate Z
+            P ->> D: upstream.dispatched
+
+            R -->> P: Risiko je Token
+            P ->> D: privacy.assessed
+
+            Z -->> P: Response mit Tokens
+            deactivate Z
+
+            alt Response ist ein Event-Stream
+
+                loop je Chunk
+                    P -> P: Tokens im Chunk zurückübersetzen
+                    P -->> C: Chunk mit echten Werten
+                end
+
+            else Response mit endlichem Body
+
+                P -> P: Tokens aus Tresor zurückübersetzen
+                P -->> C: Response mit echten Werten
+
+            end
+
+            P ->> D: upstream.responded
+            P ->> D: rehydration.completed
+            P ->> D: exchange.delivered
+
         end
-        P ->> D: redaction.completed
-
-        P -> Z: Request mit Tokens
-        activate Z
-        P ->> D: upstream.dispatched
-        Z -->> P: Response mit Tokens
-        deactivate Z
-        P ->> D: upstream.responded
-
-        P -> P: Tokens aus Tresor zurückübersetzen
-        P ->> D: rehydration.completed
-        P -->> C: Response mit echten Werten
 
     end
-    P ->> D: exchange.delivered
+
+    P ->> D: request.completed
 
 end
-P ->> D: request.completed
 deactivate P
 
 @enduml

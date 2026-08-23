@@ -39,16 +39,16 @@ Ein Gerät wird auf den Proxy konfiguriert und vertraut dessen CA. Damit sieht d
 Der grösste Teil des Verkehrs sind Stylesheets, Skripte, Schriften und Bilder. Diese Bodies werden nie geöffnet, sondern nach Inhaltstyp durchgereicht (passthrough). Geöffnet wird nur, was einen Body trägt, der überhaupt Personendaten enthalten kann, in der Regel JSON und Text. Ergibt die Prüfung nichts, gilt die Anfrage als clean; wird etwas gefunden, wird sie behandelt (treated). Das hält die Latenz für den Löwenanteil des Verkehrs bei null und begrenzt die Menge an Klartext, die der Proxy überhaupt anfasst.
 
 *Erkennung mit KI statt mit Regex-Listen*\
-Was eine Person identifiziert, steht selten in einem sauber benannten Feld, sondern mitten im Fliesstext eines Prompts. Die Erkennung übernimmt deshalb ein NLP-Modell: Microsoft Presidio auf einem deutschen spaCy-Modell findet Namen, Adressen, Organisationen und Daten über Named Entity Recognition, ergänzt um musterbasierte Erkennung mit Prüfziffernvalidierung für IBAN, AHV-Nummer, Kreditkarten und Telefonnummern. Jeder Fund kommt mit Typ, Position, Konfidenz und einer Risikoeinstufung zurück, die sich am Kontinuum von Schwartz und Solove sowie an den HIPAA-Kategorien orientiert. Damit ist entscheidbar, was ersetzt werden muss und was toleriert werden kann.
+Was eine Person identifiziert, steht selten in einem sauber benannten Feld, sondern mitten im Fliesstext eines Prompts. Die Erkennung übernimmt deshalb ein NLP-Modell: Microsoft Presidio auf einem deutschen spaCy-Modell findet Namen, Adressen, Organisationen und Daten über Named Entity Recognition, ergänzt um die musterbasierten Erkenner von Presidio, die IBAN und Kreditkartennummer über die Prüfziffer bestätigen und Telefonnummern, E-Mail-Adressen und IP-Adressen über ihr Format. Schweizer Identifikatoren wie die AHV-Nummer bringt Presidio nicht mit; sie werden im aktuellen Stand nicht erkannt (siehe Abgrenzung). Jeder Fund kommt mit Typ, Position, Konfidenz und einer Risikoeinstufung zurück, die sich am Kontinuum von Schwartz und Solove sowie an den HIPAA-Kategorien orientiert. Damit ist entscheidbar, was ersetzt werden muss und was toleriert werden kann. Was unter der Konfidenzschwelle von 0.6 liegt, wird als Beinahe-Treffer gemeldet statt ersetzt.
 
 *Tokens, die aussehen wie Daten*\
-Ein Platzhalter der Form [REDACTED_1] zerstört den Nutzen des Zieldienstes: Ein Sprachmodell antwortet schlechter, eine Formularvalidierung schlägt fehl, ein Suchindex bricht. Wir ersetzen deshalb formattreu. Aus einer echten AHV-Nummer wird eine plausible, aber erfundene AHV-Nummer, aus "Hans Meier" wird ein anderer, konsistenter Schweizer Name, aus einer Berner Adresse eine andere Berner Adresse. Der externe Dienst arbeitet auf Daten, die für ihn vollständig sind, und erhält trotzdem keine einzige echte Angabe.
+Ein Platzhalter der Form [REDACTED_1] zerstört den Nutzen des Zieldienstes: Ein Sprachmodell antwortet schlechter, eine Formularvalidierung schlägt fehl, ein Suchindex bricht. Wir ersetzen deshalb formattreu. Aus "Hans Meier" wird ein anderer vollständiger Name, aus einer Adresse eine andere Adresse mit Strasse, Postleitzahl und Ort, aus einer IBAN eine andere IBAN mit gültiger Prüfziffer. Die Ersatzwerte zieht Faker aus einem deutschsprachigen Locale: formattreu, aber noch nicht regionstreu, aus einer Berner Adresse wird also eine deutsche (siehe Abgrenzung). Der externe Dienst arbeitet auf Daten, die für ihn vollständig sind, und erhält trotzdem keine einzige echte Angabe.
 
 *Konsistenz über Anfragen hinweg*\
-Damit Zusammenhänge erhalten bleiben, ist die Zuordnung stabil: Derselbe echte Wert erhält über Dokumente, Sitzungen und Dienste hinweg denselben Token. Wer im Zieldienst nach dem Token sucht, findet alle Vorkommen; wer über ein Dokument mit zwei Personen argumentiert, behält zwei unterscheidbare Personen. Genau diese Stabilität macht Suche im tokenisierten Bestand überhaupt möglich: Die Suchanfrage durchläuft denselben Proxy und wird auf demselben Weg tokenisiert, bevor sie den Dienst erreicht.
+Damit Zusammenhänge erhalten bleiben, ist die Zuordnung stabil: Derselbe echte Wert erhält über Dokumente, Anfragen und Sitzungen hinweg denselben Token. Wer im Zieldienst nach dem Token sucht, findet alle Vorkommen; wer über ein Dokument mit zwei Personen argumentiert, behält zwei unterscheidbare Personen. Genau diese Stabilität macht Suche im tokenisierten Bestand überhaupt möglich: Die Suchanfrage durchläuft denselben Proxy und wird auf demselben Weg tokenisiert, bevor sie den Dienst erreicht. Die Zuordnung ist dabei auf das Paar aus Client und Zielhost geschlüsselt und gilt bewusst nicht über Dienste hinweg: Eine Tabelle, die überall gilt, setzt auf dem Rückweg auch dort echte Werte ein, wo der Token nie herkam, und ein fremder "René Bauer" auf einer unbeteiligten Seite würde zum echten Namen dieses Nutzers. Der Preis ist, dass dieselbe Person bei zwei Diensten unter zwei verschiedenen Tokens steht.
 
 *Der Tresor bleibt hier*\
-Die Tabelle von Token zu echtem Wert verlässt den Proxy nie. Sie ist der einzige Ort, an dem die echten Daten noch stehen, und sie liegt auf einem Server in der Schweiz. Der fremde Dienst hält ausschliesslich Tokens; selbst ein vollständiger Abfluss seiner Datenbank gibt keine Personendaten preis.
+Die Tabelle von Token zu echtem Wert verlässt den Proxy nie. Sie ist der einzige Ort, an dem die echten Daten noch stehen, und sie liegt auf einem Server in der Schweiz. Sie lebt im Arbeitsspeicher des Proxy-Prozesses und wird verworfen, wenn sie 48 Stunden lang nicht gebraucht wurde, denn jede Stunde, die sie länger lebt, ist eine Stunde, in der echter Wert und Token beieinander stehen. Der fremde Dienst hält ausschliesslich Tokens; selbst ein vollständiger Abfluss seiner Datenbank gibt keine Personendaten preis.
 
 *Rehydrierung nur für Berechtigte*\
 Auf dem Rückweg werden die Tokens in der Antwort wieder durch die echten Werte ersetzt, und zwar nur für Clients, die den Proxy benutzen dürfen und dessen CA vertrauen. Wer keinen Zugang hat, sieht die Tokens, denn das ist der wahre Inhalt des Dienstes. Re-Identifikation ist damit eine Berechtigung an unserer Grenze und keine Eigenschaft der Daten.
@@ -62,13 +62,13 @@ Eine Schicht, die man nicht sieht, wird nicht geglaubt. Der Proxy sendet jeden S
 
 - Abfangender Forward-Proxy in .NET 10: absolute-form HTTP sowie HTTPS über CONNECT mit eigener CA, die beim ersten Start erzeugt wird und pro Zielhost ein Zertifikat ausstellt. Clients beziehen die CA unter /ca.crt und die Autokonfiguration unter /proxy.pac.
 - Drei getrennte Listener mit je einer Rolle: Proxy-Verkehr, derselbe Proxy innerhalb von TLS, und die WebAPI mit dem Telemetrie-Stream. Der API-Port leitet nichts weiter, damit der Port des Dashboards nicht als offener Proxy missbraucht werden kann; der Prozess startet gar nicht erst, wenn die Ports kollidieren.
-- Erkennung als eigener Python-Service, angebunden über einen Unix-Socket mit einem längenpräfixierten JSON-Protokoll. Das trennt die Laufzeiten sauber: Das Modell lebt in Python, der Datenpfad in .NET, und beide laufen im selben Container ohne Netzwerk-Hop.
+- Erkennung und Risikoprüfung als eigene Python-Services, angebunden über je einen Unix-Socket mit einem längenpräfixierten JSON-Protokoll. Das trennt die Laufzeiten sauber: Die Modelle leben in Python, der Datenpfad in .NET, und alles läuft im selben Container ohne Netzwerk-Hop.
 - Formattreue Ersetzung über Faker mit deutschsprachigem Locale, gesteuert über eine Typ-Tabelle, die jeden erkannten PII-Typ auf Informationsart, Risikostufe und Ersetzungsstrategie abbildet.
 - Telemetrie über SignalR: eine begrenzte Queue, ein Hintergrund-Reader, Reihenfolgegarantie pro Austausch und Verwerfen der neuesten Ereignisse unter Last, damit eine langsame Ansicht nie eine Anfrage bremst. Das Wire-Protokoll ist auf beiden Seiten typisiert und wird im Browser gegen Schemas validiert.
 - Dashboard als React-SPA, das zur Laufzeit konfiguriert wird und keine eigene Logik enthält: keine Erkennung, keine Ersetzung, keine Policy. Es zeichnet ausschliesslich, was der Proxy gemeldet hat. Der Zugang dazu läuft über einen Login gegen die WebAPI, denn was das Dashboard zeigt, ist der entschlüsselte Verkehr.
-- Demo-Browser für Windows (WPF und WebView2), der den Proxy und dessen CA nur im eigenen Prozess vertraut. Damit ist eine Vorführung möglich, ohne auf einem fremden Notebook eine Root-CA im Betriebssystem zu installieren.
+- Demo-Browser für Windows und macOS (Avalonia mit eingebettetem Chromium über CefGlue), der den Proxy und dessen CA nur im eigenen Prozess vertraut. Damit ist eine Vorführung möglich, ohne auf einem fremden Notebook eine Root-CA im Betriebssystem zu installieren.
 - Integrationsumgebung, die das Backend-Image unverändert betreibt, mit einem Sender, einem Empfänger und einer eigenen CA-Kette. Sie misst die zwei Zahlen, auf die es ankommt: Der Client muss jede Angabe unverändert zurückerhalten, und der Empfänger darf keine einzige echte Angabe gesehen haben.
-- Testdaten sind Schweizer Fixtures mit korrekten Prüfziffern bei AHV-Nummern und IBANs, damit eine Erkennung, die validiert, nicht an Lorem Ipsum vorbeiläuft.
+- Testdaten sind Schweizer Fixtures mit korrekten Prüfziffern bei AHV-Nummern und IBANs, damit eine Erkennung, die validiert, nicht an Lorem Ipsum vorbeiläuft. Die IBANs findet die Erkennung, die AHV-Nummern zeigen die Lücke.
 - Secure: Kein Schlüsselmaterial im Image, die CA in einem gemounteten Volume, Secrets ausschliesslich über Umgebungsvariablen. Zugang zur API über JWT, der Telemetrie-Stream prüft zusätzlich den Origin des WebSocket-Handshakes selbst, weil ein Browser darauf weder CORS noch Preflight anwendet.
 - CI/CD über GitHub Actions: Build, Lint, Typecheck, Tests und Container-Images pro Komponente, Deployment nach Azure Container Apps.
 
@@ -78,7 +78,7 @@ Eine Schicht, die man nicht sieht, wird nicht geglaubt. Der Proxy sendet jeden S
 
 == Bausteinsicht
 
-Die @bausteinsicht zeigt die Struktur des Software Systems. Der Proxy ist die zentrale Komponente, die den Verkehr abfängt und an die Erkennung weiterleitet. Die Erkennung ist in einem eigenen Service gekapselt, der über einen Unix-Socket angesprochen wird. Das Dashboard visualisiert die Telemetrie und ermöglicht die Überwachung des Datenflusses. Der Privacy Checker ist ein optionaler Bestandteil, der die Erkennung und Ersetzung überprüft, bevor die Anfrage an den Zielserver weitergeleitet wird.
+Die @bausteinsicht zeigt die Struktur des Software Systems. Der Proxy ist die zentrale Komponente, die den Verkehr abfängt und an die Erkennung weiterleitet. Die Erkennung ist in einem eigenen Service gekapselt, der über einen Unix-Socket angesprochen wird. Das Dashboard visualisiert die Telemetrie und ermöglicht die Überwachung des Datenflusses. Der Privacy Checker schätzt, wie gut sich die ersetzten Namen aus dem übrig gebliebenen Text wieder erschliessen lassen. Er hängt nicht im Anfragepfad: Seine Antwort dauert Sekunden und geht als eigenes Ereignis ans Dashboard, während die Anfrage längst unterwegs ist.
 
 #figure(
   image("/assets/bausteinsicht.svg"),
@@ -91,10 +91,12 @@ Die @bausteinsicht zeigt die Struktur des Software Systems. Der Proxy ist die ze
 
 == Laufzeitsicht
 
-Die @laufzeitsicht zeigt exemplarisch den Ablauf einer Anfrage durch das System. Der Proxy empfängt die Anfrage, leitet sie an den Erkennungsservice weiter, ersetzt erkannte PII durch Tokens und sendet die modifizierte Anfrage an den Zielserver. Die Antwort wird ebenfalls durch den Proxy geleitet, wobei Tokens wieder in die echten Werte zurückübersetzt werden, bevor sie an den Client zurückgegeben wird.
+Die @laufzeitsicht zeigt den Ablauf einer Anfrage durch das System, mit allen Wegen, die sie nehmen kann. Ein Host auf der Bypass-Liste wird gar nicht erst abgefangen: Sein Verkehr geht als roher Tunnel durch und ist für den Proxy nicht sichtbar. Sonst terminiert der Proxy den CONNECT-Tunnel und liest die Anfrage im Klartext. Bodies, die keine Personendaten tragen können, gehen unverändert weiter (passthrough), ebenso Pfade ausserhalb der inspizierten Bereiche eines Hosts, Bodies über der Grössengrenze und solche, deren Signatur eine Änderung ohnehin ungültig machen würde. Was gelesen wird, geht an den Erkennungsservice. Ohne Treffer gilt die Anfrage als clean und geht unverändert hinaus; mit Treffern wird jeder Wert durch seinen Token ersetzt, wobei ein Wert, der bereits im Tresor steht, seinen bestehenden Token behält. Erst danach steht die Einstufung fest, weshalb request.observed an dieser Stelle gemeldet wird und nicht früher. Die Risikoprüfung läuft daneben und meldet sich später mit privacy.assessed. Auf dem Rückweg werden die Tokens wieder durch die echten Werte ersetzt: bei einem endlichen Body am Stück, bei einem Event-Stream Chunk für Chunk, damit eine Antwort, die tröpfelt, nicht erst am Ende beim Client ankommt.
+
+#pagebreak()
 
 #figure(
-  image("/assets/laufzeitsicht.svg", width: 86%),
+  image("/assets/laufzeitsicht.svg", height: 23cm),
   caption: [
     Das Software System zur Laufzeit.
   ],
@@ -122,10 +124,11 @@ Die @verteilsicht zeigt die Verteilung der Komponenten des Software Systems übe
   align: (left, left),
   [*Bereich*], [*Eingesetzt*],
   [Proxy und API], [.NET 10, ASP.NET Core, Kestrel, YARP, SignalR, JWT-Bearer, OpenAPI und Swagger],
-  [PII-Erkennung], [Python 3.14, Microsoft Presidio, spaCy (de_core_news_lg), Faker, Pydantic Settings, tiktoken],
+  [PII-Erkennung], [Python 3.14, Microsoft Presidio, spaCy (de_core_news_lg, en_core_web_lg), Faker, Pydantic Settings, tiktoken],
+  [Risikoprüfung], [Python 3.14, sentence-transformers (all-MiniLM-L6-v2), PyMC],
   [Interprozess], [Unix Domain Sockets, eigenes längenpräfixiertes JSON-Protokoll],
   [Frontend], [React 18, TypeScript, Vite, Valibot, SignalR-Client, nginx],
-  [Demo-Client], [WPF, WebView2, .NET 10],
+  [Demo-Client], [.NET 10, Avalonia, CefGlue (Chromium)],
   [Tests], [MSTest auf Microsoft.Testing.Platform, Vitest und Testing Library, Integrationsumgebung mit Docker Compose],
   [Qualität], [ESLint, Stylelint, Prettier, Knip, EditorConfig, Nullable Reference Types],
   [Betrieb], [Docker, GitHub Actions, GitHub Container Registry, Azure Container Apps],
@@ -138,11 +141,12 @@ Die @verteilsicht zeigt die Verteilung der Komponenten des Software Systems übe
 
 Wir zeigen die Schicht selbst, nicht eine fertige Betriebslösung. Bewusst ausserhalb des Hackathon-Umfangs liegen:
 
-- Der Tresor ist im aktuellen Stand nicht dauerhaft persistiert. Für den produktiven Einsatz braucht es eine verschlüsselte Ablage mit Backup, denn ein verlorener Tresor macht den Bestand beim fremden Dienst unwiderruflich unlesbar.
+- Der Tresor ist im aktuellen Stand nicht dauerhaft persistiert: Er liegt im Arbeitsspeicher, ist auf Client und Zielhost geschlüsselt und läuft nach 48 Stunden ohne Verwendung ab. So lange bleibt der Bestand beim fremden Dienst wieder lesbar, danach nicht mehr. Für den produktiven Einsatz braucht es eine verschlüsselte Ablage mit Backup, denn ein verlorener Tresor macht den Bestand unwiderruflich unlesbar.
 - Berechtigungen zur Re-Identifikation sind heute binär: Wer über den Proxy geht, sieht die echten Werte. Rollen, feldgenaue Freigaben und ein revisionssicheres Protokoll darüber, wer wann welchen Token aufgelöst hat, sind der nächste Schritt.
 - Felder, die der Zieldienst für sich selbst braucht, etwa die Login-Mail oder ein Benutzername in einer URL, dürfen nicht tokenisiert werden. Nötig ist eine Ausnahmeliste pro Dienst; heute ist die Entscheidung rein inhaltsbasiert.
 - Anhänge, Bilder und Benachrichtigungen sind nicht abgedeckt. Ein PDF oder ein Screenshot trägt dieselben Daten und braucht einen eigenen Weg, ebenso Vorgänge, die der Dienst selbst auslöst und die uns gar nie passieren, etwa serverseitig verschickte E-Mails.
-- Erkennungsqualität ist eine Abwägung. Ein übersehener Wert verlässt die Grenze, ein falsch positiver Fund macht Inhalte unbrauchbar. Wir messen das heute an eigenen Fixtures; belastbare Precision- und Recall-Zahlen auf echten Korpora fehlen, ebenso eigene Recognizer für weitere Schweizer Identifikatoren.
+- Erkennungsqualität ist eine Abwägung. Ein übersehener Wert verlässt die Grenze, ein falsch positiver Fund macht Inhalte unbrauchbar. Wir messen das heute an eigenen Fixtures; belastbare Precision- und Recall-Zahlen auf echten Korpora fehlen.
+- Der Schweizer Bezug fehlt auf beiden Seiten der Ersetzung. Presidio bringt keinen Erkenner für die AHV-Nummer mit, und die Ersatzwerte stammen aus einem deutschen Faker-Locale, sind also deutsche Namen, Adressen und IBANs. Ein eigener Recognizer über die Prüfziffer der AHV-Nummer und ein Schweizer Ersatz-Provider sind der nächste Schritt und beide für sich überschaubar.
 - Zertifikatsverteilung bleibt eine Betriebsaufgabe. Das Vertrauen in die CA ist ein Schritt im Betriebssystem, und Clients mit Certificate Pinning lassen sich grundsätzlich nicht abfangen.
 - Der Proxy ist als Proof of Concept unauthentifiziert und ohne Zielbeschränkung. Für einen Einsatz ausserhalb einer kontrollierten Umgebung fehlen Authentifizierung, Zielrestriktionen, Verbindungslimits und Schutz vor Zugriffen auf interne Adressen.
 - Skalierung und Latenz unter Last sind nicht vermessen. Die Erkennung ist der teuerste Schritt im Pfad und wäre der erste Kandidat für Caching und horizontale Verteilung.
