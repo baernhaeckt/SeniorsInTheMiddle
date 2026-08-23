@@ -15,10 +15,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      # The deck is designed in the same faces as the dashboard. Neither ships with the
-      # runner, so they are fetched here and passed to Typst explicitly.
-      DECK_FONTS: ${{ runner.temp }}/deck-fonts
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -47,16 +43,17 @@ jobs:
 
       - name: Download the deck fonts
         run: |
-          # Only the static cuts are usable: Typst reads a variable font as its default
-          # instance only, so the variable Archivo would arrive without a bold.
-          mkdir -p "$DECK_FONTS"
+          # The deck is designed in the same faces as the dashboard, and neither ships
+          # with the runner. Only the static cuts are usable: Typst reads a variable font
+          # as its default instance only, so the variable Archivo would arrive without a bold.
+          mkdir -p "$RUNNER_TEMP/deck-fonts"
           archivo=https://github.com/Omnibus-Type/Archivo/raw/master/fonts/ttf
           for weight in Regular Medium SemiBold Bold; do
-            curl -fsSL -o "$DECK_FONTS/Archivo-$weight.ttf" "$archivo/Archivo-$weight.ttf"
+            curl -fsSL -o "$RUNNER_TEMP/deck-fonts/Archivo-$weight.ttf" "$archivo/Archivo-$weight.ttf"
           done
           plex=https://github.com/IBM/plex/raw/master/packages/plex-sans/fonts/complete/ttf
           for weight in Regular Medium; do
-            curl -fsSL -o "$DECK_FONTS/IBMPlexSans-$weight.ttf" "$plex/IBMPlexSans-$weight.ttf"
+            curl -fsSL -o "$RUNNER_TEMP/deck-fonts/IBMPlexSans-$weight.ttf" "$plex/IBMPlexSans-$weight.ttf"
           done
 
       - name: Install Typst
@@ -66,7 +63,7 @@ jobs:
         run: |
           # Typst only warns about a missing family and renders on with a substitute,
           # so the families are asserted against the tool itself, not against fontconfig.
-          typst fonts --font-path "$DECK_FONTS" > "$RUNNER_TEMP/families.txt"
+          typst fonts --font-path "$RUNNER_TEMP/deck-fonts" > "$RUNNER_TEMP/families.txt"
           for family in 'Archivo' 'IBM Plex Sans'; do
             grep -qx "$family" "$RUNNER_TEMP/families.txt" || {
               echo "::error::$family is missing - the deck would silently render in a substitute."
@@ -81,7 +78,7 @@ jobs:
 
       - name: Compile the pitch deck
         working-directory: pitch
-        run: typst compile --font-path "$DECK_FONTS" slides.typ pitch-slides.pdf
+        run: typst compile --font-path "$RUNNER_TEMP/deck-fonts" slides.typ pitch-slides.pdf
 
       - name: Upload the jury documentation
         uses: actions/upload-artifact@v7
