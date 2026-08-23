@@ -28,12 +28,21 @@ const STEP = 0.04
 const DRAG_SLOP = 4
 
 /**
- * Where the wipe opens: the middle, which for most payloads is past the end of
- * the lines and so shows the client's side whole. Dragging it back across the
- * values is what puts a name against its token; the far side going blank on the
- * way is the redacted copy being the shorter of the two, which is the point.
+ * Where the wipe opens: at the far edge, showing the client's side whole.
+ *
+ * It used to open at the middle, on the reasoning that most payloads end before
+ * it. A JSON body does not -- it wraps, and fills every line to the full width
+ * -- so the middle cut every line of it in half instead, and the two sides only
+ * stay in register up to the first replacement. Past that they have drifted by
+ * however much the fake was longer than the name, and the seam reads as one
+ * mangled word after another.
+ *
+ * Opening at the edge gives you one readable body to start from. Dragging back
+ * across the values is what puts a name against its token; the far side going
+ * blank on the way is the redacted copy being the shorter of the two, which is
+ * the point.
  */
-const OPENS_AT = 0.5
+const OPENS_AT = MAX_AT
 
 export function Inspector() {
   const exchanges = useStore((state) => state.exchanges)
@@ -223,7 +232,8 @@ function SplitBar({ at, onChange, area }: SplitBarProps) {
       onClick={() => {
         // A drag ends in a click event too; only a press without one counts.
         if (dragged.current) return
-        // From the middle, the first press shows the destination's copy: the
+        // Toward whichever side is the more hidden of the two, so from where it
+        // opens the first press shows the destination's copy whole: the
         // client's is what the box is already showing.
         onChange((from) => (from >= 0.5 ? MIN_AT : MAX_AT))
       }}
