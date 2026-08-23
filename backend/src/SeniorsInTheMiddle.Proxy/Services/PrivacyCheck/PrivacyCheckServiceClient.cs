@@ -4,6 +4,12 @@ using SeniorsInTheMiddle.Proxy.Services.Pii;
 
 namespace SeniorsInTheMiddle.Proxy.Services.PrivacyCheck;
 
+/// <summary>
+/// Talks to the Python privacy-check service over its unix socket, which scores how much a
+/// body still gives away once the detected names have been replaced. Callers must check
+/// <see cref="IsEnabled"/> first: with no socket path configured, every call throws
+/// <see cref="ServiceUnavailableException"/>.
+/// </summary>
 sealed class PrivacyCheckServiceClient(ServiceConnections services) : IPrivacyCheckServiceClient
 {
     private readonly ServiceConnection _connection = services.Get(ServiceConnections.PrivacyCheckService);

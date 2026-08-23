@@ -4,6 +4,7 @@ using System.Net;
 
 namespace Backend.Tests.Integration;
 
+/// <summary>Checks that the health endpoint answers without a token, since probes have none.</summary>
 [TestClass]
 public class HealthEndpointTests
 {

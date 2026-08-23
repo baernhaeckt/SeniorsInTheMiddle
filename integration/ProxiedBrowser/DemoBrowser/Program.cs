@@ -1,7 +1,8 @@
-using Avalonia;
+﻿using Avalonia;
 
 namespace DemoBrowser;
 
+/// <summary>Process entry point for the demo browser.</summary>
 public static class Program
 {
     /// <summary>

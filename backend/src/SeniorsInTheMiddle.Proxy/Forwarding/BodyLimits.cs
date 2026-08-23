@@ -4,13 +4,11 @@
 /// How much of a body the proxy is willing to hold while it is rewritten, read from the
 /// <c>Proxy</c> configuration section. The same limit applies in both directions.
 ///
-/// A forward proxy sees whatever the device sends and whatever the site sends back, uploads and
-/// video included, and a body has to be buffered whole before it can be rewritten: the
-/// replacement's length is not known until it exists, and a body sent without a length goes out
-/// chunked, which several API gateways and older stacks refuse on requests. Buffering everything
-/// would put an arbitrary download in memory, so the limit is the line between the two. Below it
-/// a body is buffered and offered to the mutation; above it the bytes stream through untouched
-/// and the skip is logged rather than left to be inferred from a body that was never inspected.
+/// A body has to be buffered whole before it can be rewritten: the replacement's length is not
+/// known until it exists, and a body sent without a length goes out chunked, which several API
+/// gateways refuse on requests. But a forward proxy sees uploads and video too, so buffering
+/// everything would put an arbitrary download in memory. Below the limit a body is buffered and
+/// offered to the mutation; above it the bytes stream through untouched and the skip is logged.
 ///
 /// It bounds the decompressed size too, not just the bytes on the wire. A few kilobytes of gzip
 /// can expand to gigabytes, and a proxy that decompresses without a ceiling is a proxy anyone

@@ -196,6 +196,8 @@ public class RestoringStreamTests
         }
     }
 
+    /// <summary>Runs the test's own chunk and flush callbacks, so a test can hold text back
+    /// across a chunk boundary and release it later.</summary>
     private sealed class HoldingMutation(Func<string, string> onChunk, Func<string>? flush = null) : IExchangeStreamMutation
     {
         public string Mutate(string chunk) => onChunk(chunk);

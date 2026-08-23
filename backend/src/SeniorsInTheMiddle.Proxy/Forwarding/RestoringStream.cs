@@ -6,28 +6,23 @@ namespace SeniorsInTheMiddle.Proxy.Forwarding;
 /// An origin's response body with a mutation applied to it as it arrives, for the bodies that
 /// must not be buffered.
 ///
-/// It is a <see cref="Stream"/> rather than something the transformer copies through, because
-/// that is what lets the forwarder keep doing exactly what it already does: it reads a chunk,
-/// writes it, and flushes, and an event stream reaches the client one event at a time. Anything
-/// that collected the body first would turn a live stream into a response that arrives when the
-/// conversation ends.
+/// It is a <see cref="Stream"/> so the forwarder keeps doing what it already does -- read a
+/// chunk, write it, flush -- and an event stream reaches the client one event at a time.
+/// Collecting the body first would turn a live stream into a response that arrives at the end.
 ///
-/// Three things it must get right, and each of them has cost a hang or a truncated response
-/// somewhere before:
+/// Three things it must get right, each of which has cost a hang or a truncated response:
 ///
-/// A read never returns zero until the stream is really over. Zero is end-of-stream to every
-/// caller, and a chunk that the mutation holds back in full -- which is what happens when a
-/// packet boundary lands inside a value being restored -- produces no output at all. That reads
-/// again rather than returning.
+/// A read never returns zero until the stream is really over. Zero means end-of-stream to
+/// every caller, and a chunk the mutation holds back in full -- what happens when a packet
+/// boundary lands inside a value being restored -- produces no output. That reads again.
 ///
 /// Characters are decoded across chunk boundaries, not within them. A UTF-8 sequence split
-/// between two packets is ordinary on a real connection, and decoding each packet on its own
-/// turns the split character into two replacement characters that then differ from the text the
-/// mutation is looking for.
+/// between two packets is ordinary on a real connection, and decoding each packet alone turns
+/// the split character into replacement characters the mutation then fails to match.
 ///
 /// The origin stream is this one's to close. The content it replaced is deliberately not
-/// disposed -- disposing it would close this stream's source out from under it -- so the pooled
-/// connection is released when this is.
+/// disposed -- that would close this stream's source -- so the pooled connection is released
+/// when this is.
 /// </summary>
 sealed class RestoringStream : Stream
 {

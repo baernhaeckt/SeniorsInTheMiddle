@@ -328,10 +328,10 @@ public class ResponseBodyRewriteTests
     /// <summary>
     /// The stream a chat backend answers with, put right on the way past.
     ///
-    /// Both halves matter and one used to be traded for the other: the stand-in is gone from what
-    /// the client reads, and the first event still arrives while the origin is still writing the
-    /// rest. A rewrite that only managed the first would be a conversation that appears when it
-    /// ends.
+    /// Both halves matter, and it is tempting to trade one for the other: the stand-in has to be
+    /// gone from what the client reads, and the first event still has to arrive while the origin
+    /// is writing the rest. A rewrite that only managed the first would be a conversation that
+    /// appears when it ends.
     /// </summary>
     [TestMethod]
     public async Task Event_Stream_Is_Restored_While_It_Flows()
@@ -625,6 +625,7 @@ public class ResponseBodyRewriteTests
 
         public IExchangeBodyMutation CreateForExchange(ClientIdentity client, Uri destination, IExchangeObserver observer) => new Exchange(observer);
 
+        /// <summary>Holds the one substitution across both halves of the round trip.</summary>
         private sealed class Exchange(IExchangeObserver observer) : IExchangeBodyMutation
         {
             private const string RealName = "Hans Muster";

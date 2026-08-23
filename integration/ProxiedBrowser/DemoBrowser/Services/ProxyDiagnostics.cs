@@ -1,5 +1,6 @@
-namespace DemoBrowser.Services;
+﻿namespace DemoBrowser.Services;
 
+/// <summary>How much attention a <see cref="DiagnosticEntry"/> deserves, and how it is coloured.</summary>
 public enum DiagnosticSeverity
 {
     Info,

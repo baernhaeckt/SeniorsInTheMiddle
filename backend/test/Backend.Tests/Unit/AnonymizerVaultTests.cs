@@ -10,11 +10,10 @@ namespace Backend.Tests.Unit;
 /// <summary>
 /// Who gets to share a stand-in map, and for how long.
 ///
-/// The map used to belong to one HTTP exchange, and that is why a chat client showed the fake
-/// name back to the person who typed the real one: the message it draws on the screen comes from
-/// a request that is not the one that sent it, so by the time the fake name arrived the map that
-/// could have undone it had already been collected. Widening it is the fix, and everything below
-/// is a limit on how far.
+/// A map scoped to one HTTP exchange is not enough: a chat client draws the message on screen
+/// from a request that is not the one that sent it, so the map that could undo the stand-in
+/// would already be collected and the person would see the fake name they never typed. The map
+/// is therefore scoped to the client and host, and everything below is a limit on how far.
 /// </summary>
 [TestClass]
 public class AnonymizerVaultTests
@@ -223,11 +222,13 @@ public class AnonymizerVaultTests
             => throw new InvalidOperationException("The vault asked for a stand-in.");
     }
 
+    /// <summary>Collects published events so a test can assert on what the code emitted.</summary>
     private sealed class CollectingSink(List<TelemetryEvent> events) : ITelemetrySink
     {
         public void Publish(TelemetryEvent telemetryEvent) => events.Add(telemetryEvent);
     }
 
+    /// <summary>Discards everything, for the tests that are not about telemetry.</summary>
     private sealed class NullSink : ITelemetrySink
     {
         public static readonly NullSink Instance = new();

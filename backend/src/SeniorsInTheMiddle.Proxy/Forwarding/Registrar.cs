@@ -6,6 +6,10 @@ using SeniorsInTheMiddle.Proxy.Forwarding.Tokenizer;
 
 namespace SeniorsInTheMiddle.Proxy.Forwarding;
 
+/// <summary>
+/// Composition root for the forwarding stack: the DI registrations, and the Kestrel listeners
+/// that give the process its proxy and API ports.
+/// </summary>
 public static class Registrar
 {
     /// <summary>How long this app's own TLS certificate stays valid.</summary>

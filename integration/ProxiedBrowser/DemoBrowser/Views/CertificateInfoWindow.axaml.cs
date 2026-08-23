@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -13,6 +13,8 @@ public partial class CertificateInfoWindow : Window
 {
     private readonly ConnectionSecurityInfo _info;
 
+    /// <summary>One certificate as the chain list shows it: display name, its place in the
+    /// chain (leaf, intermediate, root) and the certificate behind it.</summary>
     private sealed record ChainEntry(string Name, string Role, X509Certificate2 Certificate);
 
     public CertificateInfoWindow() : this(new ConnectionSecurityInfo(), "")

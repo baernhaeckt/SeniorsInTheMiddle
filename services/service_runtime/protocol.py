@@ -69,6 +69,8 @@ async def write_frame(writer: asyncio.StreamWriter, body: bytes) -> None:
 
 @dataclass(slots=True)
 class Request:
+    """One decoded call: the id to answer under, the method, and its arguments."""
+
     id: str
     method: str
     payload: dict[str, Any] = field(default_factory=dict)

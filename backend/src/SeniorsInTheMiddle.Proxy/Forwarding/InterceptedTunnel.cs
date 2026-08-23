@@ -9,8 +9,8 @@
 /// a connection's features to the requests it carries.
 ///
 /// It exists because inside a tunnel the client believes it is talking to the origin server:
-/// it sends origin-form targets ("GET /orders") and a Host header, and no request line says
-/// which host the tunnel was opened to. This is the only record of it.
+/// it sends origin-form targets ("GET /orders") and no request line names the tunnelled
+/// host. This is the only record of it.
 /// </summary>
 interface IInterceptedTunnel
 {
@@ -19,4 +19,5 @@ interface IInterceptedTunnel
     string Authority { get; }
 }
 
+/// <summary>The connection feature <see cref="ConnectProxyMiddleware"/> attaches per tunnel.</summary>
 sealed record InterceptedTunnel(string Authority) : IInterceptedTunnel;

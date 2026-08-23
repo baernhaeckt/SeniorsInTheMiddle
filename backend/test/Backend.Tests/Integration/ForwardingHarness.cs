@@ -55,6 +55,8 @@ internal sealed class DelegateMutationFactory(
     public IExchangeBodyMutation CreateForExchange(ClientIdentity client, Uri destination, IExchangeObserver observer)
         => new Exchange(onRequest, onResponse, onStreamChunk);
 
+    /// <summary>Applies whichever callbacks the test supplied; a missing one leaves that half
+    /// of the exchange untouched.</summary>
     private sealed class Exchange(
         Func<ReadOnlyMemory<byte>, BodyDescriptor, byte[]?>? onRequest,
         Func<ReadOnlyMemory<byte>, BodyDescriptor, byte[]?>? onResponse,
@@ -171,6 +173,7 @@ internal sealed class ForwardingHarness : IAsyncDisposable
         public readonly ConcurrentQueue<TelemetryEvent> Telemetry = new();
     }
 
+    /// <summary>Collects published events so a test can assert on the sequence the proxy emitted.</summary>
     private sealed class QueueTelemetrySink(ConcurrentQueue<TelemetryEvent> events) : ITelemetrySink
     {
         public void Publish(TelemetryEvent telemetryEvent) => events.Enqueue(telemetryEvent);

@@ -29,6 +29,7 @@ public abstract record TelemetryEvent;
 /// <summary>What the dashboard reads on connect. The version has to match PROTOCOL_VERSION.</summary>
 public sealed record ServerHello(int Version, ProxyInfo Proxy, ProxyPolicy Policy) : TelemetryEvent;
 
+/// <summary>How this deployment introduces itself in the dashboard's header.</summary>
 public sealed record ProxyInfo(string Name, string Region, string Mode, string Policy);
 
 /// <summary>
@@ -48,8 +49,10 @@ public sealed record ProxyPolicy(
     double ConfidenceThreshold,
     ServiceStates Services);
 
+/// <summary>Whether each Python sidecar answered the startup probe.</summary>
 public sealed record ServiceStates(ServiceState Pii, ServiceState PrivacyCheck);
 
+/// <summary>A sidecar is either answering, not configured at all, or configured and silent.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<ServiceState>))]
 public enum ServiceState
 {
@@ -77,6 +80,7 @@ public sealed record RequestObserved(
     string Reason,
     string? ExchangeId = null) : TelemetryEvent;
 
+/// <summary>Closes the traffic row opened by <see cref="RequestObserved"/> with the same requestId.</summary>
 public sealed record RequestCompleted(
     string RequestId,
     long At,
@@ -84,6 +88,10 @@ public sealed record RequestCompleted(
     long ResponseBytes,
     double DurationMs) : TelemetryEvent;
 
+/// <summary>
+/// Opens the inspector's detailed view of one exchange, carrying the request body as the
+/// client sent it. Only emitted for requests whose body is actually inspected.
+/// </summary>
 public sealed record ExchangeOpened(
     string ExchangeId,
     string RequestId,
@@ -134,17 +142,20 @@ public sealed record DetectedEntity(
 /// index the analysed values, not the document, and a wrong offset is worse than none.</summary>
 public sealed record NearMiss(string Kind, string Value, double Confidence);
 
+/// <summary>The request body after stand-ins were substituted, i.e. what upstream will see.</summary>
 public sealed record RedactionCompleted(
     string ExchangeId,
     long At,
     string RedactedRequestBody) : TelemetryEvent;
 
+/// <summary>The redacted request has left for <c>Target</c>.</summary>
 public sealed record UpstreamDispatched(
     string ExchangeId,
     long At,
     string Target,
     long Bytes) : TelemetryEvent;
 
+/// <summary>The destination answered, with the response body still carrying the stand-ins.</summary>
 public sealed record UpstreamResponded(
     string ExchangeId,
     long At,
@@ -152,12 +163,14 @@ public sealed record UpstreamResponded(
     string TokenizedResponseBody,
     double UpstreamMs) : TelemetryEvent;
 
+/// <summary>The response body after the real values were put back, i.e. what the client will see.</summary>
 public sealed record RehydrationCompleted(
     string ExchangeId,
     long At,
     string ResponseBody,
     int Restored) : TelemetryEvent;
 
+/// <summary>The exchange is done. Last event for its id, apart from a late <see cref="PrivacyAssessed"/>.</summary>
 public sealed record ExchangeDelivered(
     string ExchangeId,
     long At,
@@ -193,8 +206,10 @@ public sealed record PrivacyAssessed(
     PrivacyStatus Status,
     string? Reason = null) : TelemetryEvent;
 
+/// <summary>The chance that one stand-in's real value can still be inferred from the redacted text.</summary>
 public sealed record PrivacyRiskEntry(string Token, double Probability);
 
+/// <summary>Whether the assessment ran, was skipped (service off, nothing replaced) or errored.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<PrivacyStatus>))]
 public enum PrivacyStatus
 {
@@ -210,6 +225,7 @@ public sealed record ProxyLog(
     string Message,
     string? ExchangeId = null) : TelemetryEvent;
 
+/// <summary>Whether the client reached its destination in the clear or through an intercepted tunnel.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<TelemetryScheme>))]
 public enum TelemetryScheme
 {
@@ -234,6 +250,7 @@ public enum Treatment
     [JsonStringEnumMemberName("treated")] Treated,
 }
 
+/// <summary>Severity of a <see cref="ProxyLog"/> line, matching the ticker's three styles.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<TelemetryLogLevel>))]
 public enum TelemetryLogLevel
 {

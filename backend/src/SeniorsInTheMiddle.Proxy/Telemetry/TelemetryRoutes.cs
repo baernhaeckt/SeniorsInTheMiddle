@@ -1,5 +1,7 @@
 ﻿namespace SeniorsInTheMiddle.Proxy.Telemetry;
 
+/// <summary>The SignalR path the dashboard subscribes to, shared by the hub and the middleware
+/// that has to recognise it as local rather than something to forward.</summary>
 public static class TelemetryRoutes
 {
     /// <summary>

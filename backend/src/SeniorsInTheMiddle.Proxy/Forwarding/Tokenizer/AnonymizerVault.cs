@@ -8,18 +8,16 @@ namespace SeniorsInTheMiddle.Proxy.Forwarding.Tokenizer;
 /// Keeps one stand-in map per client, for as long as <see cref="VaultLifetime"/> says.
 ///
 /// It exists because the two halves of a rewrite are not always the two halves of one HTTP
-/// exchange. A chat client posts a message and is answered by an event stream; the message it
-/// then draws on the screen comes back in a *different* request -- the conversation it re-fetches,
-/// the history it syncs, the page it reloads. A map scoped to the exchange that created it is
-/// already gone by then, so the stand-in reaches the screen and the person sees a name that is
-/// not theirs. That was the bug this replaces.
+/// exchange. A chat client posts a message and is answered by an event stream, but the message
+/// it draws on screen comes back in a *different* request -- the conversation it re-fetches,
+/// the history it syncs, the page it reloads. A map scoped to one exchange is gone by then, so
+/// the stand-in reaches the screen and the person sees a name that is not theirs.
 ///
-/// The key is the client and the host together, and the host is not decoration. Widening the map
-/// from one exchange to one session is already a real widening: a stand-in registered here will
-/// now be put back in a body that was not the one it was made for. Keeping the host in the key is
-/// what stops the worst version of that -- someone else's "René Bauer" on an unrelated site being
-/// rewritten into this user's real name -- while costing the chat case nothing, because a response
-/// comes back from the host its request went to.
+/// The key is the client and the host together, and the host is not decoration. Scoping the map
+/// to a session rather than an exchange already means a stand-in gets put back in a body it was
+/// not made for; keeping the host in the key stops the worst version of that -- someone else's
+/// "René Bauer" on an unrelated site rewritten into this user's real name -- and costs the chat
+/// case nothing, because a response comes back from the host its request went to.
 ///
 /// Everything else about the map's own safety is <see cref="TokenAnonymizerService"/>'s.
 /// </summary>

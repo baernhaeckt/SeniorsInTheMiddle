@@ -18,11 +18,10 @@ namespace Backend.Tests.Integration;
 /// <summary>
 /// HTTPS the client asked for, read and forwarded by the proxy.
 ///
-/// A CONNECT used to become a byte tunnel, so everything the forwarding path does -- the
-/// destination, the telemetry, the body rewrite and its framing -- reached plaintext HTTP
-/// only, which is the smaller half of what this proxy exists to look at. These pin that the
-/// decrypted requests now go through the same path, and that a tunnel carrying something other
-/// than HTTP still gets the byte tunnel it needs.
+/// Plaintext HTTP is the smaller half of what this proxy exists to look at, so a CONNECT must
+/// not simply become a byte tunnel. These pin that decrypted requests take the same forwarding
+/// path as plaintext ones -- destination, telemetry, body rewrite and its framing -- and that a
+/// tunnel carrying something other than HTTP still gets the byte tunnel it needs.
 /// </summary>
 [TestClass]
 public class InterceptedHttpsTests

@@ -10,6 +10,10 @@ using SeniorsInTheMiddle.Proxy.Telemetry;
 
 namespace Backend.Tests.Integration;
 
+/// <summary>
+/// Covers the SignalR hub the dashboard connects to: who is allowed to attach, and that a
+/// fresh connection is greeted with the protocol handshake.
+/// </summary>
 [TestClass]
 public class TelemetryHubTests
 {

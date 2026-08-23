@@ -3,23 +3,21 @@
 /// <summary>
 /// Which paths on a host are worth rewriting, for hosts where the answer is "hardly any of them".
 ///
-/// A site is not one thing. On chatgpt.com the prompt a user types goes to a handful of endpoints
-/// under /backend-api/; everything else on that origin is the application itself -- scripts, fonts,
-/// telemetry beacons, feature flags, session polling, and the bot challenge under /cdn-cgi/. None
-/// of it contains anything a person typed, all of it is scanned at a cost, and each body scanned
-/// is a body that can come back subtly wrong. A stand-in spliced into a settings JSON is a broken
-/// preference; spliced into a challenge answer it is a page that never loads.
+/// A site is not one thing. On chatgpt.com the prompt a user types goes to a handful of
+/// endpoints under /backend-api/; everything else on that origin is the application itself --
+/// scripts, feature flags, session polling, the bot challenge under /cdn-cgi/. None of it holds
+/// anything a person typed, and every body scanned is a body that can come back subtly wrong: a
+/// stand-in spliced into a settings JSON is a broken preference, spliced into a challenge
+/// answer it is a page that never loads.
 ///
-/// So a host listed here inverts the default. Instead of inspecting everything textual and
-/// excluding what is known to break, it inspects nothing except the paths named -- which is the
-/// safer direction to be wrong in, because the failure is "a body went unscanned" rather than "a
-/// body was corrupted", and because the list of endpoints that carry a prompt is short and knowable
-/// while the list of everything that must not be touched is neither.
+/// So a host listed here inverts the default: nothing is inspected except the paths named. That
+/// is the safer direction to be wrong in -- the failure is "a body went unscanned" rather than
+/// "a body was corrupted" -- and the endpoints that carry a prompt are few and knowable, while
+/// everything that must not be touched is neither.
 ///
-/// This is not <see cref="InterceptionBypass"/> and does not overlap with it. Traffic here is still
-/// decrypted, still traced, still visible in the dashboard; the only question is whether a body is
-/// offered to the mutation. A bypassed host is not decrypted at all, and nothing about it can be
-/// path-selective -- a CONNECT carries no path.
+/// This is not <see cref="InterceptionBypass"/>. Traffic here is still decrypted, traced and
+/// visible in the dashboard; the only question is whether a body reaches the mutation. A
+/// bypassed host is not decrypted at all, and cannot be path-selective -- a CONNECT has no path.
 /// </summary>
 sealed class InspectionScope
 {

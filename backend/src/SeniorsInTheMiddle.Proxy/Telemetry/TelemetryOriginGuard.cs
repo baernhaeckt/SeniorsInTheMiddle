@@ -6,15 +6,12 @@
 /// CORS does not help here. A browser applies neither a preflight nor an origin check to a
 /// WebSocket handshake, and the dashboard connects with negotiation skipped, so no
 /// credentialed XHR ever reaches <c>UseCors</c>. Without this, a page a signed-in viewer
-/// happens to visit could open the hub from their browser — carrying their session with it —
-/// and read decrypted request bodies off it. The port is externally reachable in the
-/// deployed setup.
+/// happens to visit could open the hub from their browser -- carrying their session with it --
+/// and read decrypted request bodies off it. The port is externally reachable when deployed.
 ///
-/// A request with no Origin header is not a browser, so it passes: that is the .NET client
-/// the tests use, and curl. A browser always sends one. That used to be the whole story and
-/// it left the stream open to anything that was not a browser; the hub now also requires a
-/// signed-in user (see <c>MapTelemetryHub</c>), so this guard is the browser half of two
-/// checks rather than the only one.
+/// A request with no Origin header is not a browser, so it passes: that is curl, and the .NET
+/// client the tests use. This is only the browser half of the check; the hub separately
+/// requires a signed-in user (see <c>MapTelemetryHub</c>), which covers everything else.
 /// </summary>
 sealed class TelemetryOriginGuard
 {

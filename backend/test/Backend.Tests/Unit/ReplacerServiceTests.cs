@@ -11,10 +11,10 @@ namespace Backend.Tests.Unit;
 /// What the replacer does with findings that do not arrive as a tidy left-to-right sequence of
 /// spans -- which, from a real analyzer over a real body, is most of them.
 ///
-/// Two assumptions used to be built into the slicing and are pinned here as the opposite:
-/// findings never overlap, and a reported offset always lands on the text it describes. Presidio
+/// Two assumptions the slicing must not make, each pinned here as its opposite: that findings
+/// never overlap, and that a reported offset always lands on the text it describes. Presidio
 /// nests entities as a matter of course, and its offsets count code points where a .NET string
-/// counts UTF-16 code units, so both were wrong on ordinary traffic -- the first as a
+/// counts UTF-16 code units. Either assumption breaks on ordinary traffic -- the first as an
 /// <see cref="ArgumentOutOfRangeException"/> from a negative slice length, the second as a
 /// replacement quietly sliding off the PII it was meant to cover.
 /// </summary>
@@ -673,6 +673,7 @@ public class ReplacerServiceTests
 
     public TestContext TestContext { get; set; } = null!;
 
+    /// <summary>A rewrite run's two outputs: the resulting body, and the events it published.</summary>
     private sealed record Anonymized(string Body, IReadOnlyList<TelemetryEvent> Events);
 
     private async Task<Anonymized> AnonymizeAsync(string content, params PiiDetection[] detections)
@@ -775,11 +776,14 @@ public class ReplacerServiceTests
             => Task.FromResult(replacement ?? $"<{piiType}>");
     }
 
+    /// <summary>Collects published events so a test can assert on what the code emitted.</summary>
     private sealed class CollectingSink(List<TelemetryEvent> events) : ITelemetrySink
     {
         public void Publish(TelemetryEvent telemetryEvent) => events.Add(telemetryEvent);
     }
 
+    /// <summary>Records the callbacks the replacer made, so a test can assert on what it
+    /// reported rather than only on the body it produced.</summary>
     private sealed class Observer : IExchangeObserver
     {
         public string? PassthroughReason { get; private set; }

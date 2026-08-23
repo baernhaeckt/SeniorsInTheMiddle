@@ -6,6 +6,14 @@ using SeniorsInTheMiddle.Proxy.Telemetry;
 
 namespace SeniorsInTheMiddle.Proxy.Forwarding.Tokenizer;
 
+/// <summary>
+/// The rewrite the proxy applies to every inspected body: detected personal data is replaced
+/// with stand-ins before the request leaves, and the real values are put back into the
+/// response before it reaches the client.
+///
+/// One <see cref="Exchange"/> per request/response pair holds the stand-in map that makes the
+/// two halves line up. Bodies that are not textual pass through untouched.
+/// </summary>
 public sealed class ReplacerService : IBodyMutationFactory
 {
     /// <summary>
@@ -418,6 +426,10 @@ public sealed class ReplacerService : IBodyMutationFactory
         public static readonly Anonymization Empty = new(string.Empty, [], 0, 0, []);
     }
 
+    /// <summary>
+    /// The outcome of matching detections against the text: what got replaced, what scored
+    /// below the threshold, and how many findings could not be placed at any offset.
+    /// </summary>
     private sealed record Findings(List<TokenReplacement> Replacements, IReadOnlyList<NearMiss> NearMisses, int Unplaced);
 
     /// <summary>

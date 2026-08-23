@@ -53,6 +53,8 @@ public class StreamProxyTests
         Assert.AreEqual(reply, Encoding.ASCII.GetString(BuffersExtensions.ToArray(delivered.Buffer)));
     }
 
+    /// <summary>Pairs an unrelated reader and writer into one pipe, so the two directions of
+    /// the proxied connection can be driven independently.</summary>
     private sealed class DuplexPipe(PipeReader input, PipeWriter output) : IDuplexPipe
     {
         public PipeReader Input { get; } = input;
