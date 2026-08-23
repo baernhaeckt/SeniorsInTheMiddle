@@ -19,6 +19,7 @@ sealed class ForwardProxy : IForwardProxy
     private readonly BodyLimits _bodyLimits;
     private readonly InspectionScope _scope;
     private readonly Detours _detours;
+    private readonly Blocklist _blocklist;
     private readonly ILogger<ForwardProxyTransformer> _transformerLogger;
     private readonly PrivacyAssessor _privacy;
 
@@ -37,6 +38,7 @@ sealed class ForwardProxy : IForwardProxy
         BodyLimits bodyLimits,
         InspectionScope scope,
         Detours detours,
+        Blocklist blocklist,
         UpstreamHttpClient upstream,
         ILogger<ForwardProxyTransformer> transformerLogger,
         PrivacyAssessor privacy)
@@ -48,6 +50,7 @@ sealed class ForwardProxy : IForwardProxy
         _bodyLimits = bodyLimits;
         _scope = scope;
         _detours = detours;
+        _blocklist = blocklist;
         _upstream = upstream;
         _transformerLogger = transformerLogger;
         _privacy = privacy;
@@ -60,6 +63,15 @@ sealed class ForwardProxy : IForwardProxy
         {
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
             await context.Response.WriteAsync("The proxy request must contain a valid destination URI.");
+            return;
+        }
+
+        // Refused before a trace exists, so the dashboard never hears of it -- see Blocklist.
+        if (_blocklist.Covers(destination))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            context.Response.Headers.CacheControl = "no-store";
+            await context.Response.CompleteAsync();
             return;
         }
 

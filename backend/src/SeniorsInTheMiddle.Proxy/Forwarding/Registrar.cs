@@ -38,6 +38,7 @@ public static class Registrar
             .AddSingleton<InterceptionBypass>()
             .AddSingleton<InspectionScope>()
             .AddSingleton<Detours>()
+            .AddSingleton<Blocklist>()
             .AddSingleton<UpstreamHttpClient>()
             .AddSingleton<IForwardProxy, ForwardProxy>()
             .AddSingleton<MitmCertificateProvider>()
