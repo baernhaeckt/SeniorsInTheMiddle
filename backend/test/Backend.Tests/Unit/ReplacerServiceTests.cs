@@ -178,7 +178,7 @@ public class ReplacerServiceTests
         Assert.AreEqual("Grüezi <PERSON>, mail an <EMAIL_ADDRESS>", Encoding.UTF8.GetString(mutated));
 
         Assert.IsNotNull(observer.Entities);
-        Assert.AreEqual(2, observer.Entities.Count, "The name nested inside the e-mail was not replaced on its own.");
+        Assert.HasCount(2, observer.Entities, "The name nested inside the e-mail was not replaced on its own.");
 
         DetectedEntity person = observer.Entities[0];
         Assert.AreEqual("PERSON", person.Kind);
@@ -193,11 +193,11 @@ public class ReplacerServiceTests
         Assert.AreEqual("EMAIL_ADDRESS", email.Kind);
         Assert.AreEqual("hans@example.ch", body[email.Start..email.End]);
         Assert.AreNotEqual(person.Id, email.Id);
-        Assert.IsTrue(observer.ScannedMs >= 0);
+        Assert.IsGreaterThanOrEqualTo(0d, observer.ScannedMs);
 
         Assert.IsNotNull(observer.Stats);
         Assert.AreEqual(1, observer.Stats.Suppressed, "The nested name counts as suppressed.");
-        Assert.AreEqual(0, observer.Stats.NearMisses.Count);
+        Assert.IsEmpty(observer.Stats.NearMisses);
     }
 
     [TestMethod]
@@ -268,9 +268,9 @@ public class ReplacerServiceTests
 
         Assert.IsNull(mutated);
         Assert.IsNotNull(observer.Entities);
-        Assert.AreEqual(0, observer.Entities.Count);
+        Assert.IsEmpty(observer.Entities);
         Assert.IsNotNull(observer.Stats);
-        Assert.AreEqual(1, observer.Stats.NearMisses.Count);
+        Assert.HasCount(1, observer.Stats.NearMisses);
     }
 
     [TestMethod]
@@ -285,7 +285,7 @@ public class ReplacerServiceTests
 
         Assert.IsNull(mutated);
         Assert.IsNotNull(observer.Entities);
-        Assert.AreEqual(0, observer.Entities.Count);
+        Assert.IsEmpty(observer.Entities);
     }
 
     [TestMethod]
@@ -378,7 +378,7 @@ public class ReplacerServiceTests
         Assert.AreEqual(body.Replace("Hans Meier", "<PERSON>"), Encoding.UTF8.GetString(mutated));
 
         Assert.IsNotNull(observer.Entities);
-        Assert.AreEqual(2, observer.Entities.Count);
+        Assert.HasCount(2, observer.Entities);
         foreach (DetectedEntity entity in observer.Entities)
             Assert.AreEqual("Hans Meier", body[entity.Start..entity.End]);
     }
@@ -708,7 +708,7 @@ public class ReplacerServiceTests
         for (int found = 0; found <= occurrence; found++)
         {
             index = content.IndexOf(detectedText, index + 1, StringComparison.Ordinal);
-            Assert.IsTrue(index >= 0, $"'{detectedText}' does not occur {occurrence + 1} time(s) in the test body.");
+            Assert.IsGreaterThanOrEqualTo(0, index, $"'{detectedText}' does not occur {occurrence + 1} time(s) in the test body.");
         }
 
         return At(content, detectedText, entityType, CodePointsIn(content, index));
