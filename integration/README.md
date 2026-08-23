@@ -37,7 +37,8 @@ The sender picks from a weighted table, seeded so a run can be repeated (`SEED`)
 - **personal data** — Swiss-shaped fixtures matching the `EntityKind` union in
   `frontend/src/protocol/types.ts`: names, AHV numbers, IBANs, addresses, `+41` phone
   numbers, emails, birthdates, conditions, insurers. AHV numbers and IBANs carry correct
-  check digits, so a detector that verifies them still finds them.
+  check digits, so a detector that verifies them still finds them. Presidio validates the
+  IBANs today; it ships no recognizer for the AHV number, so those pass through untouched.
 - **awkward cases** — chunked responses, a slow upstream, 4xx/5xx statuses, and a body
   larger than one 8 KiB proxy chunk.
 

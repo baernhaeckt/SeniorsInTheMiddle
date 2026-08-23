@@ -51,6 +51,9 @@ Layout:
 | ----------------- | ----------------------------------------------------------------------------------------------- |
 | `src/protocol/`   | the wire contract: valibot schemas, the types derived from them, recorded frames in `fixtures/` |
 | `src/transport/`  | where events come from: the SignalR client and the demo feed                                    |
+| `src/auth/`       | the session: the backend's auth calls and the token kept for this browser                       |
+| `src/demo/`       | the canned traffic the demo feed replays                                                        |
+| `src/test/`       | setup shared by the test files                                                                  |
 | `src/engine/`     | the store and pure helpers: reducer, selectors, geometry, text                                  |
 | `src/components/` | React views; each subscribes to the slice of the store it draws via `useStore`                  |
 | `src/styles/`     | one CSS file per area, plus `tokens.css` and `base.css`                                         |
@@ -93,6 +96,22 @@ traffic from the old source does not sit there looking live.
 
 A saved config that fails validation counts as absent, which sends you back to
 the setup screen rather than half-configured into the dashboard.
+
+### Signing in
+
+Against a live proxy the dashboard asks for an account before it opens: what it draws is
+decrypted traffic, so the telemetry socket is only opened with a token from the backend's
+own `/api/v1/auth` endpoints. Register creates an account on that backend, and where the
+deployment seeds a demo login the screen offers it prefilled.
+
+The token is kept in `localStorage` under `sitm.session.v1` together with the API origin it
+came from — a token means nothing to a different backend, so pointing the dashboard at
+another proxy ends the session rather than carrying it across. The backend issues it for 48
+hours and nothing renews it; when it lapses the login screen comes back and the dashboard
+resets, so traffic read under the old session does not sit there looking live.
+
+The demo feed skips this screen entirely. It talks to no backend, so there is nothing to
+sign in to — and the pitch keeps working with no proxy running at all.
 
 ### The demo feed
 
@@ -165,8 +184,20 @@ Each of these moves its packet on the band to the next position:
 | `rehydration.completed` | tokens swapped back, for the client's eyes only             |
 | `exchange.delivered`    | round trip closed, with the latency the proxy measured      |
 
+One more event belongs to a treated exchange without moving its packet:
+
+| Event              | Meaning                                                             |
+| ------------------ | ------------------------------------------------------------------- |
+| `privacy.assessed` | how recoverable the replaced names still are from the redacted text |
+
+It runs off the request path in the proxy, takes seconds, and usually arrives after
+`exchange.delivered`. A `status` of `skipped` or `failed` says why there is no number
+instead of leaving the gauge waiting.
+
 An entity's `kind` is the detector's own name for the category (`PERSON`,
-`EMAIL_ADDRESS`, ...), shown as it arrives.
+`EMAIL_ADDRESS`, ...), shown as it arrives. `detection.completed` also carries the near
+misses: findings the detector scored below the proxy's threshold, reported but never
+replaced.
 
 `hello` announces the proxy. `log` can arrive at any time, and the newest line
 sits under the traffic list.

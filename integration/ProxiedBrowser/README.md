@@ -4,15 +4,15 @@ A small tabbed browser built with **.NET 10 / Avalonia / Chromium Embedded Frame
 traffic through an explicitly configured proxy and trusts the proxy's CA certificate **in-process only** — nothing
 is installed into the macOS keychain or the Windows certificate store, and no admin rights are needed.
 
-It runs on **macOS and Windows from one code base** and is a feature-for-feature port of the WPF / WebView2 build
-in `../ProxiedBrowser`. Same settings file schema, same startup sequence, same tab/address-bar behaviour, same
-lock-icon and settings dialogs, same splash screen; only the UI toolkit and the browser engine differ. The table at
-the end maps each WebView2 mechanism to its CEF counterpart.
+It runs on **macOS and Windows from one code base**. It started as a feature-for-feature port of an earlier
+WPF / WebView2 build for Windows, which is no longer in this repository: same settings file schema, same startup
+sequence, same tab/address-bar behaviour, same lock-icon and settings dialogs, same splash screen; only the UI
+toolkit and the browser engine differ. The table at the end maps each WebView2 mechanism to its CEF counterpart
+and is kept because it explains why parts of the CEF code look the way they do.
 
-Difference to the WebView2 build worth knowing before choosing one: this build **carries its own Chromium**
-(~410 MB per platform) instead of using the Edge WebView2 runtime that is already on the machine, so the download
-is much larger. In exchange it is one code base for both platforms and needs no runtime installed on the target
-machine.
+What that swap costs: this build **carries its own Chromium** (~410 MB per platform) instead of using the Edge
+WebView2 runtime that is already on the machine, so the download is much larger. In exchange it is one code base
+for both platforms and needs no runtime installed on the target machine.
 
 ## Build & run
 
@@ -302,7 +302,7 @@ error fires and the chain list stays empty; state, protocol and cipher are still
 
 ### WebView2 → CEF mapping
 
-| Windows build (WebView2) | macOS build (CefGlue) |
+| Earlier WPF build (WebView2) | This build (CefGlue) |
 |---|---|
 | `CoreWebView2Environment` + `AdditionalBrowserArguments` | `CefRuntimeLoader.Initialize(CefSettings, flags)` |
 | Evergreen runtime check (`GetAvailableBrowserVersionString`) | bundled `libcef` + helper check (`CefRuntime.Load`, `ChromeVersion`) |

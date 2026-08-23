@@ -100,7 +100,7 @@
         <mxCell id="ve9SR4LE6HnNgHV7tq88-21" parent="ve9SR4LE6HnNgHV7tq88-1" style="align=left;verticalAlign=top;" value="Azure Container App &#xa;&quot;Container Env&quot;&#xa;" vertex="1">
           <mxGeometry height="251.19" width="150" x="233" y="-934.6" as="geometry" />
         </mxCell>
-        <mxCell id="ve9SR4LE6HnNgHV7tq88-23" parent="ve9SR4LE6HnNgHV7tq88-1" style="align=left;verticalAlign=top;" value="Frontend (PWA)" vertex="1">
+        <mxCell id="ve9SR4LE6HnNgHV7tq88-23" parent="ve9SR4LE6HnNgHV7tq88-1" style="align=left;verticalAlign=top;" value="Frontend (SPA)" vertex="1">
           <mxGeometry height="109.6" width="100" x="50" y="-880.75" as="geometry" />
         </mxCell>
         <mxCell id="EGvlQT-T8iWcVB-wQNnj-9" edge="1" parent="ve9SR4LE6HnNgHV7tq88-1" source="ps98yUaIqCOWlhWfDeHu-0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" target="ve9SR4LE6HnNgHV7tq88-36" value="Mount">
